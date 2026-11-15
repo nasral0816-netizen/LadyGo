@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "LadyGo",
+    "slug": "ladygo",
+    "version": "1.2.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#FFF4F7"
+    },
+    "android": {
+      "package": "ru.ladygo.app",
+      "versionCode": 2,
+      "permissions": [
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "LadyGo использует местоположение, чтобы указать адрес подачи поездки."
+        }
+      ]
+    ]
+  }
+}
