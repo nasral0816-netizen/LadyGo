@@ -7,11 +7,15 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "ladygo",
-    "description": "LadyGo — сервис комфортных поездок для женщин и детей. Забота, удобство и безопасность в каждой поездке.",
+    "description": "LadyGo — сервис комфортных поездок. Удобный заказ, подтверждение стоимости и связь с водителем.",
     "primaryColor": "#E85D91",
+    "backgroundColor": "#FFF4F7",
     "android": {
       "package": "com.ladygo.app",
-      "versionCode": 2,
+      "versionCode": 3,
+      "adaptiveIcon": {
+        "backgroundColor": "#FFF4F7"
+      },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
