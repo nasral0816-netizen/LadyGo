@@ -1,27 +1,34 @@
+
 {
   "expo": {
     "name": "LadyGo",
     "slug": "ladygo",
-    "version": "1.2.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "splash": {
-      "backgroundColor": "#FFF4F7"
-    },
+    "scheme": "ladygo",
+    "description": "LadyGo — сервис комфортных поездок для женщин и детей. Забота, удобство и безопасность в каждой поездке.",
+    "primaryColor": "#E85D91",
     "android": {
-      "package": "ru.ladygo.app",
+      "package": "com.ladygo.app",
       "versionCode": 2,
       "permissions": [
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
       ]
     },
     "plugins": [
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "LadyGo использует местоположение, чтобы указать адрес подачи поездки."
+          "locationWhenInUsePermission": "LadyGo использует геолокацию для определения места подачи автомобиля и организации поездки."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "95ac82ec-010d-4770-9aba-9f52878e1b3b"
+      }
+    }
   }
 }
