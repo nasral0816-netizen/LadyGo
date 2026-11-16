@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   Alert,
@@ -86,11 +85,21 @@ function SectionTitle({ children }) {
 function Status({ value }) {
   return (
     <View style={styles.statusPill}>
-      <Text style={styles.status}>
-        {statusLabel(value)}
-      </Text>
+      <Text style={styles.status}>{statusLabel(value)}</Text>
     </View>
   );
+}
+
+function applicationStatusLabel(status) {
+  if (status === 'pending') return 'На рассмотрении';
+  if (status === 'approved') return 'Одобрена';
+  if (status === 'rejected') return 'Отклонена';
+  return status || 'Неизвестно';
+}
+
+function formatDate(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleString('ru-RU');
 }
 
 export default function App() {
@@ -118,7 +127,20 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [fare, setFare] = useState({});
 
-  const isDriver = profile?.role === 'driver' || profile?.role === 'admin';
+  // Заявки водителей
+  const [applications, setApplications] = useState([]);
+  const [fullName, setFullName] = useState('');
+  const [applicationPhone, setApplicationPhone] = useState('');
+  const [experience, setExperience] = useState('');
+
+  // Роли разделены: администратор не является водителем
+  const isAdmin = profile?.role === 'admin';
+  const isDriver = profile?.role === 'driver';
+  const isPassenger = profile?.role === 'passenger';
+
+  const myApplication = applications.length > 0
+    ? applications[0]
+    : null;
 
   const loadProfile = useCallback(async (userId) => {
     if (!supabase || !userId) return;
@@ -139,6 +161,12 @@ export default function App() {
 
   const loadOrders = useCallback(async () => {
     if (!session || !profile || !supabase) return;
+
+    // Администратор не участвует в заказах как водитель
+    if (isAdmin) {
+      setOrders([]);
+      return;
+    }
 
     setRefreshing(true);
 
@@ -161,7 +189,29 @@ export default function App() {
     }
 
     setRefreshing(false);
-  }, [session, profile, isDriver]);
+  }, [session, profile, isDriver, isAdmin]);
+
+  const loadApplications = useCallback(async () => {
+    if (!session || !profile || !supabase) return;
+
+    let query = supabase
+      .from('driver_applications')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!isAdmin) {
+      query = query.eq('user_id', session.user.id);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      Alert.alert('Заявки водителей', error.message);
+      return;
+    }
+
+    setApplications(data || []);
+  }, [session, profile, isAdmin]);
 
   // Авторизация и восстановление сессии
   useEffect(() => {
@@ -209,6 +259,7 @@ export default function App() {
       } else {
         setProfile(null);
         setOrders([]);
+        setApplications([]);
         setLoading(false);
         setScreen('home');
       }
@@ -220,7 +271,7 @@ export default function App() {
     };
   }, [loadProfile]);
 
-  // Ссылка подтверждения электронной почты
+  // Обработка ссылки подтверждения почты
   useEffect(() => {
     if (!isConfigured || !supabase) return;
 
@@ -261,16 +312,17 @@ export default function App() {
     return () => subscription.remove();
   }, []);
 
-  // Первичная загрузка и обновление заявок
+  // Загрузка данных после входа
   useEffect(() => {
     if (session && profile) {
       loadOrders();
+      loadApplications();
     }
-  }, [session, profile, loadOrders]);
+  }, [session, profile, loadOrders, loadApplications]);
 
   // Обновление заказов в реальном времени
   useEffect(() => {
-    if (!session || !profile || !supabase) return;
+    if (!session || !profile || !supabase || isAdmin) return;
 
     const channel = supabase
       .channel('ladygo-orders-' + session.user.id)
@@ -288,7 +340,42 @@ export default function App() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session, profile, loadOrders]);
+  }, [session, profile, isAdmin, loadOrders]);
+
+  // Обновление заявок в реальном времени
+  useEffect(() => {
+    if (!session || !profile || !supabase) return;
+
+    const channel = supabase
+      .channel('ladygo-applications-' + session.user.id)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'driver_applications',
+        },
+        async () => {
+          await loadApplications();
+
+          // Если заявку одобрили, обновляем роль пользователя
+          if (!isAdmin) {
+            await loadProfile(session.user.id);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [
+    session,
+    profile,
+    isAdmin,
+    loadApplications,
+    loadProfile,
+  ]);
 
   // Регистрация
   async function signUp() {
@@ -364,10 +451,11 @@ export default function App() {
     setSession(null);
     setProfile(null);
     setOrders([]);
+    setApplications([]);
     setScreen('home');
   }
 
-  // Определение текущего местоположения
+  // Определение местоположения
   async function useMyLocation() {
     setLocationBusy(true);
 
@@ -436,15 +524,15 @@ export default function App() {
     return null;
   }
 
-  // Создание настоящей заявки
+  // Создание заказа
   async function createOrder() {
     if (!from.trim() || !to.trim()) {
       Alert.alert('Не хватает адресов', 'Заполни оба адреса.');
       return;
     }
 
-    if (!session || !profile) {
-      Alert.alert('Профиль', 'Не удалось загрузить профиль.');
+    if (!session || !profile || !isPassenger) {
+      Alert.alert('Профиль', 'Заказ доступен только пассажиру.');
       return;
     }
 
@@ -453,13 +541,8 @@ export default function App() {
     let start = pickupCoords;
     let finish = destinationCoords;
 
-    if (!start) {
-      start = await getCoordinates(from);
-    }
-
-    if (!finish) {
-      finish = await getCoordinates(to);
-    }
+    if (!start) start = await getCoordinates(from);
+    if (!finish) finish = await getCoordinates(to);
 
     const passengerPhone =
       profile.phone ||
@@ -509,11 +592,11 @@ export default function App() {
 
     Alert.alert(
       'Заявка отправлена! 💗',
-      'Заказ сохранён. Водитель сможет увидеть его в своём приложении.'
+      'Заказ сохранён. Водитель сможет увидеть его в приложении.'
     );
   }
 
-  // Отмена заявки
+  // Отмена заказа
   async function cancelOrder(id) {
     Alert.alert(
       'Отменить заявку?',
@@ -530,10 +613,7 @@ export default function App() {
             );
 
             if (error) {
-              Alert.alert(
-                'Не удалось отменить',
-                error.message
-              );
+              Alert.alert('Не удалось отменить', error.message);
             } else {
               loadOrders();
             }
@@ -543,8 +623,13 @@ export default function App() {
     );
   }
 
-  // Обновление заявки водителем
+  // Обновление заказа водителем
   async function updateOrder(id, patch) {
+    if (!isDriver) {
+      Alert.alert('Доступ запрещён', 'Эта функция доступна водителю.');
+      return;
+    }
+
     setBusy(true);
 
     const { error } = await supabase
@@ -561,8 +646,10 @@ export default function App() {
     }
   }
 
-  // Принять заявку и подтвердить цену
+  // Принятие заказа
   async function acceptOrder(order) {
+    if (!isDriver) return;
+
     const value = Number(
       String(fare[order.id] || '').replace(',', '.')
     );
@@ -579,8 +666,142 @@ export default function App() {
     });
   }
 
+  // Подать заявку на водителя
+  async function submitDriverApplication() {
+    if (!isPassenger) {
+      Alert.alert('Заявка', 'Подать заявку может только пассажир.');
+      return;
+    }
+
+    if (!fullName.trim()) {
+      Alert.alert('Имя', 'Укажи имя и фамилию.');
+      return;
+    }
+
+    const contactPhone =
+      applicationPhone.trim() ||
+      profile.phone ||
+      session.user.user_metadata?.phone ||
+      '';
+
+    if (contactPhone.length < 7) {
+      Alert.alert('Телефон', 'Укажи действующий номер телефона.');
+      return;
+    }
+
+    if (myApplication?.status === 'pending') {
+      Alert.alert('Заявка уже отправлена', 'Дождись решения администратора.');
+      return;
+    }
+
+    if (myApplication?.status === 'approved') {
+      Alert.alert('Заявка одобрена', 'Твой аккаунт уже получил роль водителя.');
+      return;
+    }
+
+    setBusy(true);
+
+    const { error } = await supabase
+      .from('driver_applications')
+      .insert({
+        user_id: session.user.id,
+        full_name: fullName.trim(),
+        phone: contactPhone,
+        experience: experience.trim() || null,
+        license_info: 'Готов предоставить документы при личной проверке',
+        status: 'pending',
+      });
+
+    setBusy(false);
+
+    if (error) {
+      Alert.alert(
+        'Не удалось отправить заявку',
+        error.message
+      );
+      return;
+    }
+
+    setFullName('');
+    setExperience('');
+    setApplicationPhone('');
+
+    await loadApplications();
+    setScreen('profile');
+
+    Alert.alert(
+      'Заявка отправлена! 💗',
+      'Администратор рассмотрит её. Статус можно посмотреть в профиле.'
+    );
+  }
+
+  // Одобрить или отклонить заявку (только администратор)
+  async function reviewApplication(application, newStatus) {
+    if (!isAdmin) {
+      Alert.alert('Доступ запрещён', 'Только администратор может проверять заявки.');
+      return;
+    }
+
+    const actionText = newStatus === 'approved'
+      ? 'одобрить'
+      : 'отклонить';
+
+    Alert.alert(
+      'Проверка заявки',
+      `Ты действительно хочешь ${actionText} заявку ${application.full_name}?`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: newStatus === 'approved' ? 'Одобрить' : 'Отклонить',
+          style: newStatus === 'approved' ? 'default' : 'destructive',
+          onPress: async () => {
+            setBusy(true);
+
+            const { data, error } = await supabase
+              .from('driver_applications')
+              .update({ status: newStatus })
+              .eq('id', application.id)
+              .eq('status', 'pending')
+              .select()
+              .maybeSingle();
+
+            setBusy(false);
+
+            if (error) {
+              Alert.alert('Ошибка', error.message);
+              return;
+            }
+
+            if (!data) {
+              Alert.alert(
+                'Заявка уже обработана',
+                'Обнови список заявок.'
+              );
+              await loadApplications();
+              return;
+            }
+
+            await loadApplications();
+
+            Alert.alert(
+              'Готово',
+              newStatus === 'approved'
+                ? 'Заявка одобрена. Пользователь получил роль водителя.'
+                : 'Заявка отклонена. Пользователь останется пассажиром.'
+            );
+          },
+        },
+      ]
+    );
+  }
+
   // Звонок
   async function callNumber(number) {
+    if (!number) {
+      Alert.alert('Телефон', 'Номер телефона не указан.');
+      return;
+    }
+
     try {
       await Linking.openURL('tel:' + number);
     } catch (error) {
@@ -588,7 +809,7 @@ export default function App() {
     }
   }
 
-  // Почта поддержки
+  // Поддержка
   async function contactSupport() {
     const subject = encodeURIComponent('Обращение в поддержку LadyGo');
     const url = `mailto:${SUPPORT_EMAIL}?subject=${subject}`;
@@ -596,10 +817,7 @@ export default function App() {
     try {
       await Linking.openURL(url);
     } catch (error) {
-      Alert.alert(
-        'Поддержка',
-        `Напиши нам на ${SUPPORT_EMAIL}`
-      );
+      Alert.alert('Поддержка', `Напиши нам на ${SUPPORT_EMAIL}`);
     }
   }
 
@@ -772,6 +990,29 @@ export default function App() {
     );
   }
 
+  const navigation = isAdmin
+    ? [
+        ['home', 'Главная'],
+        ['applications', 'Заявки'],
+        ['profile', 'Профиль'],
+      ]
+    : isDriver
+      ? [
+          ['home', 'Главная'],
+          ['trips', 'Заявки'],
+          ['profile', 'Профиль'],
+        ]
+      : [
+          ['home', 'Главная'],
+          ['order', 'Заказать'],
+          ['trips', 'Поездки'],
+          ['profile', 'Профиль'],
+        ];
+
+  const pendingApplications = applications.filter(
+    (item) => item.status === 'pending'
+  );
+
   // Основное приложение
   return (
     <SafeAreaView style={styles.container}>
@@ -780,37 +1021,26 @@ export default function App() {
       <View style={styles.top}>
         <View>
           <Text style={styles.logo}>LadyGo</Text>
-          <Text style={styles.subtitleSmall}>
-            Поездки с заботой
-          </Text>
+          <Text style={styles.subtitleSmall}>Поездки с заботой</Text>
         </View>
 
         <View style={styles.roleBadge}>
           <Text style={styles.role}>
-            {isDriver ? 'ВОДИТЕЛЬ' : 'ПАССАЖИР'}
+            {isAdmin ? 'АДМИНИСТРАТОР' : isDriver ? 'ВОДИТЕЛЬ' : 'ПАССАЖИР'}
           </Text>
         </View>
       </View>
 
       <View style={styles.nav}>
-        {(isDriver
-          ? [
-              ['home', 'Главная'],
-              ['trips', 'Заявки'],
-              ['profile', 'Профиль'],
-            ]
-          : [
-              ['home', 'Главная'],
-              ['order', 'Заказать'],
-              ['trips', 'Поездки'],
-              ['profile', 'Профиль'],
-            ]
-        ).map(([key, label]) => (
+        {navigation.map(([key, label]) => (
           <TouchableOpacity
             key={key}
             onPress={() => {
               setScreen(key);
+
               if (key === 'trips') loadOrders();
+              if (key === 'applications') loadApplications();
+              if (key === 'profile') loadApplications();
             }}
             style={styles.navItem}
           >
@@ -829,7 +1059,14 @@ export default function App() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={loadOrders}
+            onRefresh={async () => {
+              if (isAdmin) {
+                await loadApplications();
+              } else {
+                await loadOrders();
+                await loadApplications();
+              }
+            }}
             tintColor={PINK}
           />
         }
@@ -838,20 +1075,49 @@ export default function App() {
         {screen === 'home' && (
           <>
             <View style={styles.welcome}>
-              <Text style={styles.welcomeSmall}>
-                ДОБРО ПОЖАЛОВАТЬ
-              </Text>
+              <Text style={styles.welcomeSmall}>ДОБРО ПОЖАЛОВАТЬ</Text>
               <Text style={styles.welcomeTitle}>
-                {isDriver ? 'Панель водителя' : 'Здравствуйте! 💗'}
+                {isAdmin
+                  ? 'Панель администратора'
+                  : isDriver
+                    ? 'Панель водителя'
+                    : 'Здравствуйте! 💗'}
               </Text>
               <Text style={styles.body}>
-                {isDriver
-                  ? 'Здесь отображаются новые заявки пассажиров.'
-                  : 'Ваш комфорт — наша забота. Закажите поездку в несколько нажатий.'}
+                {isAdmin
+                  ? 'Здесь можно проверять заявки пользователей, желающих стать водителями.'
+                  : isDriver
+                    ? 'Здесь отображаются новые заявки пассажиров.'
+                    : 'Ваш комфорт — наша забота. Закажите поездку в несколько нажатий.'}
               </Text>
             </View>
 
-            {isDriver ? (
+            {isAdmin ? (
+              <>
+                <View style={styles.statCard}>
+                  <Text style={styles.statNumber}>
+                    {pendingApplications.length}
+                  </Text>
+                  <Text style={styles.statLabel}>
+                    Заявок ожидают проверки
+                  </Text>
+                </View>
+
+                <Button
+                  title="Проверить заявки водителей"
+                  onPress={() => {
+                    setScreen('applications');
+                    loadApplications();
+                  }}
+                />
+
+                <Button
+                  title="Обновить заявки"
+                  secondary
+                  onPress={loadApplications}
+                />
+              </>
+            ) : isDriver ? (
               <>
                 <View style={styles.statCard}>
                   <Text style={styles.statNumber}>
@@ -864,20 +1130,12 @@ export default function App() {
                   title="Открыть заявки"
                   onPress={() => setScreen('trips')}
                 />
-
-                <Button
-                  title="Позвонить пассажиру можно из заявки"
-                  secondary
-                  disabled
-                />
               </>
             ) : (
               <>
                 <View style={styles.hero}>
                   <Text style={styles.heroEmoji}>🚕</Text>
-                  <Text style={styles.heroTitle}>
-                    Куда отправимся?
-                  </Text>
+                  <Text style={styles.heroTitle}>Куда отправимся?</Text>
                   <Text style={styles.heroBody}>
                     Укажите адрес подачи и назначения. Водитель
                     подтвердит стоимость поездки.
@@ -889,9 +1147,7 @@ export default function App() {
                 </View>
 
                 <View style={styles.contactCard}>
-                  <Text style={styles.cardTitle}>
-                    Нужна помощь?
-                  </Text>
+                  <Text style={styles.cardTitle}>Нужна помощь?</Text>
                   <Button
                     title="📞 Позвонить водителю"
                     onPress={() => callNumber(PHONE)}
@@ -902,23 +1158,35 @@ export default function App() {
                     onPress={contactSupport}
                   />
                 </View>
+
+                <View style={styles.contactCard}>
+                  <Text style={styles.cardTitle}>Хочешь стать водителем?</Text>
+                  <Text style={styles.body}>
+                    Отправь заявку. Администратор проверит её и примет решение.
+                  </Text>
+                  <Button
+                    title="Подать заявку"
+                    secondary
+                    onPress={() => setScreen('apply')}
+                  />
+                </View>
               </>
             )}
 
             <Text style={styles.hint}>
               LadyGo находится в стадии тестирования. Перед запуском
-              реальных поездок необходимо проверить работу сервиса,
-              безопасность и правовые требования.
+              реальных поездок необходимо проверить безопасность,
+              документы водителей и правовые требования.
             </Text>
           </>
         )}
 
         {/* ЗАКАЗ */}
-        {screen === 'order' && !isDriver && (
+        {screen === 'order' && isPassenger && (
           <>
             <SectionTitle>Новая поездка</SectionTitle>
             <Text style={styles.body}>
-              Заполни адреса, и заявка отправится единственному водителю.
+              Заполни адреса, и заявка отправится водителям.
             </Text>
 
             <Button
@@ -1005,8 +1273,182 @@ export default function App() {
           </>
         )}
 
-        {/* ПОЕЗДКИ / ЗАЯВКИ */}
-        {screen === 'trips' && (
+        {/* ЗАЯВКА НА РОЛЬ ВОДИТЕЛЯ */}
+        {screen === 'apply' && isPassenger && (
+          <>
+            <SectionTitle>Стать водителем</SectionTitle>
+
+            {myApplication?.status === 'pending' ? (
+              <View style={styles.applicationCard}>
+                <Text style={styles.cardTitle}>Заявка отправлена</Text>
+                <View style={styles.applicationStatus}>
+                  <Text style={styles.applicationStatusText}>
+                    {applicationStatusLabel(myApplication.status)}
+                  </Text>
+                </View>
+                <Text style={styles.body}>
+                  Администратор ещё не принял решение. Когда заявка будет
+                  рассмотрена, статус обновится здесь.
+                </Text>
+                <Button
+                  title="Обновить статус"
+                  secondary
+                  onPress={loadApplications}
+                />
+              </View>
+            ) : myApplication?.status === 'approved' ? (
+              <View style={styles.applicationCard}>
+                <Text style={styles.cardTitle}>Заявка одобрена! 💗</Text>
+                <Text style={styles.body}>
+                  Твой аккаунт уже получил роль водителя. Перезагрузи
+                  приложение или войди заново, если интерфейс ещё не обновился.
+                </Text>
+                <Button
+                  title="Обновить профиль"
+                  onPress={() => loadProfile(session.user.id)}
+                />
+              </View>
+            ) : (
+              <>
+                {myApplication?.status === 'rejected' && (
+                  <View style={styles.notice}>
+                    <Text style={styles.noticeText}>
+                      Предыдущая заявка была отклонена. Ты можешь отправить новую.
+                    </Text>
+                  </View>
+                )}
+
+                <Text style={styles.body}>
+                  Заполни данные для связи. Не отправляй сюда номера
+                  водительских удостоверений или фотографии документов.
+                  Их проверку нужно проводить отдельно и безопасно.
+                </Text>
+
+                <Field
+                  label="Имя и фамилия"
+                  value={fullName}
+                  onChangeText={setFullName}
+                  placeholder="Как к тебе обращаться"
+                />
+
+                <Field
+                  label="Контактный телефон"
+                  value={applicationPhone}
+                  onChangeText={setApplicationPhone}
+                  keyboardType="phone-pad"
+                  placeholder="+7 900 000-00-00"
+                />
+
+                <Field
+                  label="Опыт вождения"
+                  value={experience}
+                  onChangeText={setExperience}
+                  placeholder="Например, несколько лет"
+                  multiline
+                />
+
+                <View style={styles.notice}>
+                  <Text style={styles.noticeText}>
+                    Документы и право на управление автомобилем должны
+                    проверяться отдельно до допуска к реальным поездкам.
+                  </Text>
+                </View>
+
+                <Button
+                  title={busy ? 'Отправляем…' : 'Отправить заявку'}
+                  onPress={submitDriverApplication}
+                  disabled={busy}
+                />
+              </>
+            )}
+          </>
+        )}
+
+        {/* ЗАЯВКИ АДМИНИСТРАТОРА */}
+        {screen === 'applications' && isAdmin && (
+          <>
+            <SectionTitle>Заявки водителей</SectionTitle>
+
+            <Button
+              title="Обновить список"
+              secondary
+              onPress={loadApplications}
+            />
+
+            <Text style={styles.body}>
+              Ожидают проверки: {pendingApplications.length}
+            </Text>
+
+            {applications.map((application) => (
+              <View key={application.id} style={styles.applicationCard}>
+                <View style={styles.applicationHeader}>
+                  <Text style={styles.cardTitle}>
+                    {application.full_name}
+                  </Text>
+                  <View style={styles.applicationStatus}>
+                    <Text style={styles.applicationStatusText}>
+                      {applicationStatusLabel(application.status)}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.orderText}>
+                  📞 {application.phone}
+                </Text>
+
+                {!!application.experience && (
+                  <Text style={styles.orderText}>
+                    Опыт: {application.experience}
+                  </Text>
+                )}
+
+                <Text style={styles.hint}>
+                  Отправлена: {formatDate(application.created_at)}
+                </Text>
+
+                {!!application.admin_note && (
+                  <Text style={styles.orderText}>
+                    Примечание: {application.admin_note}
+                  </Text>
+                )}
+
+                {application.status === 'pending' && (
+                  <>
+                    <Button
+                      title="Одобрить заявку"
+                      onPress={() =>
+                        reviewApplication(application, 'approved')
+                      }
+                      disabled={busy}
+                    />
+
+                    <Button
+                      title="Отклонить заявку"
+                      secondary
+                      onPress={() =>
+                        reviewApplication(application, 'rejected')
+                      }
+                      disabled={busy}
+                    />
+                  </>
+                )}
+              </View>
+            ))}
+
+            {applications.length === 0 && (
+              <View style={styles.empty}>
+                <Text style={styles.emptyEmoji}>📋</Text>
+                <Text style={styles.cardTitle}>Заявок пока нет</Text>
+                <Text style={styles.body}>
+                  Когда пользователь отправит заявку, она появится здесь.
+                </Text>
+              </View>
+            )}
+          </>
+        )}
+
+        {/* ПОЕЗДКИ / ЗАЯВКИ ВОДИТЕЛЯ */}
+        {screen === 'trips' && !isAdmin && (
           <>
             <SectionTitle>
               {isDriver ? 'Заявки пассажиров' : 'Мои поездки'}
@@ -1110,26 +1552,25 @@ export default function App() {
                   </>
                 )}
 
-                {isDriver && order.status === 'accepted' && (
-                  <Button
-                    title="Завершить поездку"
-                    onPress={() =>
-                      updateOrder(order.id, {
-                        status: 'completed',
-                      })
-                    }
-                    disabled={busy}
-                  />
-                )}
+                {isDriver && order.status === 'accepted' &&
+                  order.driver_id === session.user.id && (
+                    <Button
+                      title="Завершить поездку"
+                      onPress={() =>
+                        updateOrder(order.id, {
+                          status: 'completed',
+                        })
+                      }
+                      disabled={busy}
+                    />
+                  )}
               </View>
             ))}
 
             {!refreshing && orders.length === 0 && (
               <View style={styles.empty}>
                 <Text style={styles.emptyEmoji}>🚕</Text>
-                <Text style={styles.cardTitle}>
-                  Пока поездок нет
-                </Text>
+                <Text style={styles.cardTitle}>Пока поездок нет</Text>
                 <Text style={styles.body}>
                   {isDriver
                     ? 'Новые заявки пассажиров появятся здесь.'
@@ -1158,9 +1599,53 @@ export default function App() {
 
               <Text style={styles.profileLabel}>Режим</Text>
               <Text style={styles.profileValue}>
-                {isDriver ? 'Водитель' : 'Пассажир'}
+                {isAdmin
+                  ? 'Администратор'
+                  : isDriver
+                    ? 'Водитель'
+                    : 'Пассажир'}
               </Text>
             </View>
+
+            {isPassenger && (
+              <View style={styles.applicationCard}>
+                <Text style={styles.cardTitle}>Заявка водителя</Text>
+
+                {myApplication ? (
+                  <>
+                    <View style={styles.applicationStatus}>
+                      <Text style={styles.applicationStatusText}>
+                        {applicationStatusLabel(myApplication.status)}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.body}>
+                      {myApplication.status === 'pending'
+                        ? 'Администратор ещё рассматривает твою заявку.'
+                        : myApplication.status === 'rejected'
+                          ? 'Заявка отклонена. Можно отправить новую.'
+                          : 'Заявка одобрена.'}
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.body}>
+                    Ты ещё не отправлял заявку на роль водителя.
+                  </Text>
+                )}
+
+                {myApplication?.status !== 'pending' && (
+                  <Button
+                    title={
+                      myApplication?.status === 'rejected'
+                        ? 'Отправить новую заявку'
+                        : 'Стать водителем'
+                    }
+                    secondary
+                    onPress={() => setScreen('apply')}
+                  />
+                )}
+              </View>
+            )}
 
             <Button
               title="📞 Позвонить водителю"
@@ -1174,9 +1659,7 @@ export default function App() {
               onPress={contactSupport}
             />
 
-            <Text style={styles.hint}>
-              {SUPPORT_EMAIL}
-            </Text>
+            <Text style={styles.hint}>{SUPPORT_EMAIL}</Text>
 
             <Button
               title="Выйти из аккаунта"
@@ -1492,5 +1975,29 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 15,
     marginTop: 4,
+  },
+  applicationCard: {
+    borderWidth: 1,
+    borderColor: '#F1DCE4',
+    borderRadius: 18,
+    padding: 16,
+    marginVertical: 9,
+    backgroundColor: '#FFFCFD',
+  },
+  applicationHeader: {
+    marginBottom: 8,
+  },
+  applicationStatus: {
+    alignSelf: 'flex-start',
+    backgroundColor: PALE,
+    borderRadius: 18,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    marginBottom: 10,
+  },
+  applicationStatusText: {
+    color: PINK,
+    fontWeight: '900',
+    fontSize: 12,
   },
 });
