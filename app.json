@@ -3,17 +3,19 @@
   "expo": {
     "name": "LadyGo",
     "slug": "guga",
-    "version": "1.0.0",
+    "version": "1.4.8.8",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "ladygo",
     "description": "LadyGo — сервис комфортных поездок. Удобный заказ, подтверждение стоимости и связь с водителем.",
     "primaryColor": "#E85D91",
     "backgroundColor": "#FFF4F7",
+    "icon": "./icon.png",
     "android": {
       "package": "com.ladygo.app",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
+        "foregroundImage": "./icon.png",
         "backgroundColor": "#FFF4F7"
       },
       "permissions": [
