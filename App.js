@@ -21,6 +21,10 @@ import { supabase, isConfigured } from './src/supabase';
 import * as Location from 'expo-location';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 
+// ======================================================
+// НАСТРОЙКИ
+// ======================================================
+
 const PINK = '#E85D88';
 const DARK = '#29232A';
 const PALE = '#FFF3F7';
@@ -29,33 +33,131 @@ const MUTED = '#897C83';
 const PHONE = '+79911121227';
 const SUPPORT_EMAIL = 'ladygosupport@gmail.com';
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// ======================================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ======================================================
+
+function getErrorMessage(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+
+  if (
+    code === 'user_already_exists' ||
+    message.includes('already registered') ||
+    message.includes('user already exists') ||
+    message.includes('already been registered')
+  ) {
+    return 'Аккаунт с этой почтой уже существует. Войди в свой аккаунт.';
+  }
+
+  if (
+    message.includes('invalid login credentials') ||
+    message.includes('invalid credentials')
+  ) {
+    return 'Неправильная почта или пароль. Проверь данные и попробуй ещё раз.';
+  }
+
+  if (
+    message.includes('email not confirmed') ||
+    message.includes('email_not_confirmed')
+  ) {
+    return 'Сначала подтверди почту. Найди письмо от LadyGo или Supabase.';
+  }
+
+  if (
+    message.includes('password should be at least') ||
+    message.includes('weak password')
+  ) {
+    return 'Пароль слишком короткий или ненадёжный. Используй не менее 6 символов.';
+  }
+
+  if (
+    message.includes('rate limit') ||
+    message.includes('too many requests')
+  ) {
+    return 'Слишком много попыток. Подожди немного и попробуй снова.';
+  }
+
+  if (
+    message.includes('network request failed') ||
+    message.includes('fetch failed')
+  ) {
+    return 'Нет соединения с сервером. Проверь интернет и попробуй снова.';
+  }
+
+  if (message.includes('jwt expired')) {
+    return 'Сессия закончилась. Войди в аккаунт ещё раз.';
+  }
+
+  return error?.message || 'Произошла неизвестная ошибка. Попробуй ещё раз.';
+}
+
+function statusLabel(status) {
+  const labels = {
+    new: 'Новая заявка',
+    accepted: 'Стоимость подтверждена',
+    declined: 'Заявка отклонена',
+    cancelled: 'Заявка отменена',
+    completed: 'Поездка завершена',
+  };
+
+  return labels[status] || status || 'Неизвестно';
+}
+
+function applicationStatusLabel(status) {
+  const labels = {
+    pending: 'На рассмотрении',
+    approved: 'Одобрена',
+    rejected: 'Отклонена',
+  };
+
+  return labels[status] || 'Неизвестно';
+}
+
+function formatDate(value) {
+  if (!value) return '';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return '';
+
+  return date.toLocaleString('ru-RU');
+}
+
 function Button({
   title,
   onPress,
   secondary = false,
   disabled = false,
   danger = false,
+  loading = false,
 }) {
   return (
     <TouchableOpacity
       activeOpacity={0.8}
       onPress={onPress}
-      disabled={disabled}
+      disabled={disabled || loading}
       style={[
         styles.button,
         secondary && styles.secondaryButton,
         danger && styles.dangerButton,
-        disabled && styles.disabledButton,
+        (disabled || loading) && styles.disabledButton,
       ]}
     >
-      <Text
-        style={[
-          styles.buttonText,
-          secondary && styles.secondaryButtonText,
-        ]}
-      >
-        {title}
-      </Text>
+      {loading ? (
+        <ActivityIndicator color={secondary ? PINK : WHITE} />
+      ) : (
+        <Text
+          style={[
+            styles.buttonText,
+            secondary && styles.secondaryButtonText,
+          ]}
+        >
+          {title}
+        </Text>
+      )}
     </TouchableOpacity>
   );
 }
@@ -69,10 +171,12 @@ function Field({
   keyboardType,
   multiline,
   autoCapitalize = 'none',
+  editable = true,
 }) {
   return (
     <View style={styles.fieldWrap}>
       <Text style={styles.label}>{label}</Text>
+
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -82,9 +186,12 @@ function Field({
         keyboardType={keyboardType}
         multiline={multiline}
         autoCapitalize={autoCapitalize}
+        autoCorrect={false}
+        editable={editable}
         style={[
           styles.input,
           multiline && styles.multiline,
+          !editable && styles.inputDisabled,
         ]}
       />
     </View>
@@ -96,9 +203,16 @@ function SectionTitle({ children }) {
 }
 
 function Status({ value }) {
+  const color =
+    value === 'completed'
+      ? '#32865B'
+      : value === 'declined' || value === 'cancelled'
+        ? '#B94C60'
+        : PINK;
+
   return (
-    <View style={styles.statusPill}>
-      <Text style={styles.statusText}>
+    <View style={[styles.statusPill, { borderColor: color }]}>
+      <Text style={[styles.statusText, { color }]}>
         {statusLabel(value)}
       </Text>
     </View>
@@ -168,37 +282,9 @@ function OrderMap({ order }) {
   );
 }
 
-function statusLabel(status) {
-  const labels = {
-    new: 'Новая заявка',
-    accepted: 'Стоимость подтверждена',
-    declined: 'Заявка отклонена',
-    cancelled: 'Заявка отменена',
-    completed: 'Поездка завершена',
-  };
-
-  return labels[status] || status || 'Неизвестно';
-}
-
-function applicationStatusLabel(status) {
-  const labels = {
-    pending: 'На рассмотрении',
-    approved: 'Одобрена',
-    rejected: 'Отклонена',
-  };
-
-  return labels[status] || 'Неизвестно';
-}
-
-function formatDate(value) {
-  if (!value) return '';
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return '';
-
-  return date.toLocaleString('ru-RU');
-}
+// ======================================================
+// ГЛАВНОЕ ПРИЛОЖЕНИЕ
+// ======================================================
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -209,6 +295,7 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [screen, setScreen] = useState('home');
+  const [authMode, setAuthMode] = useState('login');
 
   // Авторизация
   const [email, setEmail] = useState('');
@@ -247,9 +334,12 @@ export default function App() {
     (item) => item.status === 'pending'
   );
 
-  // Загрузка профиля
+  // ------------------------------------------------------
+  // ПРОФИЛЬ
+  // ------------------------------------------------------
+
   const loadProfile = useCallback(async (userId) => {
-    if (!supabase || !userId) return;
+    if (!supabase || !userId) return null;
 
     const { data, error } = await supabase
       .from('profiles')
@@ -258,7 +348,9 @@ export default function App() {
       .maybeSingle();
 
     if (error) {
-      Alert.alert('Ошибка профиля', error.message);
+      Alert.alert('Ошибка профиля', getErrorMessage(error));
+      setLoading(false);
+      return null;
     }
 
     setProfile(data || null);
@@ -267,11 +359,14 @@ export default function App() {
     return data;
   }, []);
 
-  // Загрузка поездок
+  // ------------------------------------------------------
+  // ЗАГРУЗКА ЗАКАЗОВ
+  // ------------------------------------------------------
+
   const loadOrders = useCallback(async () => {
     if (!session || !profile || !supabase) return;
 
-    if (isAdmin) {
+    if (profile.role === 'admin') {
       setOrders([]);
       return;
     }
@@ -285,23 +380,28 @@ export default function App() {
         .order('created_at', { ascending: false })
         .limit(50);
 
-      if (!isDriver) {
+      if (profile.role !== 'driver') {
         query = query.eq('passenger_id', session.user.id);
       }
 
       const { data, error } = await query;
 
       if (error) {
-        Alert.alert('Поездки', error.message);
+        Alert.alert('Поездки', getErrorMessage(error));
       } else {
         setOrders(data || []);
       }
+    } catch (error) {
+      Alert.alert('Поездки', getErrorMessage(error));
     } finally {
       setRefreshing(false);
     }
-  }, [session, profile, isAdmin, isDriver]);
+  }, [session, profile]);
 
-  // Загрузка заявок водителей
+  // ------------------------------------------------------
+  // ЗАГРУЗКА ЗАЯВОК
+  // ------------------------------------------------------
+
   const loadApplications = useCallback(async () => {
     if (!session || !profile || !supabase) return;
 
@@ -310,21 +410,24 @@ export default function App() {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (!isAdmin) {
+    if (profile.role !== 'admin') {
       query = query.eq('user_id', session.user.id);
     }
 
     const { data, error } = await query;
 
     if (error) {
-      Alert.alert('Заявки', error.message);
+      Alert.alert('Заявки', getErrorMessage(error));
       return;
     }
 
     setApplications(data || []);
-  }, [session, profile, isAdmin]);
+  }, [session, profile]);
 
-  // Авторизация и восстановление сессии
+  // ------------------------------------------------------
+  // ВОССТАНОВЛЕНИЕ СЕССИИ
+  // ------------------------------------------------------
+
   useEffect(() => {
     if (!isConfigured || !supabase) {
       setLoading(false);
@@ -334,21 +437,28 @@ export default function App() {
     let mounted = true;
 
     async function initialize() {
-      const { data, error } = await supabase.auth.getSession();
+      try {
+        const { data, error } = await supabase.auth.getSession();
 
-      if (!mounted) return;
+        if (!mounted) return;
 
-      if (error) {
-        Alert.alert('Авторизация', error.message);
-        setLoading(false);
-        return;
-      }
+        if (error) {
+          Alert.alert('Авторизация', getErrorMessage(error));
+          setLoading(false);
+          return;
+        }
 
-      if (data.session) {
-        setSession(data.session);
-        await loadProfile(data.session.user.id);
-      } else {
-        setLoading(false);
+        if (data.session) {
+          setSession(data.session);
+          await loadProfile(data.session.user.id);
+        } else {
+          setLoading(false);
+        }
+      } catch (error) {
+        if (mounted) {
+          Alert.alert('Авторизация', getErrorMessage(error));
+          setLoading(false);
+        }
       }
     }
 
@@ -388,7 +498,10 @@ export default function App() {
     };
   }, [loadProfile]);
 
-  // Подтверждение почты
+  // ------------------------------------------------------
+  // ПОДТВЕРЖДЕНИЕ ПОЧТЫ
+  // ------------------------------------------------------
+
   useEffect(() => {
     if (!isConfigured || !supabase) return;
 
@@ -402,7 +515,10 @@ export default function App() {
           parsed.searchParams.get('error_description');
 
         if (errorDescription) {
-          Alert.alert('Подтверждение почты', errorDescription);
+          Alert.alert(
+            'Подтверждение почты',
+            decodeURIComponent(errorDescription.replace(/\+/g, ' '))
+          );
           return;
         }
 
@@ -414,12 +530,20 @@ export default function App() {
           await supabase.auth.exchangeCodeForSession(code);
 
         if (error) {
-          Alert.alert('Подтверждение почты', error.message);
+          Alert.alert(
+            'Подтверждение почты',
+            getErrorMessage(error)
+          );
+        } else {
+          Alert.alert(
+            'Почта подтверждена 💗',
+            'Теперь можно пользоваться LadyGo.'
+          );
         }
       } catch (error) {
         Alert.alert(
           'Ошибка',
-          'Не удалось обработать ссылку подтверждения.'
+          'Не удалось обработать ссылку подтверждения. Попробуй открыть письмо ещё раз.'
         );
       }
     }
@@ -434,7 +558,10 @@ export default function App() {
     return () => subscription.remove();
   }, []);
 
-  // Загрузка данных после входа
+  // ------------------------------------------------------
+  // ЗАГРУЗКА ДАННЫХ ПОСЛЕ ВХОДА
+  // ------------------------------------------------------
+
   useEffect(() => {
     if (!session || !profile) return;
 
@@ -442,7 +569,10 @@ export default function App() {
     loadApplications();
   }, [session, profile, loadOrders, loadApplications]);
 
-  // Обновление поездок в реальном времени
+  // ------------------------------------------------------
+  // ОБНОВЛЕНИЕ ЗАКАЗОВ В РЕАЛЬНОМ ВРЕМЕНИ
+  // ------------------------------------------------------
+
   useEffect(() => {
     if (!session || !profile || !supabase || isAdmin) return;
 
@@ -464,7 +594,10 @@ export default function App() {
     };
   }, [session, profile, isAdmin, loadOrders]);
 
-  // Обновление заявок в реальном времени
+  // ------------------------------------------------------
+  // ОБНОВЛЕНИЕ ЗАЯВОК В РЕАЛЬНОМ ВРЕМЕНИ
+  // ------------------------------------------------------
+
   useEffect(() => {
     if (!session || !profile || !supabase) return;
 
@@ -498,16 +631,36 @@ export default function App() {
     loadProfile,
   ]);
 
-  // Регистрация
+  // ======================================================
+  // АВТОРИЗАЦИЯ
+  // ======================================================
+
+  // РЕГИСТРАЦИЯ
+
   async function signUp() {
-    if (
-      !email.trim() ||
-      password.length < 6 ||
-      phone.trim().length < 7
-    ) {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPhone = phone.trim();
+
+    if (!EMAIL_REGEX.test(cleanEmail)) {
       Alert.alert(
-        'Регистрация',
-        'Укажи почту, телефон и пароль не короче 6 символов.'
+        'Проверь почту',
+        'Введи корректный адрес электронной почты.'
+      );
+      return;
+    }
+
+    if (cleanPhone.replace(/\D/g, '').length < 7) {
+      Alert.alert(
+        'Проверь телефон',
+        'Введи действующий номер телефона.'
+      );
+      return;
+    }
+
+    if (password.length < 6) {
+      Alert.alert(
+        'Слишком короткий пароль',
+        'Пароль должен содержать не менее 6 символов.'
       );
       return;
     }
@@ -516,42 +669,101 @@ export default function App() {
 
     try {
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: cleanEmail,
         password,
         options: {
           emailRedirectTo: 'ladygo://auth/callback',
           data: {
-            phone: phone.trim(),
+            phone: cleanPhone,
           },
         },
       });
 
+      const alreadyRegistered =
+        error?.code === 'user_already_exists' ||
+        (
+          error?.message &&
+          /already registered|user already exists|already been registered/i.test(
+            error.message
+          )
+        ) ||
+        (
+          !error &&
+          data?.user &&
+          Array.isArray(data.user.identities) &&
+          data.user.identities.length === 0
+        );
+
+      if (alreadyRegistered) {
+        Alert.alert(
+          'Почта уже зарегистрирована',
+          'Аккаунт с этой почтой уже существует. Войди в свой аккаунт.',
+          [
+            {
+              text: 'Отмена',
+              style: 'cancel',
+            },
+            {
+              text: 'Перейти ко входу',
+              onPress: () => {
+                setAuthMode('login');
+              },
+            },
+          ]
+        );
+        return;
+      }
+
       if (error) {
-        Alert.alert('Ошибка регистрации', error.message);
+        Alert.alert(
+          'Не удалось зарегистрироваться',
+          getErrorMessage(error)
+        );
         return;
       }
 
       if (data.session) {
         setSession(data.session);
-        await loadProfile(data.session.user.id);
+        await loadProfile(data.user.id);
         setScreen('home');
 
-        Alert.alert('LadyGo 💗', 'Аккаунт создан!');
+        Alert.alert(
+          'Добро пожаловать в LadyGo! 💗',
+          'Твой аккаунт успешно создан.'
+        );
       } else {
         Alert.alert(
           'Проверь почту',
-          'Открой письмо от Supabase и подтверди регистрацию.'
+          'Мы отправили письмо для подтверждения регистрации. Открой его и перейди по ссылке.'
         );
+
+        setAuthMode('login');
       }
+    } catch (error) {
+      Alert.alert(
+        'Ошибка регистрации',
+        getErrorMessage(error)
+      );
     } finally {
       setBusy(false);
     }
   }
 
-  // Вход
+  // ВХОД
+
   async function signIn() {
-    if (!email.trim() || password.length < 6) {
-      Alert.alert('Вход', 'Проверь почту и пароль.');
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      Alert.alert(
+        'Проверь почту',
+        'Введи корректный адрес электронной почты.'
+      );
+      return;
+    }
+
+    if (!password) {
+      Alert.alert('Пароль', 'Введи пароль от аккаунта.');
       return;
     }
 
@@ -559,47 +771,113 @@ export default function App() {
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: cleanEmail,
         password,
       });
 
       if (error) {
-        Alert.alert('Не удалось войти', error.message);
+        Alert.alert(
+          'Не удалось войти',
+          getErrorMessage(error)
+        );
       }
+    } catch (error) {
+      Alert.alert('Ошибка входа', getErrorMessage(error));
     } finally {
       setBusy(false);
     }
   }
 
-  // Выход
+  // ВОССТАНОВЛЕНИЕ ПАРОЛЯ
+
+  async function resetPassword() {
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      Alert.alert(
+        'Восстановление пароля',
+        'Сначала введи правильную почту в поле электронной почты.'
+      );
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        cleanEmail,
+        {
+          redirectTo: 'ladygo://auth/callback',
+        }
+      );
+
+      if (error) {
+        Alert.alert(
+          'Не удалось отправить письмо',
+          getErrorMessage(error)
+        );
+        return;
+      }
+
+      Alert.alert(
+        'Письмо отправлено',
+        'Если для этой почты существует аккаунт, на неё придёт письмо для восстановления пароля.'
+      );
+    } catch (error) {
+      Alert.alert(
+        'Восстановление пароля',
+        getErrorMessage(error)
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ВЫХОД
+
   async function signOut() {
     Alert.alert(
-      'Выход',
-      'Выйти из аккаунта LadyGo?',
+      'Выйти из аккаунта?',
+      'Ты действительно хочешь выйти из LadyGo?',
       [
-        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Отмена',
+          style: 'cancel',
+        },
         {
           text: 'Выйти',
+          style: 'destructive',
           onPress: async () => {
-            const { error } = await supabase.auth.signOut();
+            setBusy(true);
 
-            if (error) {
-              Alert.alert('Ошибка выхода', error.message);
-              return;
+            try {
+              const { error } = await supabase.auth.signOut();
+
+              if (error) {
+                Alert.alert('Ошибка выхода', getErrorMessage(error));
+                return;
+              }
+
+              setSession(null);
+              setProfile(null);
+              setOrders([]);
+              setApplications([]);
+              setPassword('');
+              setScreen('home');
+              setAuthMode('login');
+            } finally {
+              setBusy(false);
             }
-
-            setSession(null);
-            setProfile(null);
-            setOrders([]);
-            setApplications([]);
-            setScreen('home');
           },
         },
       ]
     );
   }
 
-  // Определение местоположения
+  // ======================================================
+  // МЕСТОПОЛОЖЕНИЕ
+  // ======================================================
+
   async function useMyLocation() {
     setLocationBusy(true);
 
@@ -609,8 +887,8 @@ export default function App() {
 
       if (permission.status !== 'granted') {
         Alert.alert(
-          'Геопозиция',
-          'Разреши доступ к местоположению или введи адрес вручную.'
+          'Доступ к геопозиции',
+          'Разреши приложению доступ к местоположению или введи адрес вручную.'
         );
         return;
       }
@@ -638,19 +916,25 @@ export default function App() {
           place.city,
         ].filter(Boolean).join(', ');
 
-        if (address) setFrom(address);
+        if (address) {
+          setFrom(address);
+        } else {
+          Alert.alert(
+            'Адрес не найден',
+            'Местоположение определено, но адрес не распознан. Введи его вручную.'
+          );
+        }
       }
     } catch (error) {
       Alert.alert(
-        'Геопозиция',
-        'Не удалось определить местоположение. Введи адрес вручную.'
+        'Не удалось определить адрес',
+        'Проверь разрешение на геопозицию и попробуй ещё раз.'
       );
     } finally {
       setLocationBusy(false);
     }
   }
 
-  // Поиск координат по адресу
   async function getCoordinates(address) {
     try {
       const result = await Location.geocodeAsync(address.trim());
@@ -668,15 +952,32 @@ export default function App() {
     return null;
   }
 
-  // Создание заказа
+  // ======================================================
+  // ЗАКАЗЫ
+  // ======================================================
+
   async function createOrder() {
     if (!from.trim() || !to.trim()) {
-      Alert.alert('Не хватает адресов', 'Заполни оба адреса.');
+      Alert.alert(
+        'Не хватает адресов',
+        'Заполни адрес подачи и адрес назначения.'
+      );
+      return;
+    }
+
+    if (from.trim().toLowerCase() === to.trim().toLowerCase()) {
+      Alert.alert(
+        'Проверь адреса',
+        'Адрес подачи и адрес назначения не должны совпадать.'
+      );
       return;
     }
 
     if (!session || !profile || !isPassenger) {
-      Alert.alert('Профиль', 'Заказ доступен только пассажиру.');
+      Alert.alert(
+        'Заказ недоступен',
+        'Создавать заказы может только пассажир.'
+      );
       return;
     }
 
@@ -716,7 +1017,10 @@ export default function App() {
         .single();
 
       if (error) {
-        Alert.alert('Заказ не отправлен', error.message);
+        Alert.alert(
+          'Заказ не отправлен',
+          getErrorMessage(error)
+        );
         return;
       }
 
@@ -732,34 +1036,51 @@ export default function App() {
 
       Alert.alert(
         'Заявка отправлена! 💗',
-        'Заказ сохранён. После проверки водитель сможет увидеть заявку.'
+        'Заказ сохранён. Когда водитель рассмотрит его, статус обновится в разделе «Поездки».'
       );
+    } catch (error) {
+      Alert.alert('Ошибка заказа', getErrorMessage(error));
     } finally {
       setBusy(false);
     }
   }
 
-  // Отмена заказа
   async function cancelOrder(id) {
     Alert.alert(
       'Отменить заявку?',
-      'Ты действительно хочешь отменить поездку?',
+      'Ты действительно хочешь отменить эту поездку?',
       [
-        { text: 'Нет', style: 'cancel' },
+        {
+          text: 'Не отменять',
+          style: 'cancel',
+        },
         {
           text: 'Да, отменить',
           style: 'destructive',
           onPress: async () => {
-            const { error } = await supabase.rpc(
-              'cancel_my_order',
-              { order_id: id }
-            );
+            setBusy(true);
 
-            if (error) {
-              Alert.alert('Не удалось отменить', error.message);
-            } else {
-              await loadOrders();
-              Alert.alert('Готово', 'Заявка отменена.');
+            try {
+              const { error } = await supabase.rpc(
+                'cancel_my_order',
+                { order_id: id }
+              );
+
+              if (error) {
+                Alert.alert(
+                  'Не удалось отменить',
+                  getErrorMessage(error)
+                );
+              } else {
+                await loadOrders();
+
+                Alert.alert(
+                  'Заявка отменена',
+                  'Твоя заявка успешно отменена.'
+                );
+              }
+            } finally {
+              setBusy(false);
             }
           },
         },
@@ -767,10 +1088,16 @@ export default function App() {
     );
   }
 
-  // Изменение заказа водителем
+  // ======================================================
+  // ДЕЙСТВИЯ ВОДИТЕЛЯ
+  // ======================================================
+
   async function updateOrder(id, patch) {
     if (!isDriver) {
-      Alert.alert('Доступ запрещён', 'Эта функция доступна водителю.');
+      Alert.alert(
+        'Доступ запрещён',
+        'Эта функция доступна только водителю.'
+      );
       return;
     }
 
@@ -799,7 +1126,10 @@ export default function App() {
         .maybeSingle();
 
       if (error) {
-        Alert.alert('Не удалось обновить заказ', error.message);
+        Alert.alert(
+          'Не удалось обновить заказ',
+          getErrorMessage(error)
+        );
         return;
       }
 
@@ -808,17 +1138,26 @@ export default function App() {
           'Заявка уже изменена',
           'Возможно, другой водитель уже принял заказ. Обнови список.'
         );
+
         await loadOrders();
         return;
       }
 
       await loadOrders();
+
+      if (patch.status === 'completed') {
+        Alert.alert(
+          'Поездка завершена',
+          'Статус заказа успешно обновлён.'
+        );
+      }
+    } catch (error) {
+      Alert.alert('Ошибка', getErrorMessage(error));
     } finally {
       setBusy(false);
     }
   }
 
-  // Принятие заказа
   async function acceptOrder(order) {
     if (!isDriver || busy) return;
 
@@ -827,7 +1166,18 @@ export default function App() {
     );
 
     if (!Number.isFinite(value) || value <= 0) {
-      Alert.alert('Стоимость', 'Укажи корректную цену в рублях.');
+      Alert.alert(
+        'Проверь стоимость',
+        'Введи корректную стоимость поездки в рублях.'
+      );
+      return;
+    }
+
+    if (value > 1000000) {
+      Alert.alert(
+        'Слишком большая сумма',
+        'Проверь указанную стоимость.'
+      );
       return;
     }
 
@@ -850,7 +1200,7 @@ export default function App() {
       if (error) {
         Alert.alert(
           'Не удалось принять заказ',
-          error.message
+          getErrorMessage(error)
         );
         return;
       }
@@ -860,6 +1210,7 @@ export default function App() {
           'Заказ уже занят',
           'Другой водитель мог принять эту заявку раньше. Обнови список.'
         );
+
         await loadOrders();
         return;
       }
@@ -875,20 +1226,31 @@ export default function App() {
         'Заказ принят! 💗',
         `Стоимость поездки: ${value} ₽`
       );
+    } catch (error) {
+      Alert.alert('Ошибка', getErrorMessage(error));
     } finally {
       setBusy(false);
     }
   }
 
-  // Заявка на роль водителя
+  // ======================================================
+  // ЗАЯВКИ ВОДИТЕЛЕЙ
+  // ======================================================
+
   async function submitDriverApplication() {
     if (!isPassenger) {
-      Alert.alert('Заявка', 'Подать заявку может только пассажир.');
+      Alert.alert(
+        'Заявка недоступна',
+        'Подать заявку может только пассажир.'
+      );
       return;
     }
 
-    if (!fullName.trim()) {
-      Alert.alert('Имя', 'Укажи имя и фамилию.');
+    if (!fullName.trim() || fullName.trim().length < 2) {
+      Alert.alert(
+        'Имя',
+        'Укажи имя и фамилию.'
+      );
       return;
     }
 
@@ -898,8 +1260,11 @@ export default function App() {
       session.user.user_metadata?.phone ||
       '';
 
-    if (contactPhone.length < 7) {
-      Alert.alert('Телефон', 'Укажи действующий номер телефона.');
+    if (contactPhone.replace(/\D/g, '').length < 7) {
+      Alert.alert(
+        'Телефон',
+        'Укажи действующий номер телефона.'
+      );
       return;
     }
 
@@ -936,7 +1301,7 @@ export default function App() {
       if (error) {
         Alert.alert(
           'Не удалось отправить заявку',
-          error.message
+          getErrorMessage(error)
         );
         return;
       }
@@ -952,12 +1317,13 @@ export default function App() {
         'Заявка отправлена! 💗',
         'Администратор рассмотрит её. Статус можно посмотреть в профиле.'
       );
+    } catch (error) {
+      Alert.alert('Ошибка заявки', getErrorMessage(error));
     } finally {
       setBusy(false);
     }
   }
 
-  // Проверка заявки администратором
   async function reviewApplication(application, newStatus) {
     if (!isAdmin || busy) {
       Alert.alert(
@@ -974,7 +1340,10 @@ export default function App() {
       'Проверка заявки',
       `Ты действительно хочешь ${actionText} заявку ${application.full_name}?`,
       [
-        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Отмена',
+          style: 'cancel',
+        },
         {
           text: newStatus === 'approved' ? 'Одобрить' : 'Отклонить',
           style: newStatus === 'approved' ? 'default' : 'destructive',
@@ -991,7 +1360,7 @@ export default function App() {
                 .maybeSingle();
 
               if (error) {
-                Alert.alert('Ошибка', error.message);
+                Alert.alert('Ошибка', getErrorMessage(error));
                 return;
               }
 
@@ -1000,6 +1369,7 @@ export default function App() {
                   'Заявка уже обработана',
                   'Обнови список заявок.'
                 );
+
                 await loadApplications();
                 return;
               }
@@ -1012,6 +1382,8 @@ export default function App() {
                   ? 'Заявка одобрена. Пользователь получил роль водителя.'
                   : 'Заявка отклонена. Пользователь останется пассажиром.'
               );
+            } catch (error) {
+              Alert.alert('Ошибка', getErrorMessage(error));
             } finally {
               setBusy(false);
             }
@@ -1021,7 +1393,10 @@ export default function App() {
     );
   }
 
-  // Звонок
+  // ======================================================
+  // СВЯЗЬ И ПОДДЕРЖКА
+  // ======================================================
+
   async function callNumber(number) {
     if (!number) {
       Alert.alert('Телефон', 'Номер телефона не указан.');
@@ -1032,13 +1407,12 @@ export default function App() {
       await Linking.openURL('tel:' + number);
     } catch (error) {
       Alert.alert(
-        'Звонок',
-        'Не удалось открыть приложение телефона.'
+        'Не удалось открыть звонок',
+        'Попробуй открыть приложение телефона вручную.'
       );
     }
   }
 
-  // Поддержка
   async function contactSupport() {
     const subject = encodeURIComponent(
       'Обращение в поддержку LadyGo'
@@ -1051,14 +1425,19 @@ export default function App() {
       await Linking.openURL(url);
     } catch (error) {
       Alert.alert(
-        'Поддержка',
+        'Поддержка LadyGo',
         `Напиши нам на ${SUPPORT_EMAIL}`
       );
     }
   }
 
-  // Обновление всех данных
+  // ======================================================
+  // ОБНОВЛЕНИЕ ДАННЫХ
+  // ======================================================
+
   async function refreshAll() {
+    if (!session || !profile) return;
+
     if (isAdmin) {
       await loadApplications();
     } else {
@@ -1069,35 +1448,60 @@ export default function App() {
     }
   }
 
-  // Ошибка конфигурации
+  // ======================================================
+  // ЭКРАН: НЕТ ПОДКЛЮЧЕНИЯ
+  // ======================================================
+
   if (!isConfigured || !supabase) {
     return (
       <SafeAreaView style={styles.center}>
         <StatusBar style="dark" />
+
         <Text style={styles.logo}>LadyGo</Text>
 
-        <SectionTitle>Нет подключения к серверу</SectionTitle>
+        <Text style={styles.heading}>
+          Нет подключения к серверу
+        </Text>
 
-        <Text style={styles.body}>
-          Проверь EXPO_PUBLIC_SUPABASE_URL и
-          EXPO_PUBLIC_SUPABASE_ANON_KEY в настройках Expo.
+        <Text style={styles.bodyCenter}>
+          Проверь настройки Expo:
+          {'\n\n'}
+          EXPO_PUBLIC_SUPABASE_URL
+          {'\n'}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY
         </Text>
       </SafeAreaView>
     );
   }
 
-  // Загрузка
+  // ======================================================
+  // ЭКРАН: ЗАГРУЗКА
+  // ======================================================
+
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
         <StatusBar style="dark" />
-        <ActivityIndicator size="large" color={PINK} />
-        <Text style={styles.body}>Загружаем LadyGo…</Text>
+
+        <Text style={styles.logo}>LadyGo</Text>
+
+        <ActivityIndicator
+          size="large"
+          color={PINK}
+          style={{ marginTop: 15 }}
+        />
+
+        <Text style={styles.body}>
+          Загружаем твой аккаунт…
+        </Text>
       </SafeAreaView>
     );
   }
 
-  // Авторизация
+  // ======================================================
+  // ЭКРАН: АВТОРИЗАЦИЯ
+  // ======================================================
+
   if (!session) {
     return (
       <SafeAreaView style={styles.container}>
@@ -1113,16 +1517,63 @@ export default function App() {
           >
             <View style={styles.authHeader}>
               <Text style={styles.logo}>LadyGo</Text>
+
               <Text style={styles.subtitle}>
                 Поездки с заботой 💗
+              </Text>
+
+              <Text style={styles.authDescription}>
+                Удобный сервис для организации поездок.
               </Text>
             </View>
 
             <View style={styles.authCard}>
-              <SectionTitle>Добро пожаловать</SectionTitle>
+              <View style={styles.authTabs}>
+                <TouchableOpacity
+                  style={[
+                    styles.authTab,
+                    authMode === 'login' && styles.authTabActive,
+                  ]}
+                  onPress={() => setAuthMode('login')}
+                >
+                  <Text
+                    style={[
+                      styles.authTabText,
+                      authMode === 'login' && styles.authTabTextActive,
+                    ]}
+                  >
+                    Вход
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.authTab,
+                    authMode === 'signup' && styles.authTabActive,
+                  ]}
+                  onPress={() => setAuthMode('signup')}
+                >
+                  <Text
+                    style={[
+                      styles.authTabText,
+                      authMode === 'signup' && styles.authTabTextActive,
+                    ]}
+                  >
+                    Регистрация
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <SectionTitle>
+                {authMode === 'login'
+                  ? 'С возвращением!'
+                  : 'Создать аккаунт'}
+              </SectionTitle>
 
               <Text style={styles.body}>
-                Войди в свой аккаунт или создай новый.
+                {authMode === 'login'
+                  ? 'Введи данные своего аккаунта LadyGo.'
+                  : 'Заполни данные, чтобы зарегистрироваться.'}
               </Text>
 
               <Field
@@ -1130,64 +1581,95 @@ export default function App() {
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
+                placeholder="example@mail.com"
               />
 
-              <Field
-                label="Телефон"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-                placeholder="+7 900 000-00-00"
-              />
+              {authMode === 'signup' && (
+                <Field
+                  label="Номер телефона"
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                  placeholder="+7 900 000-00-00"
+                />
+              )}
 
               <Field
                 label="Пароль"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
+                placeholder="Не менее 6 символов"
               />
 
+              {authMode === 'login' && (
+                <TouchableOpacity
+                  style={styles.forgotButton}
+                  onPress={resetPassword}
+                  disabled={busy}
+                >
+                  <Text style={styles.forgotText}>
+                    Забыли пароль?
+                  </Text>
+                </TouchableOpacity>
+              )}
+
               <Button
-                title={busy ? 'Подождите…' : 'Войти'}
-                onPress={signIn}
+                title={
+                  authMode === 'login'
+                    ? 'Войти в аккаунт'
+                    : 'Создать аккаунт'
+                }
+                onPress={
+                  authMode === 'login'
+                    ? signIn
+                    : signUp
+                }
+                loading={busy}
                 disabled={busy}
               />
 
-              <Button
-                title={busy ? 'Подождите…' : 'Создать аккаунт'}
-                secondary
-                onPress={signUp}
-                disabled={busy}
-              />
-
-              <Text style={styles.hint}>
-                После регистрации подтверди почту по ссылке из письма.
+              <Text style={styles.hintCenter}>
+                {authMode === 'signup'
+                  ? 'После регистрации может потребоваться подтверждение почты.'
+                  : 'Если у тебя ещё нет аккаунта, выбери «Регистрация».'}
               </Text>
+
+              <View style={styles.authDivider} />
 
               <Button
                 title="Связаться с поддержкой"
                 secondary
                 onPress={contactSupport}
+                disabled={busy}
               />
             </View>
+
+            <Text style={styles.footer}>
+              Создано независимым автором @acyma
+            </Text>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
 
-  // Профиль не найден
+  // ======================================================
+  // ЭКРАН: ПРОФИЛЬ НЕ НАЙДЕН
+  // ======================================================
+
   if (!profile) {
     return (
       <SafeAreaView style={styles.center}>
         <StatusBar style="dark" />
+
         <Text style={styles.logo}>LadyGo</Text>
 
         <SectionTitle>Профиль не найден</SectionTitle>
 
-        <Text style={styles.body}>
-          Аккаунт авторизован, но запись в profiles отсутствует.
-          Нужно проверить создание профиля в Supabase.
+        <Text style={styles.bodyCenter}>
+          Аккаунт авторизован, но запись профиля не найдена.
+          Проверь создание профиля в Supabase.
         </Text>
 
         <Button
@@ -1204,7 +1686,10 @@ export default function App() {
     );
   }
 
-  // Навигация
+  // ======================================================
+  // НАВИГАЦИЯ
+  // ======================================================
+
   const navigation = isAdmin
     ? [
         ['home', 'Главная'],
@@ -1224,15 +1709,28 @@ export default function App() {
           ['profile', 'Профиль'],
         ];
 
-  // Основной интерфейс
+  const allowedScreens = navigation.map((item) => item[0]);
+
+  if (!allowedScreens.includes(screen) &&
+      !(screen === 'apply' && isPassenger)) {
+    // Не показываем экран, недоступный текущей роли.
+    setScreen('home');
+  }
+
+  // ======================================================
+  // ОСНОВНОЙ ИНТЕРФЕЙС
+  // ======================================================
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
 
       {/* ШАПКА */}
+
       <View style={styles.top}>
         <View>
           <Text style={styles.logo}>LadyGo</Text>
+
           <Text style={styles.subtitleSmall}>
             Поездки с заботой
           </Text>
@@ -1250,6 +1748,7 @@ export default function App() {
       </View>
 
       {/* НАВИГАЦИЯ */}
+
       <View style={styles.nav}>
         {navigation.map(([key, label]) => (
           <TouchableOpacity
@@ -1290,7 +1789,11 @@ export default function App() {
           />
         }
       >
+
+        {/* ============================================== */}
         {/* ГЛАВНАЯ */}
+        {/* ============================================== */}
+
         {screen === 'home' && (
           <>
             <View style={styles.welcome}>
@@ -1316,6 +1819,7 @@ export default function App() {
             </View>
 
             {/* АДМИНИСТРАТОР */}
+
             {isAdmin && (
               <>
                 <View style={styles.statCard}>
@@ -1345,6 +1849,7 @@ export default function App() {
             )}
 
             {/* ВОДИТЕЛЬ */}
+
             {isDriver && (
               <>
                 <View style={styles.statCard}>
@@ -1359,7 +1864,10 @@ export default function App() {
 
                 <Button
                   title="Открыть заявки"
-                  onPress={() => setScreen('trips')}
+                  onPress={() => {
+                    setScreen('trips');
+                    loadOrders();
+                  }}
                 />
 
                 <Button
@@ -1371,6 +1879,7 @@ export default function App() {
             )}
 
             {/* ПАССАЖИР */}
+
             {isPassenger && (
               <>
                 <View style={styles.hero}>
@@ -1397,12 +1906,12 @@ export default function App() {
                   </Text>
 
                   <Button
-                    title="📞 Позвонить водителю"
+                    title="📞 Позвонить"
                     onPress={() => callNumber(PHONE)}
                   />
 
                   <Button
-                    title="✉️ Жалобы и вопросы"
+                    title="✉️ Написать в поддержку"
                     secondary
                     onPress={contactSupport}
                   />
@@ -1432,13 +1941,16 @@ export default function App() {
           </>
         )}
 
+        {/* ============================================== */}
         {/* ЗАКАЗ */}
+        {/* ============================================== */}
+
         {screen === 'order' && isPassenger && (
           <>
             <SectionTitle>Новая поездка</SectionTitle>
 
             <Text style={styles.body}>
-              Заполни адреса, и заявка отправится на рассмотрение водителям.
+              Заполни адреса, и заявка отправится водителям.
             </Text>
 
             <Button
@@ -1512,8 +2024,9 @@ export default function App() {
             </View>
 
             <Button
-              title={busy ? 'Отправляем заявку…' : 'Отправить заявку'}
+              title="Отправить заявку"
               onPress={createOrder}
+              loading={busy}
               disabled={busy}
             />
 
@@ -1521,11 +2034,15 @@ export default function App() {
               title="Позвонить и заказать по телефону"
               secondary
               onPress={() => callNumber(PHONE)}
+              disabled={busy}
             />
           </>
         )}
 
+        {/* ============================================== */}
         {/* ЗАЯВКА ВОДИТЕЛЯ */}
+        {/* ============================================== */}
+
         {screen === 'apply' && isPassenger && (
           <>
             <SectionTitle>Стать водителем</SectionTitle>
@@ -1618,8 +2135,9 @@ export default function App() {
                 </View>
 
                 <Button
-                  title={busy ? 'Отправляем…' : 'Отправить заявку'}
+                  title="Отправить заявку"
                   onPress={submitDriverApplication}
+                  loading={busy}
                   disabled={busy}
                 />
               </>
@@ -1627,7 +2145,10 @@ export default function App() {
           </>
         )}
 
+        {/* ============================================== */}
         {/* ЗАЯВКИ АДМИНИСТРАТОРА */}
+        {/* ============================================== */}
+
         {screen === 'applications' && isAdmin && (
           <>
             <SectionTitle>Заявки водителей</SectionTitle>
@@ -1725,7 +2246,10 @@ export default function App() {
           </>
         )}
 
+        {/* ============================================== */}
         {/* ПОЕЗДКИ */}
+        {/* ============================================== */}
+
         {screen === 'trips' && !isAdmin && (
           <>
             <SectionTitle>
@@ -1764,6 +2288,10 @@ export default function App() {
                   🕒 Когда: {order.requested_for}
                 </Text>
 
+                <Text style={styles.hint}>
+                  Создано: {formatDate(order.created_at)}
+                </Text>
+
                 {order.price_rub != null && (
                   <Text style={styles.price}>
                     {order.price_rub} ₽
@@ -1799,6 +2327,7 @@ export default function App() {
                     title="Отменить заявку"
                     secondary
                     onPress={() => cancelOrder(order.id)}
+                    disabled={busy}
                   />
                 )}
 
@@ -1870,7 +2399,10 @@ export default function App() {
           </>
         )}
 
+        {/* ============================================== */}
         {/* ПРОФИЛЬ */}
+        {/* ============================================== */}
+
         {screen === 'profile' && (
           <>
             <SectionTitle>Мой профиль</SectionTitle>
@@ -1969,7 +2501,7 @@ export default function App() {
               />
 
               <Button
-                title="📞 Позвонить водителю"
+                title="📞 Позвонить"
                 secondary
                 onPress={() => callNumber(PHONE)}
               />
@@ -1991,7 +2523,10 @@ export default function App() {
   );
 }
 
+// ======================================================
 // СТИЛИ
+// ======================================================
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -2010,6 +2545,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
+    paddingBottom: 35,
     backgroundColor: PALE,
   },
 
@@ -2018,12 +2554,81 @@ const styles = StyleSheet.create({
     marginBottom: 25,
   },
 
+  authDescription: {
+    fontSize: 13,
+    color: MUTED,
+    marginTop: 9,
+    textAlign: 'center',
+  },
+
   authCard: {
     backgroundColor: WHITE,
     borderRadius: 24,
     padding: 19,
     borderWidth: 1,
     borderColor: '#F4E0E7',
+    shadowColor: '#B56B84',
+    shadowOpacity: 0.08,
+    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 3,
+  },
+
+  authTabs: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF3F7',
+    borderRadius: 13,
+    padding: 4,
+    marginBottom: 22,
+  },
+
+  authTab: {
+    flex: 1,
+    paddingVertical: 11,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+
+  authTabActive: {
+    backgroundColor: WHITE,
+    elevation: 2,
+  },
+
+  authTabText: {
+    color: MUTED,
+    fontWeight: '800',
+    fontSize: 13,
+  },
+
+  authTabTextActive: {
+    color: PINK,
+  },
+
+  forgotButton: {
+    alignSelf: 'flex-end',
+    paddingVertical: 5,
+    marginTop: -7,
+    marginBottom: 8,
+  },
+
+  forgotText: {
+    color: PINK,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  authDivider: {
+    height: 1,
+    backgroundColor: '#F2E5EA',
+    marginVertical: 13,
+  },
+
+  hintCenter: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#93858C',
+    textAlign: 'center',
+    marginTop: 13,
   },
 
   top: {
@@ -2080,6 +2685,14 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: '#6E6269',
     marginBottom: 14,
+  },
+
+  bodyCenter: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: '#6E6269',
+    textAlign: 'center',
+    marginVertical: 14,
   },
 
   nav: {
@@ -2225,6 +2838,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFCFD',
   },
 
+  inputDisabled: {
+    backgroundColor: '#F5F1F3',
+    opacity: 0.7,
+  },
+
   multiline: {
     minHeight: 85,
     textAlignVertical: 'top',
@@ -2321,6 +2939,7 @@ const styles = StyleSheet.create({
   statusPill: {
     alignSelf: 'flex-start',
     backgroundColor: PALE,
+    borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
@@ -2330,7 +2949,6 @@ const styles = StyleSheet.create({
   statusText: {
     fontWeight: '900',
     fontSize: 12,
-    color: PINK,
   },
 
   orderText: {
