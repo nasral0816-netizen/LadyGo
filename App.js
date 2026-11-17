@@ -2222,9 +2222,9 @@ export default function App() {
                   Отправлена: {formatDate(application.created_at)}
                 </Text>
 
-                {!!application.admin_note && (
+                {!!application.review_note && (
                   <Text style={styles.orderText}>
-                    Примечание: {application.admin_note}
+                    Примечание: {application.review_note}
                   </Text>
                 )}
 
