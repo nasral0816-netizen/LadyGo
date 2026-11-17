@@ -52,6 +52,16 @@ create trigger ladygo_create_order_offers_trigger
 after insert on public.orders
 for each row execute function public.ladygo_create_order_offers();
 
+-- Backfill offers for orders that were already waiting when this migration is applied.
+insert into public.order_offers(order_id, driver_id)
+select o.id, p.id
+from public.orders o
+cross join public.profiles p
+where o.status = 'new'
+  and o.driver_id is null
+  and p.role = 'driver'
+on conflict (order_id, driver_id) do nothing;
+
 create or replace function public.ladygo_skip_order_offer(p_order_id uuid)
 returns boolean
 language plpgsql
