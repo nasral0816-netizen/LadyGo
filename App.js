@@ -807,7 +807,6 @@ export default function App() {
   const showIncomingOrder = useCallback(async (offerId, orderId, offerCreatedAt) => {
     if (!isDriver || !supabase || !offerId || !orderId) return;
     if (lastOfferNotificationRef.current === offerId) return;
-    lastOfferNotificationRef.current = offerId;
 
     const { data, error } = await supabase
       .from('orders')
@@ -818,25 +817,10 @@ export default function App() {
       .maybeSingle();
 
     if (error || !data) return;
+    lastOfferNotificationRef.current = offerId;
     setIncomingOrder(data);
     setIncomingOfferCreatedAt(offerCreatedAt || data.created_at || new Date().toISOString());
     setOfferSeconds(25);
-
-    try {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'Новый заказ LadyGo',
-          body: `Подача: ${data.pickup_address || 'Адрес не указан'}`,
-          sound: 'default',
-          priority: Notifications.AndroidNotificationPriority.MAX,
-          data: { orderId: data.id, offerId },
-          ...(Platform.OS === 'android' ? { channelId: 'driver-orders' } : {}),
-        },
-        trigger: null,
-      });
-    } catch (notificationError) {
-      console.warn('LadyGo incoming alert:', notificationError?.message || notificationError);
-    }
   }, [isDriver]);
 
   const skipIncomingOrder = useCallback(async (orderId, expired = false) => {
