@@ -775,6 +775,26 @@ export default function App() {
             bypassDnd: false,
           });
         }
+        // Expo remote push tokens are available in an EAS-built app.
+        // Expo Go may not provide a remote token on recent SDK versions.
+        try {
+          const tokenResult = await Notifications.getExpoPushTokenAsync({
+            projectId: '95ac82ec-010d-4770-9aba-9f52878e1b3b',
+          });
+          if (active && tokenResult?.data) {
+            const { error: tokenError } = await supabase
+              .from('driver_push_tokens')
+              .upsert({
+                driver_id: session.user.id,
+                expo_push_token: tokenResult.data,
+                device_platform: Platform.OS,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'driver_id,expo_push_token' });
+            if (tokenError) console.warn('LadyGo push token:', tokenError.message);
+          }
+        } catch (pushError) {
+          console.warn('LadyGo remote push token unavailable:', pushError?.message || pushError);
+        }
       } catch (error) {
         console.warn('LadyGo notification setup:', error?.message || error);
       }
