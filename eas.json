@@ -1,7 +1,7 @@
 {
   "cli": {
     "version": ">= 15.0.0",
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -19,7 +19,7 @@
     "production": {
       "node": "22.23.3",
       "android": {
-        "buildType": "apk"
+        "buildType": "app-bundle"
       }
     }
   },
