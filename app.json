@@ -34,8 +34,7 @@
         "expo-notifications",
         {
           "icon": "./icon.png",
-          "color": "#E85D91",
-          "defaultChannel": "driver-orders"
+          "color": "#E85D91"
         }
       ]
     ],
