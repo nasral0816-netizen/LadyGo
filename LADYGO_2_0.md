@@ -31,11 +31,11 @@ This is a comparable independently built ride-hailing workflow, not a copy of Ya
 - The 25-second client timer is exact while the driver app is active; the server fallback sweep runs every minute, so a closed-app timeout can take up to roughly a minute longer.
 - Road-following route geometry, traffic-aware ETA, turn-by-turn navigation, automatic fare calculation, in-app payment, driver online/offline controls, ratings, receipts, support chat, and production analytics are not yet implemented.
 - Push delivery has not yet been verified on a real EAS-installed Android device; no driver device token was registered during the database inspection.
-- The code has not yet passed a full Android build, device QA, or store review. Do not describe the current branch as release-ready until those checks pass.
+- The Expo Android JavaScript bundle export now passes in GitHub Actions. This is not a signed APK/AAB build and does not replace physical-device QA or store review.
 
 ## Release checklist
 1. Build an Android development/preview build with EAS and install it on a real device.
-2. Register a driver device, grant notification permission, and verify a push offer while the app is backgrounded and closed.
+2. Register a driver device, grant notification permission, and verify a real push offer while the app is backgrounded and closed. The webhook endpoint's authenticated no-op smoke test returned HTTP 200; real device delivery is still unverified.
 3. Test passenger order creation, sequential driver offers, skip/timeout, concurrent acceptance, each trip status, passenger cancellation, and live location access.
 4. Test with separate passenger, driver, and admin accounts.
 5. Review privacy policy, driver verification process, local transport rules, support contacts, and Google Play declarations before public release.
