@@ -555,6 +555,8 @@ export default function App() {
         setOrders([]);
         setApplications([]);
         setNotifications([]);
+        setIncomingOrder(null);
+        lastOfferNotificationRef.current = null;
         setLoading(false);
         setScreen('home');
       }
@@ -817,17 +819,30 @@ export default function App() {
 
   const skipIncomingOrder = useCallback(async (orderId, expired = false) => {
     if (!orderId || !supabase) return;
+    let shouldClose = false;
     try {
       const { error } = await supabase.rpc('ladygo_skip_order_offer', {
         p_order_id: orderId,
       });
-      if (error && !expired) {
-        Alert.alert('Не удалось пропустить заказ', getErrorMessage(error));
-        return;
+      if (error) {
+        if (expired) {
+          console.warn('LadyGo offer timeout:', error.message);
+          shouldClose = true;
+        } else {
+          Alert.alert('Не удалось пропустить заказ', getErrorMessage(error));
+        }
+      } else {
+        shouldClose = true;
       }
     } catch (error) {
-      if (!expired) Alert.alert('Ошибка', getErrorMessage(error));
-    } finally {
+      if (expired) {
+        console.warn('LadyGo offer timeout:', error?.message || error);
+        shouldClose = true;
+      } else {
+        Alert.alert('Ошибка', getErrorMessage(error));
+      }
+    }
+    if (shouldClose) {
       setIncomingOrder((current) => current?.id === orderId ? null : current);
     }
   }, []);
