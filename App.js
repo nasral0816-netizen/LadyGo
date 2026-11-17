@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   Alert,
+  AppState,
   ActivityIndicator,
   SafeAreaView,
   ScrollView,
@@ -221,7 +222,7 @@ function Status({ value }) {
   );
 }
 
-function OrderMap({ order }) {
+function OrderMap({ order, liveDriverLocation }) {
   const hasPickup =
     order.pickup_lat != null &&
     order.pickup_lng != null;
@@ -266,10 +267,15 @@ function OrderMap({ order }) {
       )}
 
       {destination && (
+        <Marker coordinate={destination} title="Место назначения" pinColor="#5489E8" />
+      )}
+
+      {liveDriverLocation && (
         <Marker
-          coordinate={destination}
-          title="Место назначения"
-          pinColor="#5489E8"
+          coordinate={{ latitude: Number(liveDriverLocation.latitude), longitude: Number(liveDriverLocation.longitude) }}
+          title="Автомобиль LadyGo"
+          description="Текущее положение водителя"
+          pinColor="#E85D88"
         />
       )}
 
@@ -318,6 +324,7 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [fare, setFare] = useState({});
   const [notifications, setNotifications] = useState([]);
+  const [liveDriverLocation, setLiveDriverLocation] = useState(null);
 
   // Заявки водителей
   const [applications, setApplications] = useState([]);
@@ -336,6 +343,14 @@ export default function App() {
   const pendingApplications = applications.filter(
     (item) => item.status === 'pending'
   );
+
+  const activeDriverOrder = isDriver
+    ? orders.find((item) => item.driver_id === session?.user?.id && ['accepted', 'arrived', 'in_progress'].includes(item.status))
+    : null;
+
+  const activePassengerOrder = isPassenger
+    ? orders.find((item) => item.passenger_id === session?.user?.id && item.driver_id && ['accepted', 'arrived', 'in_progress'].includes(item.status))
+    : null;
 
   // ------------------------------------------------------
   // ПРОФИЛЬ
@@ -632,6 +647,90 @@ export default function App() {
       supabase.removeChannel(channel);
     };
   }, [session, profile, isAdmin, loadOrders]);
+
+  // ------------------------------------------------------
+  // БЕЗОПАСНОЕ ОТСЛЕЖИВАНИЕ ВОДИТЕЛЯ ВО ВРЕМЯ АКТИВНОЙ ПОЕЗДКИ
+  // Геопозиция отправляется только пока водитель находится в приложении
+  // и у него есть активный назначенный заказ.
+  // ------------------------------------------------------
+
+  useEffect(() => {
+    if (!isDriver || !activeDriverOrder || !session || !supabase) return;
+
+    let watcher = null;
+    let cancelled = false;
+
+    async function startLocationSharing() {
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (cancelled || permission.status !== 'granted') return;
+
+        watcher = await Location.watchPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 5000,
+          distanceInterval: 10,
+        }, async (position) => {
+          if (cancelled || AppState.currentState !== 'active') return;
+          const point = {
+            driver_id: session.user.id,
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            heading: position.coords.heading,
+            updated_at: new Date().toISOString(),
+          };
+          setLiveDriverLocation(point);
+          const { error } = await supabase.from('driver_locations').upsert(point, { onConflict: 'driver_id' });
+          if (error) console.warn('LadyGo location update:', error.message);
+        });
+      } catch (error) {
+        console.warn('LadyGo location permission:', error?.message || error);
+      }
+    }
+
+    startLocationSharing();
+    return () => {
+      cancelled = true;
+      if (watcher) watcher.remove();
+    };
+  }, [isDriver, activeDriverOrder?.id, session]);
+
+  // Пассажир получает координаты только своего назначенного водителя.
+  useEffect(() => {
+    if (!isPassenger || !activePassengerOrder?.driver_id || !supabase) {
+      setLiveDriverLocation(null);
+      return;
+    }
+
+    const driverId = activePassengerOrder.driver_id;
+    let mounted = true;
+
+    async function loadDriverLocation() {
+      const { data, error } = await supabase
+        .from('driver_locations')
+        .select('*')
+        .eq('driver_id', driverId)
+        .maybeSingle();
+      if (!error && mounted) setLiveDriverLocation(data || null);
+    }
+
+    loadDriverLocation();
+    const channel = supabase
+      .channel('ladygo-driver-location-' + driverId)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'driver_locations',
+        filter: 'driver_id=eq.' + driverId,
+      }, (payload) => {
+        if (!mounted) return;
+        if (payload.eventType === 'DELETE') setLiveDriverLocation(null);
+        else setLiveDriverLocation(payload.new || null);
+      })
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [isPassenger, activePassengerOrder?.driver_id]);
 
   // ------------------------------------------------------
   // УВЕДОМЛЕНИЯ В РЕАЛЬНОМ ВРЕМЕНИ
@@ -2320,7 +2419,7 @@ export default function App() {
                   </Text>
                 )}
 
-                <OrderMap order={order} />
+                <OrderMap order={order} liveDriverLocation={order.id === activePassengerOrder?.id ? liveDriverLocation : null} />
 
                 {order.notes && (
                   <Text style={styles.hint}>
@@ -2336,7 +2435,7 @@ export default function App() {
                   />
                 )}
 
-                {!isDriver && order.status === 'accepted' && (
+                {!isDriver && ['accepted', 'arrived', 'in_progress'].includes(order.status) && (
                   <Button
                     title="📞 Позвонить водителю"
                     secondary
