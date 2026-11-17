@@ -18,9 +18,9 @@ LadyGo 2.0 is an additive upgrade of the existing Expo + Supabase app. The produ
 The migrations in `supabase/migrations` are applied to the connected production project in filename order through `202611170014`. The upgrade is additive and does not replace existing user or order records.
 
 ## Mobile app behavior
-- Passenger can create an order, add pickup/destination addresses, set a requested time and note, and follow the order status.
+- Passenger can create an order, add pickup/destination addresses, set a requested time and note, save frequent addresses, and follow the order status.
 - Driver receives a full-screen offer panel with route details, fare entry, and a 25-second response timer.
-- Driver can accept, skip, mark arrival, start, and complete a trip.
+- Driver can switch online/offline, accept or skip an assigned offer, mark arrival, start, and complete a trip.
 - Passenger sees the driver's live foreground location while the trip is active.
 - The driver app registers Expo push tokens and receives server push when the app is backgrounded or closed, provided the installed EAS build has valid push credentials and the user granted notification permission.
 - Duplicate local and remote alert scheduling was removed; the server push is the sound/banner alert and realtime opens the in-app offer panel.
