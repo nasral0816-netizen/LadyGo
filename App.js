@@ -100,6 +100,8 @@ function statusLabel(status) {
     accepted: 'Стоимость подтверждена',
     declined: 'Заявка отклонена',
     cancelled: 'Заявка отменена',
+    arrived: 'Водитель прибыл',
+    in_progress: 'Поездка началась',
     completed: 'Поездка завершена',
   };
 
@@ -315,6 +317,7 @@ export default function App() {
   // Поездки
   const [orders, setOrders] = useState([]);
   const [fare, setFare] = useState({});
+  const [notifications, setNotifications] = useState([]);
 
   // Заявки водителей
   const [applications, setApplications] = useState([]);
@@ -397,6 +400,40 @@ export default function App() {
       setRefreshing(false);
     }
   }, [session, profile]);
+
+  // ------------------------------------------------------
+  // УВЕДОМЛЕНИЯ
+  // ------------------------------------------------------
+
+  const loadNotifications = useCallback(async () => {
+    if (!session || !supabase) return;
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) {
+      console.warn('LadyGo notifications:', error.message);
+      return;
+    }
+    setNotifications(data || []);
+  }, [session]);
+
+  async function markNotificationRead(notificationId) {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('id', notificationId)
+      .eq('user_id', session.user.id);
+    if (error) {
+      Alert.alert('Уведомления', getErrorMessage(error));
+      return;
+    }
+    setNotifications((items) => items.map((item) =>
+      item.id === notificationId ? { ...item, read_at: new Date().toISOString() } : item
+    ));
+  }
 
   // ------------------------------------------------------
   // ЗАГРУЗКА ЗАЯВОК
@@ -487,6 +524,7 @@ export default function App() {
         setProfile(null);
         setOrders([]);
         setApplications([]);
+        setNotifications([]);
         setLoading(false);
         setScreen('home');
       }
@@ -567,7 +605,8 @@ export default function App() {
 
     loadOrders();
     loadApplications();
-  }, [session, profile, loadOrders, loadApplications]);
+    loadNotifications();
+  }, [session, profile, loadOrders, loadApplications, loadNotifications]);
 
   // ------------------------------------------------------
   // ОБНОВЛЕНИЕ ЗАКАЗОВ В РЕАЛЬНОМ ВРЕМЕНИ
@@ -593,6 +632,22 @@ export default function App() {
       supabase.removeChannel(channel);
     };
   }, [session, profile, isAdmin, loadOrders]);
+
+  // ------------------------------------------------------
+  // УВЕДОМЛЕНИЯ В РЕАЛЬНОМ ВРЕМЕНИ
+  // ------------------------------------------------------
+
+  useEffect(() => {
+    if (!session || !supabase) return;
+    const channel = supabase
+      .channel('ladygo-notifications-' + session.user.id)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'notifications',
+        filter: 'user_id=eq.' + session.user.id,
+      }, () => loadNotifications())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [session, loadNotifications]);
 
   // ------------------------------------------------------
   // ОБНОВЛЕНИЕ ЗАЯВОК В РЕАЛЬНОМ ВРЕМЕНИ
@@ -1093,64 +1148,42 @@ export default function App() {
   // ======================================================
 
   async function updateOrder(id, patch) {
-    if (!isDriver) {
-      Alert.alert(
-        'Доступ запрещён',
-        'Эта функция доступна только водителю.'
-      );
+    if (!isDriver || busy) {
+      Alert.alert('Доступ запрещён', 'Эта функция доступна только одобренному водителю.');
       return;
     }
-
     setBusy(true);
-
     try {
-      let query = supabase
-        .from('orders')
-        .update(patch)
-        .eq('id', id);
-
+      let error = null;
       if (patch.status === 'declined') {
-        query = query
-          .eq('status', 'new')
-          .is('driver_id', null);
+        const result = await supabase.from('orders')
+          .update({ status: 'declined' }).eq('id', id)
+          .eq('status', 'new').is('driver_id', null)
+          .select('id').maybeSingle();
+        error = result.error;
+        if (!error && !result.data) {
+          Alert.alert('Заявка уже недоступна', 'Обнови список заказов.');
+          await loadOrders();
+          return;
+        }
+      } else {
+        const result = await supabase.rpc('ladygo_update_trip_status', {
+          p_order_id: id, p_status: patch.status,
+        });
+        error = result.error;
       }
-
-      if (patch.status === 'completed') {
-        query = query
-          .eq('status', 'accepted')
-          .eq('driver_id', session.user.id);
-      }
-
-      const { data, error } = await query
-        .select('id')
-        .maybeSingle();
-
       if (error) {
-        Alert.alert(
-          'Не удалось обновить заказ',
-          getErrorMessage(error)
-        );
+        Alert.alert('Не удалось обновить поездку', getErrorMessage(error));
         return;
       }
-
-      if (!data) {
-        Alert.alert(
-          'Заявка уже изменена',
-          'Возможно, другой водитель уже принял заказ. Обнови список.'
-        );
-
-        await loadOrders();
-        return;
-      }
-
-      await loadOrders();
-
-      if (patch.status === 'completed') {
-        Alert.alert(
-          'Поездка завершена',
-          'Статус заказа успешно обновлён.'
-        );
-      }
+      await Promise.all([loadOrders(), loadNotifications()]);
+      const messages = {
+        arrived: 'Пассажир получит уведомление, что водитель прибыл.',
+        in_progress: 'Поездка отмечена как начавшаяся.',
+        completed: 'Поездка успешно завершена.',
+        declined: 'Заявка отклонена.',
+      };
+      Alert.alert('Статус обновлён', messages[patch.status] || 'Изменения сохранены.');
     } catch (error) {
       Alert.alert('Ошибка', getErrorMessage(error));
     } finally {
@@ -1184,18 +1217,10 @@ export default function App() {
     setBusy(true);
 
     try {
-      const { data, error } = await supabase
-        .from('orders')
-        .update({
-          driver_id: session.user.id,
-          price_rub: value,
-          status: 'accepted',
-        })
-        .eq('id', order.id)
-        .eq('status', 'new')
-        .is('driver_id', null)
-        .select('id')
-        .maybeSingle();
+      const { data, error } = await supabase.rpc('ladygo_accept_order', {
+        p_order_id: order.id,
+        p_price: value,
+      });
 
       if (error) {
         Alert.alert(
@@ -1206,11 +1231,7 @@ export default function App() {
       }
 
       if (!data) {
-        Alert.alert(
-          'Заказ уже занят',
-          'Другой водитель мог принять эту заявку раньше. Обнови список.'
-        );
-
+        Alert.alert('Заказ уже занят', 'Другой водитель мог принять эту заявку раньше. Обнови список.');
         await loadOrders();
         return;
       }
@@ -1220,11 +1241,11 @@ export default function App() {
         [order.id]: '',
       }));
 
-      await loadOrders();
+      await Promise.all([loadOrders(), loadNotifications()]);
 
       Alert.alert(
         'Заказ принят! 💗',
-        `Стоимость поездки: ${value} ₽`
+        `Стоимость поездки: ${value} ₽. Пассажир увидит подтверждение в приложении.`
       );
     } catch (error) {
       Alert.alert('Ошибка', getErrorMessage(error));
@@ -1439,12 +1460,9 @@ export default function App() {
     if (!session || !profile) return;
 
     if (isAdmin) {
-      await loadApplications();
+      await Promise.all([loadApplications(), loadNotifications()]);
     } else {
-      await Promise.all([
-        loadOrders(),
-        loadApplications(),
-      ]);
+      await Promise.all([loadOrders(), loadApplications(), loadNotifications()]);
     }
   }
 
@@ -1694,18 +1712,21 @@ export default function App() {
     ? [
         ['home', 'Главная'],
         ['applications', 'Заявки'],
+        ['notifications', 'Уведомления'],
         ['profile', 'Профиль'],
       ]
     : isDriver
       ? [
           ['home', 'Главная'],
           ['trips', 'Заявки'],
+          ['notifications', 'Уведомления'],
           ['profile', 'Профиль'],
         ]
       : [
           ['home', 'Главная'],
           ['order', 'Заказать'],
           ['trips', 'Поездки'],
+          ['notifications', 'Уведомления'],
           ['profile', 'Профиль'],
         ];
 
@@ -1759,6 +1780,7 @@ export default function App() {
 
               if (key === 'trips') loadOrders();
               if (key === 'applications') loadApplications();
+              if (key === 'notifications') loadNotifications();
               if (key === 'profile') loadApplications();
             }}
             style={[
@@ -2365,19 +2387,15 @@ export default function App() {
                   </>
                 )}
 
-                {isDriver &&
-                  order.status === 'accepted' &&
-                  order.driver_id === session.user.id && (
-                    <Button
-                      title="Завершить поездку"
-                      onPress={() =>
-                        updateOrder(order.id, {
-                          status: 'completed',
-                        })
-                      }
-                      disabled={busy}
-                    />
-                  )}
+                {isDriver && order.driver_id === session.user.id && order.status === 'accepted' && (
+                  <Button title="Я прибыл на место" onPress={() => updateOrder(order.id, { status: 'arrived' })} disabled={busy} />
+                )}
+                {isDriver && order.driver_id === session.user.id && order.status === 'arrived' && (
+                  <Button title="Начать поездку" onPress={() => updateOrder(order.id, { status: 'in_progress' })} disabled={busy} />
+                )}
+                {isDriver && order.driver_id === session.user.id && order.status === 'in_progress' && (
+                  <Button title="Завершить поездку" onPress={() => updateOrder(order.id, { status: 'completed' })} disabled={busy} />
+                )}
               </View>
             ))}
 
@@ -2394,6 +2412,33 @@ export default function App() {
                     ? 'Новые заявки пассажиров появятся здесь.'
                     : 'Когда ты отправишь заявку, она появится здесь.'}
                 </Text>
+              </View>
+            )}
+          </>
+        )}
+
+        {/* ============================================== */}
+        {/* УВЕДОМЛЕНИЯ */}
+        {/* ============================================== */}
+
+        {screen === 'notifications' && (
+          <>
+            <SectionTitle>Уведомления</SectionTitle>
+            <Text style={styles.body}>Здесь появляются обновления по заказам и поездкам.</Text>
+            <Button title="Обновить уведомления" secondary onPress={loadNotifications} />
+            {notifications.map((item) => (
+              <View key={item.id} style={[styles.applicationCard, !item.read_at && styles.unreadNotification]}>
+                <Text style={styles.cardTitle}>{item.title}</Text>
+                <Text style={styles.orderText}>{item.body}</Text>
+                <Text style={styles.hint}>{formatDate(item.created_at)}</Text>
+                {!item.read_at && <Button title="Отметить прочитанным" secondary onPress={() => markNotificationRead(item.id)} />}
+              </View>
+            ))}
+            {notifications.length === 0 && (
+              <View style={styles.empty}>
+                <Text style={styles.emptyEmoji}>🔔</Text>
+                <Text style={styles.cardTitle}>Пока уведомлений нет</Text>
+                <Text style={styles.body}>Важные изменения поездок появятся здесь.</Text>
               </View>
             )}
           </>
@@ -3030,6 +3075,11 @@ const styles = StyleSheet.create({
     padding: 16,
     marginVertical: 9,
     backgroundColor: WHITE,
+  },
+
+  unreadNotification: {
+    borderColor: PINK,
+    backgroundColor: '#FFF8FA',
   },
 
   applicationHeader: {
