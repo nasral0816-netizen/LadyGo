@@ -20,6 +20,7 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  let claimedOfferId: string | null = null;
   try {
     const { data: authorized, error: authError } = await supabase.rpc(
       "ladygo_verify_push_webhook_secret",
@@ -71,6 +72,7 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
     if (claimError) throw claimError;
     if (!claimed) return json({ sent: 0, duplicate: true });
+    claimedOfferId = offer.id;
 
     const messages = tokens.map((token: { expo_push_token: string }) => ({
       to: token.expo_push_token,
@@ -102,6 +104,11 @@ Deno.serve(async (req: Request) => {
     }
     return json({ sent: messages.length, tickets: result?.data ?? result });
   } catch (error) {
+    if (claimedOfferId) {
+      await supabase.from("order_offers")
+        .update({ push_sent_at: null })
+        .eq("id", claimedOfferId);
+    }
     return json({ error: error instanceof Error ? error.message : String(error) }, 500);
   }
 });
