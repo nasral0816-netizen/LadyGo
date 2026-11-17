@@ -1418,24 +1418,10 @@ export default function App() {
     }
     setBusy(true);
     try {
-      let error = null;
-      if (patch.status === 'declined') {
-        const result = await supabase.from('orders')
-          .update({ status: 'declined' }).eq('id', id)
-          .eq('status', 'new').is('driver_id', null)
-          .select('id').maybeSingle();
-        error = result.error;
-        if (!error && !result.data) {
-          Alert.alert('Заявка уже недоступна', 'Обнови список заказов.');
-          await loadOrders();
-          return;
-        }
-      } else {
-        const result = await supabase.rpc('ladygo_update_trip_status', {
-          p_order_id: id, p_status: patch.status,
-        });
-        error = result.error;
-      }
+      const { error } = await supabase.rpc('ladygo_update_trip_status', {
+        p_order_id: id,
+        p_status: patch.status,
+      });
       if (error) {
         Alert.alert('Не удалось обновить поездку', getErrorMessage(error));
         return;
@@ -1445,7 +1431,6 @@ export default function App() {
         arrived: 'Пассажир получит уведомление, что водитель прибыл.',
         in_progress: 'Поездка отмечена как начавшаяся.',
         completed: 'Поездка успешно завершена.',
-        declined: 'Заявка отклонена.',
       };
       Alert.alert('Статус обновлён', messages[patch.status] || 'Изменения сохранены.');
     } catch (error) {
