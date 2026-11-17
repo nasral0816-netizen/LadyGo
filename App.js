@@ -934,6 +934,26 @@ export default function App() {
     };
   }, [isDriver, session?.user?.id, showIncomingOrder]);
 
+  // Close the offer immediately if another driver accepts it
+  // or the passenger cancels it while this driver is viewing it.
+  useEffect(() => {
+    if (!incomingOrder?.id || !supabase) return;
+    const channel = supabase
+      .channel('ladygo-offer-state-' + incomingOrder.id)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'orders',
+        filter: 'id=eq.' + incomingOrder.id,
+      }, (payload) => {
+        if (payload.new?.status !== 'new' || payload.new?.driver_id) {
+          setIncomingOrder((current) => current?.id === incomingOrder.id ? null : current);
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [incomingOrder?.id]);
+
   // ------------------------------------------------------
   // УВЕДОМЛЕНИЯ В РЕАЛЬНОМ ВРЕМЕНИ
   // ------------------------------------------------------
@@ -1513,6 +1533,8 @@ export default function App() {
           'Не удалось принять заказ',
           getErrorMessage(error)
         );
+        setIncomingOrder((current) => current?.id === order.id ? null : current);
+        await loadOrders();
         return;
       }
 
