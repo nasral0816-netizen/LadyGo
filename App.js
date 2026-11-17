@@ -336,6 +336,8 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [fare, setFare] = useState({});
   const [driverOnline, setDriverOnline] = useState(false);
+  const [savedPlaces, setSavedPlaces] = useState([]);
+  const [savedPlaceLabel, setSavedPlaceLabel] = useState('');
   const [notifications, setNotifications] = useState([]);
   const [liveDriverLocation, setLiveDriverLocation] = useState(null);
   const [incomingOrder, setIncomingOrder] = useState(null);
@@ -469,6 +471,20 @@ export default function App() {
     setDriverOnline(Boolean(data?.is_online));
   }, [session, isDriver]);
 
+  const loadSavedPlaces = useCallback(async () => {
+    if (!session || !supabase) return;
+    const { data, error } = await supabase
+      .from('saved_places')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('LadyGo saved places:', error.message);
+      return;
+    }
+    setSavedPlaces(data || []);
+  }, [session]);
+
   async function markNotificationRead(notificationId) {
     const { error } = await supabase
       .from('notifications')
@@ -575,6 +591,7 @@ export default function App() {
         setApplications([]);
         setNotifications([]);
         setDriverOnline(false);
+        setSavedPlaces([]);
         setIncomingOrder(null);
         lastOfferNotificationRef.current = null;
         setLoading(false);
@@ -658,8 +675,9 @@ export default function App() {
     loadOrders();
     loadApplications();
     loadNotifications();
+    loadSavedPlaces();
     if (isDriver) loadDriverPresence();
-  }, [session, profile, isDriver, loadOrders, loadApplications, loadNotifications, loadDriverPresence]);
+  }, [session, profile, isDriver, loadOrders, loadApplications, loadNotifications, loadDriverPresence, loadSavedPlaces]);
 
   // ------------------------------------------------------
   // ОБНОВЛЕНИЕ ЗАКАЗОВ В РЕАЛЬНОМ ВРЕМЕНИ
@@ -1478,6 +1496,67 @@ export default function App() {
   }
 
   // ======================================================
+  // СОХРАНЁННЫЕ АДРЕСА
+  // ======================================================
+
+  async function saveCurrentPlace(target) {
+    const address = target === 'pickup' ? from.trim() : to.trim();
+    const coords = target === 'pickup' ? pickupCoords : destinationCoords;
+    if (!address) {
+      Alert.alert('Адрес не указан', 'Сначала введи адрес, который хочешь сохранить.');
+      return;
+    }
+    const label = savedPlaceLabel.trim() ||
+      (target === 'pickup' ? 'Место подачи' : 'Место назначения');
+    setBusy(true);
+    try {
+      const { error } = await supabase.from('saved_places').insert({
+        user_id: session.user.id,
+        label,
+        address,
+        latitude: coords?.latitude ?? null,
+        longitude: coords?.longitude ?? null,
+      });
+      if (error) {
+        Alert.alert('Не удалось сохранить адрес', getErrorMessage(error));
+        return;
+      }
+      setSavedPlaceLabel('');
+      await loadSavedPlaces();
+      Alert.alert('Адрес сохранён 💗', '«' + label + '» добавлен в сохранённые места.');
+    } catch (error) {
+      Alert.alert('Ошибка', getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function useSavedPlace(place, target) {
+    const coords = place.latitude != null && place.longitude != null
+      ? { latitude: Number(place.latitude), longitude: Number(place.longitude) }
+      : null;
+    if (target === 'pickup') {
+      setFrom(place.address);
+      setPickupCoords(coords);
+    } else {
+      setTo(place.address);
+      setDestinationCoords(coords);
+    }
+  }
+
+  async function deleteSavedPlace(placeId) {
+    const { error } = await supabase.from('saved_places')
+      .delete()
+      .eq('id', placeId)
+      .eq('user_id', session.user.id);
+    if (error) {
+      Alert.alert('Не удалось удалить адрес', getErrorMessage(error));
+      return;
+    }
+    setSavedPlaces((items) => items.filter((item) => item.id !== placeId));
+  }
+
+  // ======================================================
   // ДЕЙСТВИЯ ВОДИТЕЛЯ
   // ======================================================
 
@@ -1817,7 +1896,7 @@ export default function App() {
     if (isAdmin) {
       await Promise.all([loadApplications(), loadNotifications()]);
     } else {
-      await Promise.all([loadOrders(), loadApplications(), loadNotifications()]);
+      await Promise.all([loadOrders(), loadApplications(), loadNotifications(), loadSavedPlaces()]);
       if (isDriver) await loadDriverPresence();
     }
   }
@@ -2473,6 +2552,52 @@ export default function App() {
               placeholder="Подъезд, ориентир, пожелания"
               multiline
             />
+
+            <View style={styles.applicationCard}>
+              <Text style={styles.cardTitle}>Сохранённые адреса</Text>
+              <Field
+                label="Название адреса"
+                value={savedPlaceLabel}
+                onChangeText={setSavedPlaceLabel}
+                placeholder="Например, Дом или Работа"
+              />
+              <Button
+                title="Сохранить адрес подачи"
+                secondary
+                onPress={() => saveCurrentPlace('pickup')}
+                disabled={busy}
+              />
+              <Button
+                title="Сохранить адрес назначения"
+                secondary
+                onPress={() => saveCurrentPlace('destination')}
+                disabled={busy}
+              />
+              {savedPlaces.map((place) => (
+                <View key={place.id} style={styles.applicationCard}>
+                  <Text style={styles.cardTitle}>{place.label}</Text>
+                  <Text style={styles.orderText}>{place.address}</Text>
+                  <Button
+                    title="Поставить в поле «Откуда»"
+                    secondary
+                    onPress={() => useSavedPlace(place, 'pickup')}
+                  />
+                  <Button
+                    title="Поставить в поле «Куда»"
+                    secondary
+                    onPress={() => useSavedPlace(place, 'destination')}
+                  />
+                  <Button
+                    title="Удалить адрес"
+                    danger
+                    onPress={() => deleteSavedPlace(place.id)}
+                  />
+                </View>
+              ))}
+              {savedPlaces.length === 0 && (
+                <Text style={styles.hint}>Сохрани дом, работу или другой частый адрес — он появится здесь.</Text>
+              )}
+            </View>
 
             <View style={styles.notice}>
               <Text style={styles.noticeText}>
