@@ -34,7 +34,9 @@ This is a comparable independently built ride-hailing workflow, not a copy of Ya
 - The Expo Android JavaScript bundle export now passes in GitHub Actions. This is not a signed APK/AAB build and does not replace physical-device QA or store review.
 
 ## Release checklist
-1. Build an Android development/preview build with EAS and install it on a real device.
+The EAS profiles are configured: `preview` produces an internal Android APK, while `production` produces an Android App Bundle (AAB) using the local app version in `app.json`.
+
+1. Build an Android preview APK with EAS and install it on a real device.
 2. Register a driver device, grant notification permission, and verify a real push offer while the app is backgrounded and closed. The webhook endpoint's authenticated no-op smoke test returned HTTP 200; real device delivery is still unverified.
 3. Test passenger order creation, sequential driver offers, skip/timeout, concurrent acceptance, each trip status, passenger cancellation, and live location access.
 4. Test with separate passenger, driver, and admin accounts.
