@@ -335,6 +335,7 @@ export default function App() {
   // Поездки
   const [orders, setOrders] = useState([]);
   const [fare, setFare] = useState({});
+  const [driverOnline, setDriverOnline] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [liveDriverLocation, setLiveDriverLocation] = useState(null);
   const [incomingOrder, setIncomingOrder] = useState(null);
@@ -451,6 +452,23 @@ export default function App() {
     setNotifications(data || []);
   }, [session]);
 
+  const loadDriverPresence = useCallback(async () => {
+    if (!session || !isDriver || !supabase) {
+      setDriverOnline(false);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('driver_presence')
+      .select('is_online')
+      .eq('driver_id', session.user.id)
+      .maybeSingle();
+    if (error) {
+      console.warn('LadyGo driver presence:', error.message);
+      return;
+    }
+    setDriverOnline(Boolean(data?.is_online));
+  }, [session, isDriver]);
+
   async function markNotificationRead(notificationId) {
     const { error } = await supabase
       .from('notifications')
@@ -556,6 +574,7 @@ export default function App() {
         setOrders([]);
         setApplications([]);
         setNotifications([]);
+        setDriverOnline(false);
         setIncomingOrder(null);
         lastOfferNotificationRef.current = null;
         setLoading(false);
@@ -639,7 +658,8 @@ export default function App() {
     loadOrders();
     loadApplications();
     loadNotifications();
-  }, [session, profile, loadOrders, loadApplications, loadNotifications]);
+    if (isDriver) loadDriverPresence();
+  }, [session, profile, isDriver, loadOrders, loadApplications, loadNotifications, loadDriverPresence]);
 
   // ------------------------------------------------------
   // ОБНОВЛЕНИЕ ЗАКАЗОВ В РЕАЛЬНОМ ВРЕМЕНИ
@@ -1211,6 +1231,15 @@ export default function App() {
             setBusy(true);
 
             try {
+              if (isDriver && session?.user?.id) {
+                await supabase.from('driver_presence')
+                  .upsert({
+                    driver_id: session.user.id,
+                    is_online: false,
+                    updated_at: new Date().toISOString(),
+                  }, { onConflict: 'driver_id' });
+              }
+
               const { error } = await supabase.auth.signOut();
 
               if (error) {
@@ -1451,6 +1480,38 @@ export default function App() {
   // ======================================================
   // ДЕЙСТВИЯ ВОДИТЕЛЯ
   // ======================================================
+
+  async function changeDriverAvailability(nextOnline) {
+    if (!isDriver || !session || !supabase || busy) return;
+
+    setBusy(true);
+    try {
+      const { error } = await supabase
+        .from('driver_presence')
+        .upsert({
+          driver_id: session.user.id,
+          is_online: Boolean(nextOnline),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'driver_id' });
+
+      if (error) {
+        Alert.alert('Не удалось изменить статус', getErrorMessage(error));
+        return;
+      }
+
+      setDriverOnline(Boolean(nextOnline));
+      Alert.alert(
+        nextOnline ? 'Ты на линии 💗' : 'Смена завершена',
+        nextOnline
+          ? 'Теперь новые заказы будут поступать тебе по очереди.'
+          : 'Новые предложения больше не будут поступать. Текущая поездка не прерывается.'
+      );
+    } catch (error) {
+      Alert.alert('Ошибка статуса', getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function updateOrder(id, patch) {
     if (!isDriver || busy) {
@@ -1757,6 +1818,7 @@ export default function App() {
       await Promise.all([loadApplications(), loadNotifications()]);
     } else {
       await Promise.all([loadOrders(), loadApplications(), loadNotifications()]);
+      if (isDriver) await loadDriverPresence();
     }
   }
 
@@ -2232,6 +2294,22 @@ export default function App() {
 
             {isDriver && (
               <>
+                <View style={styles.statCard}>
+                  <Text style={styles.statNumber}>
+                    {driverOnline ? 'ОНЛАЙН' : 'ОФЛАЙН'}
+                  </Text>
+                  <Text style={styles.statLabel}>
+                    {driverOnline ? 'Ты принимаешь новые заказы' : 'Новые заказы пока не поступают'}
+                  </Text>
+                  <Button
+                    title={driverOnline ? 'Завершить смену' : 'Выйти на линию'}
+                    secondary={driverOnline}
+                    onPress={() => changeDriverAvailability(!driverOnline)}
+                    disabled={busy}
+                    loading={busy}
+                  />
+                </View>
+
                 <View style={styles.statCard}>
                   <Text style={styles.statNumber}>
                     {orders.filter((item) => item.status === 'new').length}
