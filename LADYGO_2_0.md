@@ -1,11 +1,12 @@
 # LadyGo 2.0
 
-LadyGo 2.0 is an additive upgrade of the existing Expo + Supabase app. The production database was upgraded through migrations 001–014; existing profiles and orders were preserved.
+LadyGo 2.0 is an additive upgrade of the existing Expo + Supabase app. The production database was upgraded through migrations 001–015; existing profiles and orders were preserved.
 
 ## Backend now connected
 - Order lifecycle: new → accepted → arrived → in progress → completed; passenger cancellation is restricted to their own unassigned new order.
 - Driver applications: admin review, automatic role promotion, and support for a new application after rejection.
-- Driver-only order offers: an order is offered to one approved driver at a time. Skipping or timing out moves the offer to the next eligible approved driver; acceptance closes competing offers.
+- Driver-only order offers: an order is offered to one online approved driver at a time. Skipping, going offline, or timing out moves the offer to the next eligible online driver; acceptance closes competing offers.
+- Explicit driver online/offline presence; offline drivers do not receive new offers.
 - Server-side expiry: a scheduled job checks stale offers every minute. The app's own 25-second timer handles an active driver session; the server sweep is a fallback when the app is closed.
 - Atomic acceptance and server-validated trip-stage transitions.
 - In-app notifications for trip status changes.
@@ -15,7 +16,7 @@ LadyGo 2.0 is an additive upgrade of the existing Expo + Supabase app. The produ
 - Realtime publication includes driver locations, notifications, and order offers.
 
 ## Database migrations
-The migrations in `supabase/migrations` are applied to the connected production project in filename order through `202611170014`. The upgrade is additive and does not replace existing user or order records.
+The migrations in `supabase/migrations` are applied to the connected production project in filename order through `202611170015`. The upgrade is additive and does not replace existing user or order records.
 
 ## Mobile app behavior
 - Passenger can create an order, add pickup/destination addresses, set a requested time and note, save frequent addresses, and follow the order status.
@@ -29,7 +30,7 @@ The migrations in `supabase/migrations` are applied to the connected production 
 This is a comparable independently built ride-hailing workflow, not a copy of Yandex Go's proprietary code or private dispatch algorithms. It is not yet a fully equivalent commercial platform.
 - Drivers now explicitly switch online/offline; offline drivers are skipped and going offline releases their pending offer. The dispatch queue chooses among online approved drivers by most recent online update, not by live distance or traffic.
 - The 25-second client timer is exact while the driver app is active; the server fallback sweep runs every minute, so a closed-app timeout can take up to roughly a minute longer.
-- Road-following route geometry, traffic-aware ETA, turn-by-turn navigation, automatic fare calculation, in-app payment, driver online/offline controls, ratings, receipts, support chat, and production analytics are not yet implemented.
+- Road-following route geometry, traffic-aware ETA, turn-by-turn navigation, automatic fare calculation, in-app payment, ratings, receipts, support chat, and production analytics are not yet implemented.
 - Push delivery has not yet been verified on a real EAS-installed Android device; no driver device token was registered during the database inspection.
 - The Expo Android JavaScript bundle export now passes in GitHub Actions. This is not a signed APK/AAB build and does not replace physical-device QA or store review.
 
