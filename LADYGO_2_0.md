@@ -27,7 +27,7 @@ The migrations in `supabase/migrations` are applied to the connected production 
 
 ## Important limitations before public release
 This is a comparable independently built ride-hailing workflow, not a copy of Yandex Go's proprietary code or private dispatch algorithms. It is not yet a fully equivalent commercial platform.
-- The dispatch queue currently chooses the next approved driver by account creation order, not by live distance, driver availability, or traffic.
+- Drivers now explicitly switch online/offline; offline drivers are skipped and going offline releases their pending offer. The dispatch queue chooses among online approved drivers by most recent online update, not by live distance or traffic.
 - The 25-second client timer is exact while the driver app is active; the server fallback sweep runs every minute, so a closed-app timeout can take up to roughly a minute longer.
 - Road-following route geometry, traffic-aware ETA, turn-by-turn navigation, automatic fare calculation, in-app payment, driver online/offline controls, ratings, receipts, support chat, and production analytics are not yet implemented.
 - Push delivery has not yet been verified on a real EAS-installed Android device; no driver device token was registered during the database inspection.
