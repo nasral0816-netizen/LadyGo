@@ -943,6 +943,20 @@ export default function App() {
           showIncomingOrder(payload.new.id, payload.new.order_id, payload.new.created_at);
         }
       })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'order_offers',
+        filter: 'driver_id=eq.' + session.user.id,
+      }, (payload) => {
+        if (!mounted) return;
+        if (payload.new?.status !== 'pending') {
+          setIncomingOrder((current) =>
+            current?.id === payload.new?.order_id ? null : current
+          );
+          loadOrders();
+        }
+      })
       .subscribe();
 
     const appStateSubscription = AppState.addEventListener('change', (state) => {
