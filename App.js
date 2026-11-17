@@ -2705,13 +2705,9 @@ export default function App() {
                     />
 
                     <Button
-                      title="Отклонить заявку"
+                      title="Пропустить заказ"
                       secondary
-                      onPress={() =>
-                        updateOrder(order.id, {
-                          status: 'declined',
-                        })
-                      }
+                      onPress={() => skipIncomingOrder(order.id)}
                       disabled={busy}
                     />
                   </>
