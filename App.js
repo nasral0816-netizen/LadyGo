@@ -968,7 +968,7 @@ export default function App() {
       appStateSubscription.remove();
       supabase.removeChannel(channel);
     };
-  }, [isDriver, session?.user?.id, showIncomingOrder]);
+  }, [isDriver, session?.user?.id, showIncomingOrder, loadOrders]);
 
   // Close the offer immediately if another driver accepts it
   // or the passenger cancels it while this driver is viewing it.
