@@ -338,6 +338,7 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [liveDriverLocation, setLiveDriverLocation] = useState(null);
   const [incomingOrder, setIncomingOrder] = useState(null);
+  const [incomingOfferCreatedAt, setIncomingOfferCreatedAt] = useState(null);
   const [offerSeconds, setOfferSeconds] = useState(25);
   const lastOfferNotificationRef = useRef(null);
 
@@ -803,7 +804,7 @@ export default function App() {
     return () => { active = false; };
   }, [isDriver, session?.user?.id]);
 
-  const showIncomingOrder = useCallback(async (offerId, orderId) => {
+  const showIncomingOrder = useCallback(async (offerId, orderId, offerCreatedAt) => {
     if (!isDriver || !supabase || !offerId || !orderId) return;
     if (lastOfferNotificationRef.current === offerId) return;
     lastOfferNotificationRef.current = offerId;
@@ -818,6 +819,7 @@ export default function App() {
 
     if (error || !data) return;
     setIncomingOrder(data);
+    setIncomingOfferCreatedAt(offerCreatedAt || data.created_at || new Date().toISOString());
     setOfferSeconds(25);
 
     try {
@@ -871,8 +873,8 @@ export default function App() {
   // только для этого водителя — заказ остаётся доступным остальным.
   useEffect(() => {
     if (!incomingOrder) return;
-    setOfferSeconds(25);
-    const startedAt = Date.now();
+    const parsedCreatedAt = new Date(incomingOfferCreatedAt || incomingOrder.created_at).getTime();
+    const startedAt = Number.isFinite(parsedCreatedAt) ? parsedCreatedAt : Date.now();
     const timer = setInterval(() => {
       const left = Math.max(0, 25 - Math.floor((Date.now() - startedAt) / 1000));
       setOfferSeconds(left);
@@ -882,7 +884,7 @@ export default function App() {
       }
     }, 250);
     return () => clearInterval(timer);
-  }, [incomingOrder?.id, skipIncomingOrder]);
+  }, [incomingOrder?.id, incomingOfferCreatedAt, skipIncomingOrder]);
 
   // ------------------------------------------------------
   // ПОЛУЧЕНИЕ ПРЕДЛОЖЕНИЙ ЗАКАЗОВ ВОДИТЕЛЕМ
@@ -902,7 +904,7 @@ export default function App() {
         .limit(1)
         .maybeSingle();
       if (!mounted || error || !data) return;
-      await showIncomingOrder(data.id, data.order_id);
+      await showIncomingOrder(data.id, data.order_id, data.created_at);
     }
 
     loadPendingOffer();
@@ -916,7 +918,7 @@ export default function App() {
       }, (payload) => {
         if (!mounted) return;
         if (payload.new?.status === 'pending') {
-          showIncomingOrder(payload.new.id, payload.new.order_id);
+          showIncomingOrder(payload.new.id, payload.new.order_id, payload.new.created_at);
         }
       })
       .subscribe();
