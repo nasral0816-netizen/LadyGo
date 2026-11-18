@@ -148,6 +148,7 @@ export default function LadyGoApp() {
   const [destinationCoords, setDestinationCoords] = useState(null);
   const [stopCoords, setStopCoords] = useState([]);
   const [driverLocation, setDriverLocation] = useState(null);
+  const [assignedDriver, setAssignedDriver] = useState(null);
   const [route, setRoute] = useState([]);
   const [routeInfo, setRouteInfo] = useState(null);
   const [locationBusy, setLocationBusy] = useState(false);
@@ -326,6 +327,29 @@ export default function LadyGoApp() {
     })();
     return () => { active = false; if (locationWatch.current) { locationWatch.current.remove(); locationWatch.current = null; } };
   }, [isDriver, user, driverOnline]);
+
+  useEffect(() => {
+    if (mode !== 'passenger' || !activeOrder?.driver_id || !['accepted', 'arrived', 'in_progress'].includes(activeOrder.status)) {
+      setAssignedDriver(null);
+      return;
+    }
+    let alive = true;
+    const driverId = activeOrder.driver_id;
+    Promise.all([
+      supabase.from('profiles').select('phone').eq('id', driverId).maybeSingle(),
+      supabase.from('driver_applications').select('full_name, experience, phone')
+        .eq('user_id', driverId).eq('status', 'approved')
+        .order('reviewed_at', { ascending: false }).limit(1).maybeSingle(),
+    ]).then(([profileResult, applicationResult]) => {
+      if (!alive) return;
+      setAssignedDriver({
+        name: applicationResult.data?.full_name || 'Водитель LadyGo',
+        experience: applicationResult.data?.experience || '',
+        phone: applicationResult.data?.phone || profileResult.data?.phone || null,
+      });
+    }).catch(() => { if (alive) setAssignedDriver(null); });
+    return () => { alive = false; };
+  }, [mode, activeOrder?.driver_id, activeOrder?.status]);
 
   useEffect(() => {
     if (mode !== 'passenger' || !activeOrder?.driver_id) { setDriverLocation(null); return; }
@@ -607,7 +631,7 @@ export default function LadyGoApp() {
     </View>
 
     {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
-      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text>{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}</Card>}
+      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text>{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}{assignedDriver && <View style={{ gap: 6 }}><Text style={s.tariffName}>{assignedDriver.name}</Text>{assignedDriver.experience ? <Text style={s.muted}>{assignedDriver.experience}</Text> : null}{assignedDriver.phone ? <Button title="Позвонить водителю" secondary compact onPress={() => Linking.openURL('tel:' + assignedDriver.phone)} /> : null}</View>}</Card>}
       <View style={s.mapWrap}><MapView ref={mapRef} style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
         {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
         {stopCoords.map((point, index) => <Marker key={'stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} pinColor="#D69A35" />)}
@@ -669,6 +693,7 @@ export default function LadyGoApp() {
       {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).map(o => <Card key={o.id}>
         <Pill>{STATUS[o.status] || o.status}</Pill><TripMap order={o} /><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
         {o.notes ? <Text style={s.muted}>{o.notes}</Text> : null}
+        {o.passenger_phone ? <Button title="Позвонить пассажиру" secondary compact onPress={() => Linking.openURL('tel:' + o.passenger_phone)} /> : null}
         {o.status === 'accepted' && <Button title="Я на месте" onPress={() => updateOrder(o, 'arrived')} />}
         {o.status === 'arrived' && <Button title="Начать поездку" onPress={() => updateOrder(o, 'in_progress')} />}
         {o.status === 'in_progress' && <Button title="Завершить поездку" onPress={() => updateOrder(o, 'completed')} />}
