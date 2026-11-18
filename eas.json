@@ -19,7 +19,7 @@
     "production": {
       "node": "22.23.3",
       "android": {
-        "buildType": "apk"
+        "buildType": "app-bundle"
       }
     }
   },

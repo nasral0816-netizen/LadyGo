@@ -1,9 +1,8 @@
-
 {
   "expo": {
     "name": "LadyGo",
     "slug": "guga",
-    "version": "1.4.8.8",
+    "version": "1.4.9",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "ladygo",
@@ -13,21 +12,38 @@
     "icon": "./icon.png",
     "android": {
       "package": "com.ladygo.app",
-      "versionCode": 4,
+      "versionCode": 5,
       "adaptiveIcon": {
         "foregroundImage": "./icon.png",
         "backgroundColor": "#FFF4F7"
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "plugins": [
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "LadyGo использует геолокацию для определения места подачи автомобиля и организации поездки."
+          "locationWhenInUsePermission": "LadyGo использует геолокацию для определения подачи и сопровождения поездки.",
+          "locationAlwaysAndWhenInUsePermission": "Когда водитель выходит на линию, LadyGo передаёт его местоположение пассажиру и диспетчеру даже при свёрнутом приложении.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "LadyGo использует выбранные фотографии для карточки водителя и автомобиля.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ]
     ],
