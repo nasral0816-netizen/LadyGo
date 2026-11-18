@@ -86,6 +86,7 @@ export default function LadyGoApp() {
     return()=>{alive=false;subscription.unsubscribe();};
   },[]);
   useEffect(()=>{if(session&&profile){loadOrders();loadApplications();}},[session,profile]);
+  useEffect(()=>{if(role==='driver'&&session){supabase.from('driver_presence').select('is_online').eq('driver_id',session.user.id).maybeSingle().then(({data})=>setDriverOnline(Boolean(data?.is_online)));}},[role,session?.user?.id]);
   useEffect(()=>{
     if(!session||!profile)return;
     const ch=supabase.channel('lg-v3-orders-'+session.user.id).on('postgres_changes',{event:'*',schema:'public',table:'orders'},()=>loadOrders()).subscribe();
