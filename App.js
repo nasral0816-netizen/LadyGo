@@ -1290,6 +1290,12 @@ export default function App() {
                     is_online: false,
                     updated_at: new Date().toISOString(),
                   }, { onConflict: 'driver_id' });
+
+                if (!activeDriverOrder) {
+                  await supabase.from('driver_locations')
+                    .delete()
+                    .eq('driver_id', session.user.id);
+                }
               }
 
               const { error } = await supabase.auth.signOut();
