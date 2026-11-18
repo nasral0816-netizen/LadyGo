@@ -120,6 +120,8 @@ export default function LadyGoApp() {
   const [orders, setOrders] = useState([]);
   const [applications, setApplications] = useState([]);
   const [driverOnline, setDriverOnline] = useState(false);
+  const [driverGpsError, setDriverGpsError] = useState('');
+  const [driverGpsUpdatedAt, setDriverGpsUpdatedAt] = useState(null);
   const [fare, setFare] = useState({});
   const [offerTimes, setOfferTimes] = useState({});
   const [applicationName, setApplicationName] = useState('');
@@ -253,7 +255,7 @@ export default function LadyGoApp() {
     (async () => {
       try {
         const permission = await Location.requestForegroundPermissionsAsync();
-        if (permission.status !== 'granted') throw new Error('Для выхода на линию разреши геолокацию.');
+        if (permission.status !== 'granted') throw new Error(permission.canAskAgain ? 'Разреши LadyGo доступ к местоположению.' : 'Открой настройки Android → Приложения → LadyGo → Разрешения → Местоположение.');
         const updateLocation = async location => {
           if (!active) return;
           const { latitude, longitude, heading } = location.coords;
@@ -263,14 +265,20 @@ export default function LadyGoApp() {
             supabase.from('driver_presence').upsert({ driver_id: user.id, is_online: true, updated_at: now }),
           ]);
           const failure = results.find(x => x.error);
-          if (failure) console.warn('Driver location update:', failure.error.message);
+          if (failure) {
+            setDriverGpsError(errorText(failure.error));
+            console.warn('Driver location update:', failure.error.message);
+          } else {
+            setDriverGpsError('');
+            setDriverGpsUpdatedAt(now);
+          }
         };
         const initial = await getPositionWithFallback();
         await updateLocation(initial);
         if (!active) return;
         locationWatch.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 25 }, updateLocation);
       } catch (e) {
-        if (active) { setDriverOnline(false); Alert.alert('Геолокация водителя', errorText(e)); }
+        if (active) { setDriverGpsError(errorText(e)); setDriverOnline(false); Alert.alert('Геолокация водителя', errorText(e)); }
       }
     })();
     return () => { active = false; if (locationWatch.current) { locationWatch.current.remove(); locationWatch.current = null; } };
@@ -571,6 +579,7 @@ export default function LadyGoApp() {
       <Card><Text style={s.muted}>Статус водителя</Text><Text style={s.heading}>{driverOnline ? 'На линии' : 'Не на линии'}</Text>
         <Button title={busy ? 'Сохраняем…' : driverOnline ? 'Завершить смену' : 'Выйти на линию'} onPress={() => setDriverAvailability(!driverOnline)} disabled={busy} secondary={!driverOnline} />
         <Text style={s.disclaimer}>При выходе на линию LadyGo отправляет геопозицию и обновляет статус доступности. Геолокация работает, пока приложение открыто.</Text>
+        {driverGpsError ? <Text style={{ color: C.red, fontSize: 12, marginTop: 8 }}>Геолокация: {driverGpsError}</Text> : driverOnline && <Text style={{ color: C.green, fontSize: 12, marginTop: 8 }}>Геопозиция отправлена{driverGpsUpdatedAt ? ' · ' + new Date(driverGpsUpdatedAt).toLocaleTimeString() : ''}</Text>}
       </Card>
       <Text style={s.section}>Доступные заказы</Text>
       {orders.filter(o => o.status === 'new' && !o.driver_id).map(o => <Card key={o.id}>
