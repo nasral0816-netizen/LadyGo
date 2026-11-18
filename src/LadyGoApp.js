@@ -79,6 +79,7 @@ export default function LadyGoApp() {
   const [orders, setOrders] = useState([]);
   const [applications, setApplications] = useState([]);
   const [driverOnline, setDriverOnline] = useState(false);
+  const [fare, setFare] = useState({});
   const [applicationName, setApplicationName] = useState('');
   const [applicationPhone, setApplicationPhone] = useState('');
   const [applicationCar, setApplicationCar] = useState('');
@@ -105,7 +106,7 @@ export default function LadyGoApp() {
   const loadOrders = useCallback(async () => {
     if (!user || !profile || !supabase) return;
     let query = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(40);
-    if (role === 'driver') query = query.eq('driver_id', user.id);
+    if (role === 'driver') query = query.or('driver_id.eq.' + user.id + ',and(status.eq.new,driver_id.is.null)');
     else if (!isAdmin) query = query.eq('passenger_id', user.id);
     const { data, error } = await query;
     if (error) throw error;
@@ -144,6 +145,7 @@ export default function LadyGoApp() {
   }, [loadProfile]);
 
   useEffect(() => { if (user && profile) refreshAll(); }, [user, profile, refreshAll]);
+  useEffect(() => { if (isDriver) setMode('driver'); else if (isAdmin) setMode('admin'); else setMode('passenger'); }, [isDriver, isAdmin]);
   useEffect(() => {
     if (!user || !supabase) return;
     const channel = supabase.channel('ladygo-orders-' + user.id)
@@ -226,15 +228,22 @@ export default function LadyGoApp() {
 
   const updateOrder = async (order, status, extra = {}) => {
     setBusy(true);
-    const { error } = await supabase.from('orders').update({ status, ...extra }).eq('id', order.id);
+    let query = supabase.from('orders').update({ status, ...extra }).eq('id', order.id).eq('status', order.status);
+    if (isDriver) query = query.eq('driver_id', user.id);
+    const { data, error } = await query.select('id').maybeSingle();
     setBusy(false);
     if (error) return Alert.alert('Ошибка заказа', errorText(error));
+    if (!data) return Alert.alert('Статус уже изменился', 'Обнови список заказов.');
     await loadOrders();
   };
 
   const cancelOrder = order => Alert.alert('Отменить заказ?', 'Водитель больше не будет выполнять эту поездку.', [
     { text: 'Не отменять', style: 'cancel' },
-    { text: 'Отменить', style: 'destructive', onPress: () => updateOrder(order, 'cancelled') },
+    { text: 'Отменить', style: 'destructive', onPress: async () => {
+      const { error } = await supabase.rpc('cancel_my_order', { order_id: order.id });
+      if (error) Alert.alert('Не удалось отменить', errorText(error));
+      else await loadOrders();
+    } },
   ]);
 
   const submitApplication = async () => {
@@ -242,7 +251,8 @@ export default function LadyGoApp() {
     setBusy(true);
     const { error } = await supabase.from('driver_applications').insert({
       user_id: user.id, full_name: applicationName.trim(), phone: applicationPhone.trim(),
-      car: applicationCar.trim(), experience: applicationNote.trim(), status: 'pending',
+      experience: [applicationCar.trim() ? 'Автомобиль: ' + applicationCar.trim() : '', applicationNote.trim()].filter(Boolean).join(' | '),
+      license_info: 'Готов предоставить документы для проверки', status: 'pending',
     });
     setBusy(false);
     if (error) return Alert.alert('Заявка', errorText(error));
@@ -256,10 +266,6 @@ export default function LadyGoApp() {
       const { error } = await supabase.from('driver_applications')
         .update({ status: approved ? 'approved' : 'rejected' }).eq('id', app.id);
       if (error) throw error;
-      if (approved && app.user_id) {
-        const { error: roleError } = await supabase.from('profiles').update({ role: 'driver' }).eq('id', app.user_id);
-        if (roleError) throw roleError;
-      }
       await loadApplications();
     } catch (e) { Alert.alert('Не удалось обработать заявку', errorText(e)); }
     setBusy(false);
@@ -340,14 +346,29 @@ export default function LadyGoApp() {
         <Button title={driverOnline ? 'Завершить смену' : 'Выйти на линию'} onPress={() => setDriverOnline(v => !v)} secondary={!driverOnline} />
         <Text style={s.disclaimer}>Переключатель пока управляет только интерфейсом. Перед реальной работой подключим серверное присутствие водителя и распределение предложений.</Text>
       </Card>
-      <Text style={s.section}>Мои заказы</Text>
-      {orders.filter(o => ACTIVE.includes(o.status)).map(o => <Card key={o.id}>
+      <Text style={s.section}>Доступные заказы</Text>
+      {orders.filter(o => o.status === 'new' && !o.driver_id).map(o => <Card key={o.id}>
+        <Pill>Новый заказ</Pill><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
+        <Input label="Предложить стоимость, ₽" value={String(fare[o.id] || '')} onChangeText={v => setFare(p => ({ ...p, [o.id]: v }))} keyboardType="numeric" placeholder="Например, 450" />
+        <Button title="Принять заказ" disabled={busy} onPress={async () => {
+          const value = Number(String(fare[o.id] || '').replace(',', '.'));
+          if (!Number.isFinite(value) || value <= 0) return Alert.alert('Стоимость', 'Укажи корректную стоимость поездки.');
+          setBusy(true);
+          const { data, error } = await supabase.from('orders').update({ driver_id: user.id, price_rub: value, status: 'accepted' }).eq('id', o.id).eq('status', 'new').is('driver_id', null).select('id').maybeSingle();
+          setBusy(false);
+          if (error) Alert.alert('Не удалось принять заказ', errorText(error));
+          else if (!data) Alert.alert('Заказ уже принят', 'Обнови список.');
+          else { setFare(p => ({ ...p, [o.id]: '' })); await loadOrders(); }
+        }} />
+      </Card>)}
+      <Text style={s.section}>Мои активные поездки</Text>
+      {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).map(o => <Card key={o.id}>
         <Pill>{STATUS[o.status] || o.status}</Pill><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
         {o.status === 'accepted' && <Button title="Я на месте" onPress={() => updateOrder(o, 'arrived')} />}
         {o.status === 'arrived' && <Button title="Начать поездку" onPress={() => updateOrder(o, 'in_progress')} />}
         {o.status === 'in_progress' && <Button title="Завершить поездку" onPress={() => updateOrder(o, 'completed')} />}
       </Card>)}
-      {orders.filter(o => ACTIVE.includes(o.status)).length === 0 && <Card><Text style={s.muted}>Активных назначенных заказов пока нет.</Text></Card>}
+      {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).length === 0 && <Card><Text style={s.muted}>Активных назначенных заказов пока нет.</Text></Card>}
     </ScrollView>}
 
     {mode === 'admin' && <ScrollView contentContainerStyle={s.content}>
