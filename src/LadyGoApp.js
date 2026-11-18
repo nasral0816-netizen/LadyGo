@@ -10,6 +10,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import * as TaskManager from 'expo-task-manager';
 import * as ImagePicker from 'expo-image-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase, isConfigured } from './supabase';
 
 Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }) });
@@ -152,6 +153,7 @@ const shareTripDetails = async order => {
     'LadyGo — детали поездки',
     'Номер заказа: ' + order.id,
     'Дата: ' + new Date(order.created_at).toLocaleString(),
+    order.scheduled_at ? 'Подача запланирована: ' + new Date(order.scheduled_at).toLocaleString('ru-RU') : '',
     'Откуда: ' + order.pickup_address,
     stops ? 'Остановки:\n' + stops : '',
     'Куда: ' + order.destination_address,
@@ -218,6 +220,10 @@ export default function LadyGoApp() {
   const [phone, setPhone] = useState('');
   const [comment, setComment] = useState('');
   const [requestedFor, setRequestedFor] = useState('Как можно скорее');
+  const [scheduleMode, setScheduleMode] = useState('now');
+  const [scheduledAt, setScheduledAt] = useState(() => new Date(Date.now() + 60 * 60 * 1000));
+  const [showScheduleDate, setShowScheduleDate] = useState(false);
+  const [showScheduleTime, setShowScheduleTime] = useState(false);
   const [stopsText, setStopsText] = useState('');
   const [tariff, setTariff] = useState('economy');
   const [paymentMethod, setPaymentMethod] = useState('cash');
@@ -748,6 +754,10 @@ export default function LadyGoApp() {
 
   const createOrder = async () => {
     if (!pickup.trim() || !destination.trim()) return Alert.alert('Маршрут не заполнен', 'Укажи адрес подачи и назначения.');
+    if (scheduleMode === 'scheduled') {
+      if (scheduledAt.getTime() < Date.now() + 5 * 60 * 1000) return Alert.alert('Время подачи', 'Выбери время минимум через 5 минут.');
+      if (scheduledAt.getTime() > Date.now() + 30 * 24 * 60 * 60 * 1000) return Alert.alert('Время подачи', 'Нельзя планировать поездку более чем на 30 дней вперёд.');
+    }
     if (activeOrder) return Alert.alert('У тебя уже есть активный заказ', 'Заверши или отмени текущую поездку перед новым заказом.');
     setBusy(true);
     try {
@@ -769,7 +779,9 @@ export default function LadyGoApp() {
       const selected = TARIFFS.find(t => t.id === tariff);
       const payload = {
         passenger_id: user.id, pickup_address: pickup.trim(), destination_address: destination.trim(),
-        requested_for: requestedFor.trim() || 'Как можно скорее', passenger_phone: phone.trim() || null,
+        requested_for: scheduleMode === 'scheduled' ? 'Запланировано: ' + scheduledAt.toLocaleString('ru-RU') : 'Как можно скорее',
+        scheduled_at: scheduleMode === 'scheduled' ? scheduledAt.toISOString() : null,
+        passenger_phone: phone.trim() || null,
         notes: [comment.trim(), 'Тариф: ' + (selected?.name || 'Эконом'), routeInfo ? `Маршрут: ${routeInfo.km} км, около ${routeInfo.minutes} мин` : ''].filter(Boolean).join(' | '),
         stops: structuredStops,
         tariff_id: tariff,
