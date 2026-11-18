@@ -1149,7 +1149,11 @@ export default function LadyGoApp() {
     </View>
 
     {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
-      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripMap order={activeOrder} />{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}{assignedDriver && <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 12 }}>
+      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripMap order={activeOrder} />{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}
+        <View style={s.row}>
+          <View style={{ flex: 1 }}><Button title="Поделиться поездкой" secondary compact onPress={() => shareTripDetails(activeOrder)} /></View>
+          <View style={{ flex: 1 }}><Button title="Экстренный вызов 112" danger secondary compact onPress={() => Alert.alert('Экстренная помощь', 'Если есть непосредственная угроза жизни или здоровью, позвони по номеру 112.', [{ text: 'Отмена', style: 'cancel' }, { text: 'Позвонить 112', style: 'destructive', onPress: () => Linking.openURL('tel:112').catch(() => Alert.alert('Звонок', 'Не удалось открыть приложение телефона.')) }])} /></View>
+        </View>{assignedDriver && <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 12 }}>
         <View style={s.row}>
           {assignedDriver.avatarUrl ? <Image source={{ uri: assignedDriver.avatarUrl }} style={s.driverAvatar} /> : <View style={s.driverAvatarPlaceholder}><Text style={s.avatarText}>{assignedDriver.name.slice(0,1).toUpperCase()}</Text></View>}
           <View style={{ flex: 1, justifyContent: 'center', gap: 3 }}>
