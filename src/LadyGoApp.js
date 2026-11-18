@@ -1437,6 +1437,7 @@ export default function LadyGoApp() {
       </Card>
       <Button title="Написать на почту поддержки" secondary onPress={() => Linking.openURL('mailto:' + SUPPORT)} />
       <Button title="Позвонить водителю" secondary onPress={() => Linking.openURL('tel:' + PHONE)} />
+      <Text style={{ color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 12, marginBottom: 10 }}>Создано независимым автором @acyma</Text>
       <Button title="Выйти из аккаунта" danger secondary onPress={logout} />
     </ScrollView>}
 
