@@ -71,6 +71,25 @@ function TripMap({ order }) {
   </MapView>;
 }
 
+async function getPositionWithFallback() {
+  const enabled = await Location.hasServicesEnabledAsync();
+  if (!enabled) throw new Error('На телефоне выключена геолокация. Включи «Местоположение» и повтори.');
+  const cached = await Location.getLastKnownPositionAsync({ maxAge: 120000, requiredAccuracy: 1500 }).catch(() => null);
+  let timer;
+  try {
+    const current = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: true }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Телефон не смог определить координаты за 15 секунд. Проверь GPS и попробуй на улице.')), 15000); }),
+    ]);
+    return current;
+  } catch (error) {
+    if (cached) return cached;
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export default function LadyGoApp() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -108,6 +127,7 @@ export default function LadyGoApp() {
   const [applicationCar, setApplicationCar] = useState('');
   const [applicationNote, setApplicationNote] = useState('');
   const locationWatch = useRef(null);
+  const mapRef = useRef(null);
 
   const user = session?.user;
   const role = profile?.role || 'passenger';
@@ -245,7 +265,7 @@ export default function LadyGoApp() {
           const failure = results.find(x => x.error);
           if (failure) console.warn('Driver location update:', failure.error.message);
         };
-        const initial = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const initial = await getPositionWithFallback();
         await updateLocation(initial);
         if (!active) return;
         locationWatch.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 25 }, updateLocation);
@@ -307,18 +327,33 @@ export default function LadyGoApp() {
   };
 
   const getCurrentLocation = async () => {
+    if (locationBusy) return;
     setLocationBusy(true);
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') throw new Error('Разреши доступ к местоположению в настройках телефона.');
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (permission.status !== 'granted') {
+        const message = permission.canAskAgain
+          ? 'Разреши LadyGo доступ к местоположению при использовании приложения.'
+          : 'Доступ запрещён. Открой настройки Android → Приложения → LadyGo → Разрешения → Местоположение.';
+        throw new Error(message);
+      }
+      const loc = await getPositionWithFallback();
       const point = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
       setCoords(point);
-      const addresses = await Location.reverseGeocodeAsync(point);
-      const a = addresses?.[0];
-      setPickup([a?.street, a?.streetNumber, a?.district, a?.city].filter(Boolean).join(', ') || 'Моё местоположение');
-    } catch (e) { Alert.alert('Геолокация', errorText(e)); }
-    setLocationBusy(false);
+      mapRef.current?.animateToRegion({ ...point, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 650);
+      try {
+        const addresses = await Location.reverseGeocodeAsync(point);
+        const a = addresses?.[0];
+        const address = [a?.street, a?.streetNumber, a?.district, a?.city].filter(Boolean).join(', ');
+        setPickup(address || 'Моё местоположение');
+      } catch (_) {
+        setPickup('Моё местоположение');
+      }
+    } catch (e) {
+      Alert.alert('Не удалось определить местоположение', errorText(e));
+    } finally {
+      setLocationBusy(false);
+    }
   };
 
   const buildRoute = async () => {
@@ -489,7 +524,7 @@ export default function LadyGoApp() {
 
     {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
       {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text>{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}</Card>}
-      <View style={s.mapWrap}><MapView style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation>
+      <View style={s.mapWrap}><MapView ref={mapRef} style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
         {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
         {destinationCoords && <Marker coordinate={destinationCoords} title="Назначение" pinColor={C.blue} />}
         {driverLocation && <Marker coordinate={driverLocation} title="Автомобиль LadyGo" pinColor="#26865A" />}
