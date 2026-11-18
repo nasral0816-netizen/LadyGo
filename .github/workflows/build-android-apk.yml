@@ -37,4 +37,4 @@ jobs:
             echo "::error::Add an Expo access token as the GitHub Actions secret EXPO_TOKEN, then run this workflow again."
             exit 1
           fi
-          eas build --platform android --profile preview --non-interactive --wait
+          eas build --platform android --profile apk --non-interactive --wait
