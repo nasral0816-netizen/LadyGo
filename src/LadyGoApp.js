@@ -224,7 +224,7 @@ export default function LadyGoApp() {
     setBusy(true);
     try{
       const a=pickup||await geocode(from.trim()),b=dropoff||await geocode(to.trim());
-      const {data,error}=await supabase.from('orders').insert({passenger_id:session.user.id,passenger_phone:profile?.phone||session.user.user_metadata?.phone||phone||null,pickup_address:from.trim(),destination_address:to.trim(),requested_for:when,notes:[selectedTariff,note.trim()].filter(Boolean).join(' · ')||null,status:'new',driver_id:null,price_rub:null,pickup_lat:a?.latitude??null,pickup_lng:a?.longitude??null,destination_lat:b?.latitude??null,destination_lng:b?.longitude??null,ride_class:selectedTariff,estimated_distance_km:route?.distanceKm??null,estimated_duration_min:route?.durationMin??null}).select().single();
+      const {data,error}=await supabase.from('orders').insert({passenger_id:session.user.id,passenger_phone:profile?.phone||session.user.user_metadata?.phone||phone||null,pickup_address:from.trim(),destination_address:to.trim(),requested_for:when,notes:[selectedTariff,route?route.distanceKm.toFixed(1)+' км':null,route?'около '+Math.max(1,Math.round(route.durationMin))+' мин':null,note.trim()].filter(Boolean).join(' · ')||null,status:'new',driver_id:null,price_rub:null,pickup_lat:a?.latitude??null,pickup_lng:a?.longitude??null,destination_lat:b?.latitude??null,destination_lng:b?.longitude??null}).select().single();
       if(error)throw error;
       setFrom('');setTo('');setPickup(null);setDropoff(null);setRoute(null);setNote('');setTab('trips');setOrders(prev=>[data,...prev]);
       say('Заказ создан 💗','Ищем свободного водителя. Статус поездки будет обновляться здесь.');
