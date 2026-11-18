@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
       const [{ data: currentNotification, error: notificationError }, { data: profile, error: profileError }] =
         await Promise.all([
           supabase.from("notifications")
-            .select("id, user_id, title, body, push_sent_at")
+            .select("id, user_id, order_id, title, body, push_sent_at")
             .eq("id", notification.id)
             .eq("user_id", notification.user_id)
             .maybeSingle(),
@@ -95,7 +95,7 @@ Deno.serve(async (req: Request) => {
         sound: "default",
         priority: "high",
         channelId,
-        data: { notificationId: notification.id, orderId: notification.order_id ?? null },
+        data: { notificationId: notification.id, orderId: currentNotification.order_id ?? null },
       }));
       const delivery = await sendExpoPush(messages);
       if (!delivery.ok) {
