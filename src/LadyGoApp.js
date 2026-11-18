@@ -1320,7 +1320,7 @@ export default function LadyGoApp() {
       </Card>)}
     </ScrollView>}
 
-    {mode === 'driver' && <ScrollView contentContainerStyle={s.content}>
+    {mode === 'driver' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
       <Text style={s.title}>Рабочий экран</Text>
       <Card><Text style={s.muted}>Рейтинг водителя</Text><Text style={s.heading}>{ratings.length ? (ratings.reduce((sum, item) => sum + Number(item.rating), 0) / ratings.length).toFixed(1) + ' ★' : 'Пока нет оценок'}</Text><Text style={s.muted}>{ratings.length} оценок пассажиров</Text></Card>
       <Card><Text style={s.muted}>Статус водителя</Text><Text style={s.heading}>{driverOnline ? 'На линии' : 'Не на линии'}</Text>
@@ -1352,7 +1352,7 @@ export default function LadyGoApp() {
       {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).length === 0 && <Card><Text style={s.muted}>Активных назначенных заказов пока нет.</Text></Card>}
     </ScrollView>}
 
-    {tab === 'notifications' && <ScrollView contentContainerStyle={s.content}>
+    {tab === 'notifications' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
       <Text style={s.title}>Уведомления</Text>
       {notifications.length === 0 && <Card><Text style={s.muted}>Пока новых уведомлений нет.</Text></Card>}
       {notifications.map(item => <TouchableOpacity key={item.id} activeOpacity={0.85} onPress={() => markNotificationRead(item)}>
@@ -1364,7 +1364,7 @@ export default function LadyGoApp() {
       </TouchableOpacity>)}
     </ScrollView>}
 
-    {mode === 'admin' && <ScrollView contentContainerStyle={s.content}>
+    {mode === 'admin' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
       <Text style={s.title}>Панель администратора</Text>
       <View style={s.stats}><Card style={s.stat}><Text style={s.statNum}>{orders.length}</Text><Text style={s.muted}>Заказов</Text></Card><Card style={s.stat}><Text style={s.statNum}>{applications.filter(a => a.status === 'pending').length}</Text><Text style={s.muted}>Заявок</Text></Card></View>
       <Text style={s.section}>Настройки тарифов</Text>
@@ -1400,7 +1400,7 @@ export default function LadyGoApp() {
       {orders.slice(0, 12).map(o => <Card key={o.id}><Pill>{STATUS[o.status] || o.status}</Pill><Text style={s.address}>{o.pickup_address} → {o.destination_address}</Text></Card>)}
     </ScrollView>}
 
-    {tab === 'profile' && <ScrollView contentContainerStyle={s.content}>
+    {tab === 'profile' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
       <Text style={s.title}>Профиль</Text><Card><Text style={s.tariffName}>{profile?.email}</Text><Text style={s.muted}>Роль: {role}</Text></Card>
       {isDriver && <Card>
         <Text style={s.section}>Моя карточка водителя</Text>
