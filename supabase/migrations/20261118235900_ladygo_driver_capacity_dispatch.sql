@@ -100,3 +100,36 @@ begin
   return v_driver_id;
 end;
 $function$;
+
+-- Let a passenger see only the contact details of the driver assigned to
+-- that passenger's own active trip.
+drop policy if exists "passengers read assigned driver contact" on public.profiles;
+create policy "passengers read assigned driver contact"
+on public.profiles
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.orders o
+    where o.driver_id = profiles.id
+      and o.passenger_id = (select auth.uid())
+      and o.status in ('accepted', 'arrived', 'in_progress')
+  )
+);
+
+drop policy if exists "passengers read assigned driver application" on public.driver_applications;
+create policy "passengers read assigned driver application"
+on public.driver_applications
+for select
+to authenticated
+using (
+  status = 'approved'
+  and exists (
+    select 1
+    from public.orders o
+    where o.driver_id = driver_applications.user_id
+      and o.passenger_id = (select auth.uid())
+      and o.status in ('accepted', 'arrived', 'in_progress')
+  )
+);
