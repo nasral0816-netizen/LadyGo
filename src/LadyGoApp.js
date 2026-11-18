@@ -265,6 +265,7 @@ export default function LadyGoApp() {
   const [stopsText, setStopsText] = useState('');
   const [tariff, setTariff] = useState('economy');
   const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [childAccompanied, setChildAccompanied] = useState(false);
   const [savedPlaces, setSavedPlaces] = useState([]);
   const [savedLabel, setSavedLabel] = useState('Дом');
   const [savedAddress, setSavedAddress] = useState('');
@@ -836,6 +837,9 @@ export default function LadyGoApp() {
   const createOrder = async () => {
     if (!pickup.trim() || !destination.trim()) return Alert.alert('Маршрут не заполнен', 'Укажи адрес подачи и назначения.');
     if (activeOrder) return Alert.alert('У тебя уже есть активный заказ', 'Заверши или отмени текущую поездку перед новым заказом.');
+    if (tariff === 'child' && !childAccompanied) {
+      return Alert.alert('Поездка с ребёнком', 'Ребёнок должен ехать только в сопровождении совершеннолетнего родителя или законного представителя. Самостоятельная перевозка детей в LadyGo не поддерживается.');
+    }
     setBusy(true);
     try {
       let start = coords, end = destinationCoords;
@@ -1254,11 +1258,21 @@ export default function LadyGoApp() {
         {routeInfo && <View style={{ gap: 4 }}><Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text><Text style={s.routeInfo}>{estimatedPrice == null ? 'Цена будет согласована с водителем' : 'Ориентировочная стоимость: ' + money(Math.round(estimatedPrice))}</Text></View>}
       </Card>
       <Text style={s.section}>Выберите тариф</Text>
-      {TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[s.tariff, tariff === t.id && s.tariffSelected]}>
+      {TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => { setTariff(t.id); if (t.id !== 'child') setChildAccompanied(false); }} style={[s.tariff, tariff === t.id && s.tariffSelected]}>
         <View style={s.tariffIcon}><Text style={s.tariffEmoji}>{t.id === 'child' ? '♡' : t.id === 'comfort' ? '✦' : '↗'}</Text></View>
         <View style={{ flex: 1 }}><Text style={s.tariffName}>{t.name}</Text><Text style={s.muted}>{t.detail}</Text></View>
         <View style={[s.radio, tariff === t.id && s.radioOn]} />
       </TouchableOpacity>)}
+      {tariff === 'child' && <Card style={{ borderColor: C.pink }}>
+        <Text style={s.section}>Важное условие поездки с ребёнком</Text>
+        <Text style={s.muted}>Ребёнок должен ехать вместе с совершеннолетним родителем или законным представителем. LadyGo не поддерживает самостоятельную перевозку несовершеннолетних. Перед любым реальным запуском взрослый владелец сервиса должен отдельно проверить документы, согласие, требования к детским удерживающим устройствам и страхование.</Text>
+        <TouchableOpacity onPress={() => setChildAccompanied(value => !value)} style={[s.row, { alignItems: 'center', paddingVertical: 6 }]}>
+          <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: childAccompanied ? C.pink : C.muted, backgroundColor: childAccompanied ? C.pink : C.white, alignItems: 'center', justifyContent: 'center' }}>
+            {childAccompanied ? <Text style={{ color: C.white, fontWeight: '900' }}>✓</Text> : null}
+          </View>
+          <Text style={[s.address, { flex: 1 }]}>Подтверждаю, что ребёнок будет с совершеннолетним родителем или законным представителем.</Text>
+        </TouchableOpacity>
+      </Card>}
       <Text style={s.section}>Способ оплаты</Text>
       <View style={s.row}>
         <TouchableOpacity onPress={() => setPaymentMethod('cash')} style={[s.savedChip, paymentMethod === 'cash' && { borderWidth: 1, borderColor: C.pink }]}>
