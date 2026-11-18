@@ -1,9 +1,8 @@
-
 {
   "expo": {
     "name": "LadyGo",
     "slug": "guga",
-    "version": "1.4.8.8",
+    "version": "2.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "ladygo",
@@ -13,14 +12,15 @@
     "icon": "./icon.png",
     "android": {
       "package": "com.ladygo.app",
-      "versionCode": 4,
+      "versionCode": 5,
       "adaptiveIcon": {
         "foregroundImage": "./icon.png",
         "backgroundColor": "#FFF4F7"
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "POST_NOTIFICATIONS"
       ]
     },
     "plugins": [
@@ -28,6 +28,13 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "LadyGo использует геолокацию для определения места подачи автомобиля и организации поездки."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./icon.png",
+          "color": "#E85D91"
         }
       ]
     ],

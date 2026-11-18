@@ -1,7 +1,9 @@
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Alert,
+  AppState,
+  Modal,
   ActivityIndicator,
   SafeAreaView,
   ScrollView,
@@ -17,9 +19,20 @@ import {
 } from 'react-native';
 
 import { StatusBar } from 'expo-status-bar';
+import * as Notifications from 'expo-notifications';
 import { supabase, isConfigured } from './src/supabase';
 import * as Location from 'expo-location';
 import MapView, { Marker, Polyline } from 'react-native-maps';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 // ======================================================
 // НАСТРОЙКИ
@@ -100,6 +113,8 @@ function statusLabel(status) {
     accepted: 'Стоимость подтверждена',
     declined: 'Заявка отклонена',
     cancelled: 'Заявка отменена',
+    arrived: 'Водитель прибыл',
+    in_progress: 'Поездка началась',
     completed: 'Поездка завершена',
   };
 
@@ -219,7 +234,7 @@ function Status({ value }) {
   );
 }
 
-function OrderMap({ order }) {
+function OrderMap({ order, liveDriverLocation }) {
   const hasPickup =
     order.pickup_lat != null &&
     order.pickup_lng != null;
@@ -264,10 +279,15 @@ function OrderMap({ order }) {
       )}
 
       {destination && (
+        <Marker coordinate={destination} title="Место назначения" pinColor="#5489E8" />
+      )}
+
+      {liveDriverLocation && (
         <Marker
-          coordinate={destination}
-          title="Место назначения"
-          pinColor="#5489E8"
+          coordinate={{ latitude: Number(liveDriverLocation.latitude), longitude: Number(liveDriverLocation.longitude) }}
+          title="Автомобиль LadyGo"
+          description="Текущее положение водителя"
+          pinColor="#E85D88"
         />
       )}
 
@@ -315,6 +335,15 @@ export default function App() {
   // Поездки
   const [orders, setOrders] = useState([]);
   const [fare, setFare] = useState({});
+  const [driverOnline, setDriverOnline] = useState(false);
+  const [savedPlaces, setSavedPlaces] = useState([]);
+  const [savedPlaceLabel, setSavedPlaceLabel] = useState('');
+  const [notifications, setNotifications] = useState([]);
+  const [liveDriverLocation, setLiveDriverLocation] = useState(null);
+  const [incomingOrder, setIncomingOrder] = useState(null);
+  const [incomingOfferCreatedAt, setIncomingOfferCreatedAt] = useState(null);
+  const [offerSeconds, setOfferSeconds] = useState(25);
+  const lastOfferNotificationRef = useRef(null);
 
   // Заявки водителей
   const [applications, setApplications] = useState([]);
@@ -333,6 +362,14 @@ export default function App() {
   const pendingApplications = applications.filter(
     (item) => item.status === 'pending'
   );
+
+  const activeDriverOrder = isDriver
+    ? orders.find((item) => item.driver_id === session?.user?.id && ['accepted', 'arrived', 'in_progress'].includes(item.status))
+    : null;
+
+  const activePassengerOrder = isPassenger
+    ? orders.find((item) => item.passenger_id === session?.user?.id && item.driver_id && ['accepted', 'arrived', 'in_progress'].includes(item.status))
+    : null;
 
   // ------------------------------------------------------
   // ПРОФИЛЬ
@@ -397,6 +434,71 @@ export default function App() {
       setRefreshing(false);
     }
   }, [session, profile]);
+
+  // ------------------------------------------------------
+  // УВЕДОМЛЕНИЯ
+  // ------------------------------------------------------
+
+  const loadNotifications = useCallback(async () => {
+    if (!session || !supabase) return;
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) {
+      console.warn('LadyGo notifications:', error.message);
+      return;
+    }
+    setNotifications(data || []);
+  }, [session]);
+
+  const loadDriverPresence = useCallback(async () => {
+    if (!session || !isDriver || !supabase) {
+      setDriverOnline(false);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('driver_presence')
+      .select('is_online')
+      .eq('driver_id', session.user.id)
+      .maybeSingle();
+    if (error) {
+      console.warn('LadyGo driver presence:', error.message);
+      return;
+    }
+    setDriverOnline(Boolean(data?.is_online));
+  }, [session, isDriver]);
+
+  const loadSavedPlaces = useCallback(async () => {
+    if (!session || !supabase) return;
+    const { data, error } = await supabase
+      .from('saved_places')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('LadyGo saved places:', error.message);
+      return;
+    }
+    setSavedPlaces(data || []);
+  }, [session]);
+
+  async function markNotificationRead(notificationId) {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('id', notificationId)
+      .eq('user_id', session.user.id);
+    if (error) {
+      Alert.alert('Уведомления', getErrorMessage(error));
+      return;
+    }
+    setNotifications((items) => items.map((item) =>
+      item.id === notificationId ? { ...item, read_at: new Date().toISOString() } : item
+    ));
+  }
 
   // ------------------------------------------------------
   // ЗАГРУЗКА ЗАЯВОК
@@ -487,6 +589,11 @@ export default function App() {
         setProfile(null);
         setOrders([]);
         setApplications([]);
+        setNotifications([]);
+        setDriverOnline(false);
+        setSavedPlaces([]);
+        setIncomingOrder(null);
+        lastOfferNotificationRef.current = null;
         setLoading(false);
         setScreen('home');
       }
@@ -567,7 +674,10 @@ export default function App() {
 
     loadOrders();
     loadApplications();
-  }, [session, profile, loadOrders, loadApplications]);
+    loadNotifications();
+    loadSavedPlaces();
+    if (isDriver) loadDriverPresence();
+  }, [session, profile, isDriver, loadOrders, loadApplications, loadNotifications, loadDriverPresence, loadSavedPlaces]);
 
   // ------------------------------------------------------
   // ОБНОВЛЕНИЕ ЗАКАЗОВ В РЕАЛЬНОМ ВРЕМЕНИ
@@ -593,6 +703,328 @@ export default function App() {
       supabase.removeChannel(channel);
     };
   }, [session, profile, isAdmin, loadOrders]);
+
+  // ------------------------------------------------------
+  // ГЕОЛОКАЦИЯ ВОДИТЕЛЯ
+  // Пока водитель на линии — координаты нужны для подбора
+  // ближайшего водителя. Во время активной поездки они также
+  // показываются только пассажиру назначенного заказа.
+  // При закрытом/свернутом приложении сервер снимет водителя
+  // с линии после истечения heartbeat.
+  // ------------------------------------------------------
+
+  useEffect(() => {
+    if (!isDriver || !session || !supabase || (!driverOnline && !activeDriverOrder)) return;
+
+    let watcher = null;
+    let cancelled = false;
+
+    async function startLocationSharing() {
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (cancelled || permission.status !== 'granted') return;
+
+        watcher = await Location.watchPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 5000,
+          distanceInterval: 10,
+        }, async (position) => {
+          if (cancelled || AppState.currentState !== 'active') return;
+          const point = {
+            driver_id: session.user.id,
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            heading: position.coords.heading,
+            updated_at: new Date().toISOString(),
+          };
+          setLiveDriverLocation(point);
+          const { error } = await supabase
+            .from('driver_locations')
+            .upsert(point, { onConflict: 'driver_id' });
+          if (error) console.warn('LadyGo location update:', error.message);
+        });
+      } catch (error) {
+        console.warn('LadyGo location permission:', error?.message || error);
+      }
+    }
+
+    startLocationSharing();
+
+    // Heartbeat подтверждает, что водитель всё ещё в приложении и на линии.
+    const heartbeat = driverOnline
+      ? setInterval(async () => {
+          if (cancelled || AppState.currentState !== 'active') return;
+          const { error } = await supabase
+            .from('driver_presence')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('driver_id', session.user.id)
+            .eq('is_online', true);
+          if (error) console.warn('LadyGo presence heartbeat:', error.message);
+        }, 30000)
+      : null;
+
+    return () => {
+      cancelled = true;
+      if (watcher) watcher.remove();
+      if (heartbeat) clearInterval(heartbeat);
+    };
+  }, [isDriver, driverOnline, activeDriverOrder?.id, session]);
+
+  // Пассажир получает координаты только своего назначенного водителя.
+  useEffect(() => {
+    if (!isPassenger || !activePassengerOrder?.driver_id || !supabase) {
+      setLiveDriverLocation(null);
+      return;
+    }
+
+    const driverId = activePassengerOrder.driver_id;
+    let mounted = true;
+
+    async function loadDriverLocation() {
+      const { data, error } = await supabase
+        .from('driver_locations')
+        .select('*')
+        .eq('driver_id', driverId)
+        .maybeSingle();
+      if (!error && mounted) setLiveDriverLocation(data || null);
+    }
+
+    loadDriverLocation();
+    const channel = supabase
+      .channel('ladygo-driver-location-' + driverId)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'driver_locations',
+        filter: 'driver_id=eq.' + driverId,
+      }, (payload) => {
+        if (!mounted) return;
+        if (payload.eventType === 'DELETE') setLiveDriverLocation(null);
+        else setLiveDriverLocation(payload.new || null);
+      })
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [isPassenger, activePassengerOrder?.driver_id]);
+
+  // ------------------------------------------------------
+  // КАНАЛ ГРОМКИХ СИГНАЛОВ ДЛЯ НОВЫХ ЗАКАЗОВ
+  // ------------------------------------------------------
+
+  useEffect(() => {
+    if (!isDriver || !session) return;
+    let active = true;
+    async function prepareDriverAlerts() {
+      try {
+        const current = await Notifications.getPermissionsAsync();
+        let status = current.status;
+        if (status !== 'granted') {
+          const requested = await Notifications.requestPermissionsAsync();
+          status = requested.status;
+        }
+        if (!active || status !== 'granted') return;
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync('driver-orders', {
+            name: 'Новые заказы LadyGo',
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 450, 180, 450, 180, 700],
+            sound: 'default',
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+            bypassDnd: false,
+          });
+        }
+        // Expo remote push tokens are available in an EAS-built app.
+        // Expo Go may not provide a remote token on recent SDK versions.
+        try {
+          const tokenResult = await Notifications.getExpoPushTokenAsync({
+            projectId: '95ac82ec-010d-4770-9aba-9f52878e1b3b',
+          });
+          if (active && tokenResult?.data) {
+            const { error: tokenError } = await supabase
+              .from('driver_push_tokens')
+              .upsert({
+                driver_id: session.user.id,
+                expo_push_token: tokenResult.data,
+                device_platform: Platform.OS,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'driver_id,expo_push_token' });
+            if (tokenError) console.warn('LadyGo push token:', tokenError.message);
+          }
+        } catch (pushError) {
+          console.warn('LadyGo remote push token unavailable:', pushError?.message || pushError);
+        }
+      } catch (error) {
+        console.warn('LadyGo notification setup:', error?.message || error);
+      }
+    }
+    prepareDriverAlerts();
+    return () => { active = false; };
+  }, [isDriver, session?.user?.id]);
+
+  const showIncomingOrder = useCallback(async (offerId, orderId, offerCreatedAt) => {
+    if (!isDriver || !supabase || !offerId || !orderId) return;
+    if (lastOfferNotificationRef.current === offerId) return;
+
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', orderId)
+      .eq('status', 'new')
+      .is('driver_id', null)
+      .maybeSingle();
+
+    if (error || !data) return;
+    lastOfferNotificationRef.current = offerId;
+    setIncomingOrder(data);
+    setIncomingOfferCreatedAt(offerCreatedAt || data.created_at || new Date().toISOString());
+    setOfferSeconds(25);
+  }, [isDriver]);
+
+  const skipIncomingOrder = useCallback(async (orderId, expired = false) => {
+    if (!orderId || !supabase) return;
+    let shouldClose = false;
+    try {
+      const { error } = await supabase.rpc('ladygo_skip_order_offer', {
+        p_order_id: orderId,
+      });
+      if (error) {
+        if (expired) {
+          console.warn('LadyGo offer timeout:', error.message);
+          shouldClose = true;
+        } else {
+          Alert.alert('Не удалось пропустить заказ', getErrorMessage(error));
+        }
+      } else {
+        shouldClose = true;
+      }
+    } catch (error) {
+      if (expired) {
+        console.warn('LadyGo offer timeout:', error?.message || error);
+        shouldClose = true;
+      } else {
+        Alert.alert('Ошибка', getErrorMessage(error));
+      }
+    }
+    if (shouldClose) {
+      setIncomingOrder((current) => current?.id === orderId ? null : current);
+    }
+  }, []);
+
+  // Отсчёт времени предложения. По истечении предложение пропускается
+  // только для этого водителя — заказ остаётся доступным остальным.
+  useEffect(() => {
+    if (!incomingOrder) return;
+    const parsedCreatedAt = new Date(incomingOfferCreatedAt || incomingOrder.created_at).getTime();
+    const startedAt = Number.isFinite(parsedCreatedAt) ? parsedCreatedAt : Date.now();
+    const timer = setInterval(() => {
+      const left = Math.max(0, 25 - Math.floor((Date.now() - startedAt) / 1000));
+      setOfferSeconds(left);
+      if (left <= 0) {
+        clearInterval(timer);
+        skipIncomingOrder(incomingOrder.id, true);
+      }
+    }, 250);
+    return () => clearInterval(timer);
+  }, [incomingOrder?.id, incomingOfferCreatedAt, skipIncomingOrder]);
+
+  // ------------------------------------------------------
+  // ПОЛУЧЕНИЕ ПРЕДЛОЖЕНИЙ ЗАКАЗОВ ВОДИТЕЛЕМ
+  // ------------------------------------------------------
+
+  useEffect(() => {
+    if (!isDriver || !session || !supabase) return;
+    let mounted = true;
+
+    async function loadPendingOffer() {
+      const { data, error } = await supabase
+        .from('order_offers')
+        .select('id, order_id, created_at')
+        .eq('driver_id', session.user.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (!mounted || error || !data) return;
+      await showIncomingOrder(data.id, data.order_id, data.created_at);
+    }
+
+    loadPendingOffer();
+    const channel = supabase
+      .channel('ladygo-driver-offers-' + session.user.id)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'order_offers',
+        filter: 'driver_id=eq.' + session.user.id,
+      }, (payload) => {
+        if (!mounted) return;
+        if (payload.new?.status === 'pending') {
+          showIncomingOrder(payload.new.id, payload.new.order_id, payload.new.created_at);
+        }
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'order_offers',
+        filter: 'driver_id=eq.' + session.user.id,
+      }, (payload) => {
+        if (!mounted) return;
+        if (payload.new?.status !== 'pending') {
+          setIncomingOrder((current) =>
+            current?.id === payload.new?.order_id ? null : current
+          );
+          loadOrders();
+        }
+      })
+      .subscribe();
+
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') loadPendingOffer();
+    });
+
+    return () => {
+      mounted = false;
+      appStateSubscription.remove();
+      supabase.removeChannel(channel);
+    };
+  }, [isDriver, session?.user?.id, showIncomingOrder, loadOrders]);
+
+  // Close the offer immediately if another driver accepts it
+  // or the passenger cancels it while this driver is viewing it.
+  useEffect(() => {
+    if (!incomingOrder?.id || !supabase) return;
+    const channel = supabase
+      .channel('ladygo-offer-state-' + incomingOrder.id)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'orders',
+        filter: 'id=eq.' + incomingOrder.id,
+      }, (payload) => {
+        if (payload.new?.status !== 'new' || payload.new?.driver_id) {
+          setIncomingOrder((current) => current?.id === incomingOrder.id ? null : current);
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [incomingOrder?.id]);
+
+  // ------------------------------------------------------
+  // УВЕДОМЛЕНИЯ В РЕАЛЬНОМ ВРЕМЕНИ
+  // ------------------------------------------------------
+
+  useEffect(() => {
+    if (!session || !supabase) return;
+    const channel = supabase
+      .channel('ladygo-notifications-' + session.user.id)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'notifications',
+        filter: 'user_id=eq.' + session.user.id,
+      }, () => loadNotifications())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [session, loadNotifications]);
 
   // ------------------------------------------------------
   // ОБНОВЛЕНИЕ ЗАЯВОК В РЕАЛЬНОМ ВРЕМЕНИ
@@ -851,6 +1283,21 @@ export default function App() {
             setBusy(true);
 
             try {
+              if (isDriver && session?.user?.id) {
+                await supabase.from('driver_presence')
+                  .upsert({
+                    driver_id: session.user.id,
+                    is_online: false,
+                    updated_at: new Date().toISOString(),
+                  }, { onConflict: 'driver_id' });
+
+                if (!activeDriverOrder) {
+                  await supabase.from('driver_locations')
+                    .delete()
+                    .eq('driver_id', session.user.id);
+                }
+              }
+
               const { error } = await supabase.auth.signOut();
 
               if (error) {
@@ -1089,68 +1536,172 @@ export default function App() {
   }
 
   // ======================================================
+  // СОХРАНЁННЫЕ АДРЕСА
+  // ======================================================
+
+  async function saveCurrentPlace(target) {
+    const address = target === 'pickup' ? from.trim() : to.trim();
+    const coords = target === 'pickup' ? pickupCoords : destinationCoords;
+    if (!address) {
+      Alert.alert('Адрес не указан', 'Сначала введи адрес, который хочешь сохранить.');
+      return;
+    }
+    const label = savedPlaceLabel.trim() ||
+      (target === 'pickup' ? 'Место подачи' : 'Место назначения');
+    setBusy(true);
+    try {
+      const { error } = await supabase.from('saved_places').insert({
+        user_id: session.user.id,
+        label,
+        address,
+        latitude: coords?.latitude ?? null,
+        longitude: coords?.longitude ?? null,
+      });
+      if (error) {
+        Alert.alert('Не удалось сохранить адрес', getErrorMessage(error));
+        return;
+      }
+      setSavedPlaceLabel('');
+      await loadSavedPlaces();
+      Alert.alert('Адрес сохранён 💗', '«' + label + '» добавлен в сохранённые места.');
+    } catch (error) {
+      Alert.alert('Ошибка', getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function useSavedPlace(place, target) {
+    const coords = place.latitude != null && place.longitude != null
+      ? { latitude: Number(place.latitude), longitude: Number(place.longitude) }
+      : null;
+    if (target === 'pickup') {
+      setFrom(place.address);
+      setPickupCoords(coords);
+    } else {
+      setTo(place.address);
+      setDestinationCoords(coords);
+    }
+  }
+
+  async function deleteSavedPlace(placeId) {
+    const { error } = await supabase.from('saved_places')
+      .delete()
+      .eq('id', placeId)
+      .eq('user_id', session.user.id);
+    if (error) {
+      Alert.alert('Не удалось удалить адрес', getErrorMessage(error));
+      return;
+    }
+    setSavedPlaces((items) => items.filter((item) => item.id !== placeId));
+  }
+
+  // ======================================================
   // ДЕЙСТВИЯ ВОДИТЕЛЯ
   // ======================================================
 
-  async function updateOrder(id, patch) {
-    if (!isDriver) {
-      Alert.alert(
-        'Доступ запрещён',
-        'Эта функция доступна только водителю.'
-      );
-      return;
-    }
+  async function changeDriverAvailability(nextOnline) {
+    if (!isDriver || !session || !supabase || busy) return;
 
     setBusy(true);
-
     try {
-      let query = supabase
-        .from('orders')
-        .update(patch)
-        .eq('id', id);
+      let firstPoint = null;
 
-      if (patch.status === 'declined') {
-        query = query
-          .eq('status', 'new')
-          .is('driver_id', null);
+      if (nextOnline) {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (permission.status !== 'granted') {
+          Alert.alert(
+            'Нужна геолокация',
+            'Чтобы получать заказы по расстоянию, разреши LadyGo доступ к геопозиции во время использования приложения.'
+          );
+          return;
+        }
+
+        const servicesEnabled = await Location.hasServicesEnabledAsync();
+        if (!servicesEnabled) {
+          Alert.alert('Геолокация выключена', 'Включи геолокацию телефона и попробуй снова.');
+          return;
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        firstPoint = {
+          driver_id: session.user.id,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          heading: position.coords.heading,
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error: locationError } = await supabase
+          .from('driver_locations')
+          .upsert(firstPoint, { onConflict: 'driver_id' });
+        if (locationError) {
+          Alert.alert('Не удалось определить местоположение', getErrorMessage(locationError));
+          return;
+        }
+        setLiveDriverLocation(firstPoint);
       }
 
-      if (patch.status === 'completed') {
-        query = query
-          .eq('status', 'accepted')
-          .eq('driver_id', session.user.id);
-      }
-
-      const { data, error } = await query
-        .select('id')
-        .maybeSingle();
+      const { error } = await supabase
+        .from('driver_presence')
+        .upsert({
+          driver_id: session.user.id,
+          is_online: Boolean(nextOnline),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'driver_id' });
 
       if (error) {
-        Alert.alert(
-          'Не удалось обновить заказ',
-          getErrorMessage(error)
-        );
+        Alert.alert('Не удалось изменить статус', getErrorMessage(error));
         return;
       }
 
-      if (!data) {
-        Alert.alert(
-          'Заявка уже изменена',
-          'Возможно, другой водитель уже принял заказ. Обнови список.'
-        );
+      if (!nextOnline && !activeDriverOrder) {
+        const { error: cleanupError } = await supabase
+          .from('driver_locations')
+          .delete()
+          .eq('driver_id', session.user.id);
+        if (cleanupError) console.warn('LadyGo location cleanup:', cleanupError.message);
+        setLiveDriverLocation(null);
+      }
 
-        await loadOrders();
+      setDriverOnline(Boolean(nextOnline));
+      Alert.alert(
+        nextOnline ? 'Ты на линии 💗' : 'Смена завершена',
+        nextOnline
+          ? 'Геопозиция используется, пока ты на линии, чтобы предлагать ближайшие заказы. При выходе из приложения статус автоматически отключится.'
+          : 'Новые предложения больше не поступают. Текущая поездка не прерывается.'
+      );
+    } catch (error) {
+      Alert.alert('Ошибка статуса', getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateOrder(id, patch) {
+    if (!isDriver || busy) {
+      Alert.alert('Доступ запрещён', 'Эта функция доступна только одобренному водителю.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc('ladygo_update_trip_status', {
+        p_order_id: id,
+        p_status: patch.status,
+      });
+      if (error) {
+        Alert.alert('Не удалось обновить поездку', getErrorMessage(error));
         return;
       }
-
-      await loadOrders();
-
-      if (patch.status === 'completed') {
-        Alert.alert(
-          'Поездка завершена',
-          'Статус заказа успешно обновлён.'
-        );
-      }
+      await Promise.all([loadOrders(), loadNotifications()]);
+      const messages = {
+        arrived: 'Пассажир получит уведомление, что водитель прибыл.',
+        in_progress: 'Поездка отмечена как начавшаяся.',
+        completed: 'Поездка успешно завершена.',
+      };
+      Alert.alert('Статус обновлён', messages[patch.status] || 'Изменения сохранены.');
     } catch (error) {
       Alert.alert('Ошибка', getErrorMessage(error));
     } finally {
@@ -1184,47 +1735,39 @@ export default function App() {
     setBusy(true);
 
     try {
-      const { data, error } = await supabase
-        .from('orders')
-        .update({
-          driver_id: session.user.id,
-          price_rub: value,
-          status: 'accepted',
-        })
-        .eq('id', order.id)
-        .eq('status', 'new')
-        .is('driver_id', null)
-        .select('id')
-        .maybeSingle();
+      const { data, error } = await supabase.rpc('ladygo_accept_order', {
+        p_order_id: order.id,
+        p_price: value,
+      });
 
       if (error) {
         Alert.alert(
           'Не удалось принять заказ',
           getErrorMessage(error)
         );
-        return;
-      }
-
-      if (!data) {
-        Alert.alert(
-          'Заказ уже занят',
-          'Другой водитель мог принять эту заявку раньше. Обнови список.'
-        );
-
+        setIncomingOrder((current) => current?.id === order.id ? null : current);
         await loadOrders();
         return;
       }
 
+      if (!data) {
+        setIncomingOrder(null);
+        Alert.alert('Заказ уже занят', 'Другой водитель мог принять эту заявку раньше. Обнови список.');
+        await loadOrders();
+        return;
+      }
+
+      setIncomingOrder((current) => current?.id === order.id ? null : current);
       setFare((previous) => ({
         ...previous,
         [order.id]: '',
       }));
 
-      await loadOrders();
+      await Promise.all([loadOrders(), loadNotifications()]);
 
       Alert.alert(
         'Заказ принят! 💗',
-        `Стоимость поездки: ${value} ₽`
+        `Стоимость поездки: ${value} ₽. Пассажир увидит подтверждение в приложении.`
       );
     } catch (error) {
       Alert.alert('Ошибка', getErrorMessage(error));
@@ -1439,12 +1982,10 @@ export default function App() {
     if (!session || !profile) return;
 
     if (isAdmin) {
-      await loadApplications();
+      await Promise.all([loadApplications(), loadNotifications()]);
     } else {
-      await Promise.all([
-        loadOrders(),
-        loadApplications(),
-      ]);
+      await Promise.all([loadOrders(), loadApplications(), loadNotifications(), loadSavedPlaces()]);
+      if (isDriver) await loadDriverPresence();
     }
   }
 
@@ -1694,18 +2235,21 @@ export default function App() {
     ? [
         ['home', 'Главная'],
         ['applications', 'Заявки'],
+        ['notifications', 'Уведомления'],
         ['profile', 'Профиль'],
       ]
     : isDriver
       ? [
           ['home', 'Главная'],
           ['trips', 'Заявки'],
+          ['notifications', 'Уведомления'],
           ['profile', 'Профиль'],
         ]
       : [
           ['home', 'Главная'],
           ['order', 'Заказать'],
           ['trips', 'Поездки'],
+          ['notifications', 'Уведомления'],
           ['profile', 'Профиль'],
         ];
 
@@ -1759,6 +2303,7 @@ export default function App() {
 
               if (key === 'trips') loadOrders();
               if (key === 'applications') loadApplications();
+              if (key === 'notifications') loadNotifications();
               if (key === 'profile') loadApplications();
             }}
             style={[
@@ -1777,6 +2322,70 @@ export default function App() {
           </TouchableOpacity>
         ))}
       </View>
+
+      <Modal
+        visible={!!incomingOrder && isDriver}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => skipIncomingOrder(incomingOrder?.id)}
+      >
+        <View style={styles.offerBackdrop}>
+          <View style={styles.offerPanel}>
+            <View style={styles.offerTopLine}>
+              <Text style={styles.offerEyebrow}>LADYGO • НОВЫЙ ЗАКАЗ</Text>
+              <View style={styles.offerTimer}>
+                <Text style={styles.offerTimerText}>{offerSeconds} сек</Text>
+              </View>
+            </View>
+            <Text style={styles.offerTitle}>Поступил заказ</Text>
+            <Text style={styles.offerSubtitle}>У тебя есть время, чтобы принять или пропустить предложение.</Text>
+            <View style={styles.offerRoute}>
+              <View style={styles.offerRoutePoint}>
+                <View style={styles.offerDotPickup} />
+                <View style={styles.offerRouteText}>
+                  <Text style={styles.offerLabel}>МЕСТО ПОДАЧИ</Text>
+                  <Text style={styles.offerAddress}>{incomingOrder?.pickup_address}</Text>
+                </View>
+              </View>
+              <View style={styles.offerRouteDivider} />
+              <View style={styles.offerRoutePoint}>
+                <View style={styles.offerDotDestination} />
+                <View style={styles.offerRouteText}>
+                  <Text style={styles.offerLabel}>КУДА ЕХАТЬ</Text>
+                  <Text style={styles.offerAddress}>{incomingOrder?.destination_address}</Text>
+                </View>
+              </View>
+            </View>
+            {!!incomingOrder?.requested_for && (
+              <Text style={styles.offerMeta}>Время: {incomingOrder.requested_for}</Text>
+            )}
+            {!!incomingOrder?.notes && (
+              <Text style={styles.offerMeta}>Комментарий: {incomingOrder.notes}</Text>
+            )}
+            <Field
+              label="Предложи стоимость поездки, ₽"
+              value={fare[incomingOrder?.id] || ''}
+              onChangeText={(value) => setFare((previous) => ({ ...previous, [incomingOrder.id]: value }))}
+              keyboardType="decimal-pad"
+              placeholder="Например, 500"
+            />
+            <Button
+              title="Принять заказ"
+              onPress={() => acceptOrder(incomingOrder)}
+              disabled={busy || !incomingOrder}
+              loading={busy}
+            />
+            <Button
+              title="Пропустить"
+              secondary
+              onPress={() => skipIncomingOrder(incomingOrder?.id)}
+              disabled={busy}
+            />
+            <Text style={styles.offerFooter}>Если не ответить за отведённое время, предложение будет пропущено только для тебя.</Text>
+          </View>
+        </View>
+      </Modal>
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -1852,6 +2461,22 @@ export default function App() {
 
             {isDriver && (
               <>
+                <View style={styles.statCard}>
+                  <Text style={styles.statNumber}>
+                    {driverOnline ? 'ОНЛАЙН' : 'ОФЛАЙН'}
+                  </Text>
+                  <Text style={styles.statLabel}>
+                    {driverOnline ? 'Ты принимаешь новые заказы' : 'Новые заказы пока не поступают'}
+                  </Text>
+                  <Button
+                    title={driverOnline ? 'Завершить смену' : 'Выйти на линию'}
+                    secondary={driverOnline}
+                    onPress={() => changeDriverAvailability(!driverOnline)}
+                    disabled={busy}
+                    loading={busy}
+                  />
+                </View>
+
                 <View style={styles.statCard}>
                   <Text style={styles.statNumber}>
                     {orders.filter((item) => item.status === 'new').length}
@@ -2015,6 +2640,52 @@ export default function App() {
               placeholder="Подъезд, ориентир, пожелания"
               multiline
             />
+
+            <View style={styles.applicationCard}>
+              <Text style={styles.cardTitle}>Сохранённые адреса</Text>
+              <Field
+                label="Название адреса"
+                value={savedPlaceLabel}
+                onChangeText={setSavedPlaceLabel}
+                placeholder="Например, Дом или Работа"
+              />
+              <Button
+                title="Сохранить адрес подачи"
+                secondary
+                onPress={() => saveCurrentPlace('pickup')}
+                disabled={busy}
+              />
+              <Button
+                title="Сохранить адрес назначения"
+                secondary
+                onPress={() => saveCurrentPlace('destination')}
+                disabled={busy}
+              />
+              {savedPlaces.map((place) => (
+                <View key={place.id} style={styles.applicationCard}>
+                  <Text style={styles.cardTitle}>{place.label}</Text>
+                  <Text style={styles.orderText}>{place.address}</Text>
+                  <Button
+                    title="Поставить в поле «Откуда»"
+                    secondary
+                    onPress={() => useSavedPlace(place, 'pickup')}
+                  />
+                  <Button
+                    title="Поставить в поле «Куда»"
+                    secondary
+                    onPress={() => useSavedPlace(place, 'destination')}
+                  />
+                  <Button
+                    title="Удалить адрес"
+                    danger
+                    onPress={() => deleteSavedPlace(place.id)}
+                  />
+                </View>
+              ))}
+              {savedPlaces.length === 0 && (
+                <Text style={styles.hint}>Сохрани дом, работу или другой частый адрес — он появится здесь.</Text>
+              )}
+            </View>
 
             <View style={styles.notice}>
               <Text style={styles.noticeText}>
@@ -2200,9 +2871,9 @@ export default function App() {
                   Отправлена: {formatDate(application.created_at)}
                 </Text>
 
-                {!!application.admin_note && (
+                {!!application.review_note && (
                   <Text style={styles.orderText}>
-                    Примечание: {application.admin_note}
+                    Примечание: {application.review_note}
                   </Text>
                 )}
 
@@ -2298,7 +2969,7 @@ export default function App() {
                   </Text>
                 )}
 
-                <OrderMap order={order} />
+                <OrderMap order={order} liveDriverLocation={order.id === activePassengerOrder?.id ? liveDriverLocation : null} />
 
                 {order.notes && (
                   <Text style={styles.hint}>
@@ -2314,7 +2985,7 @@ export default function App() {
                   />
                 )}
 
-                {!isDriver && order.status === 'accepted' && (
+                {!isDriver && ['accepted', 'arrived', 'in_progress'].includes(order.status) && (
                   <Button
                     title="📞 Позвонить водителю"
                     secondary
@@ -2353,31 +3024,23 @@ export default function App() {
                     />
 
                     <Button
-                      title="Отклонить заявку"
+                      title="Пропустить заказ"
                       secondary
-                      onPress={() =>
-                        updateOrder(order.id, {
-                          status: 'declined',
-                        })
-                      }
+                      onPress={() => skipIncomingOrder(order.id)}
                       disabled={busy}
                     />
                   </>
                 )}
 
-                {isDriver &&
-                  order.status === 'accepted' &&
-                  order.driver_id === session.user.id && (
-                    <Button
-                      title="Завершить поездку"
-                      onPress={() =>
-                        updateOrder(order.id, {
-                          status: 'completed',
-                        })
-                      }
-                      disabled={busy}
-                    />
-                  )}
+                {isDriver && order.driver_id === session.user.id && order.status === 'accepted' && (
+                  <Button title="Я прибыл на место" onPress={() => updateOrder(order.id, { status: 'arrived' })} disabled={busy} />
+                )}
+                {isDriver && order.driver_id === session.user.id && order.status === 'arrived' && (
+                  <Button title="Начать поездку" onPress={() => updateOrder(order.id, { status: 'in_progress' })} disabled={busy} />
+                )}
+                {isDriver && order.driver_id === session.user.id && order.status === 'in_progress' && (
+                  <Button title="Завершить поездку" onPress={() => updateOrder(order.id, { status: 'completed' })} disabled={busy} />
+                )}
               </View>
             ))}
 
@@ -2394,6 +3057,33 @@ export default function App() {
                     ? 'Новые заявки пассажиров появятся здесь.'
                     : 'Когда ты отправишь заявку, она появится здесь.'}
                 </Text>
+              </View>
+            )}
+          </>
+        )}
+
+        {/* ============================================== */}
+        {/* УВЕДОМЛЕНИЯ */}
+        {/* ============================================== */}
+
+        {screen === 'notifications' && (
+          <>
+            <SectionTitle>Уведомления</SectionTitle>
+            <Text style={styles.body}>Здесь появляются обновления по заказам и поездкам.</Text>
+            <Button title="Обновить уведомления" secondary onPress={loadNotifications} />
+            {notifications.map((item) => (
+              <View key={item.id} style={[styles.applicationCard, !item.read_at && styles.unreadNotification]}>
+                <Text style={styles.cardTitle}>{item.title}</Text>
+                <Text style={styles.orderText}>{item.body}</Text>
+                <Text style={styles.hint}>{formatDate(item.created_at)}</Text>
+                {!item.read_at && <Button title="Отметить прочитанным" secondary onPress={() => markNotificationRead(item.id)} />}
+              </View>
+            ))}
+            {notifications.length === 0 && (
+              <View style={styles.empty}>
+                <Text style={styles.emptyEmoji}>🔔</Text>
+                <Text style={styles.cardTitle}>Пока уведомлений нет</Text>
+                <Text style={styles.body}>Важные изменения поездок появятся здесь.</Text>
               </View>
             )}
           </>
@@ -2531,6 +3221,139 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: WHITE,
+  },
+
+  offerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(28, 20, 25, 0.72)',
+    justifyContent: 'center',
+    padding: 18,
+  },
+
+  offerPanel: {
+    backgroundColor: WHITE,
+    borderRadius: 26,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#F3D5E0',
+    elevation: 16,
+    shadowColor: '#000000',
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+  },
+
+  offerTopLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  offerEyebrow: {
+    color: PINK,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+
+  offerTimer: {
+    backgroundColor: '#FFF0F4',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+
+  offerTimerText: {
+    color: PINK,
+    fontWeight: '900',
+    fontSize: 13,
+  },
+
+  offerTitle: {
+    color: DARK,
+    fontSize: 27,
+    fontWeight: '900',
+    marginTop: 15,
+  },
+
+  offerSubtitle: {
+    color: MUTED,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 5,
+    marginBottom: 17,
+  },
+
+  offerRoute: {
+    backgroundColor: '#FFF7FA',
+    borderRadius: 17,
+    padding: 15,
+    marginBottom: 12,
+  },
+
+  offerRoutePoint: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+
+  offerDotPickup: {
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: PINK,
+    marginTop: 4,
+    marginRight: 12,
+  },
+
+  offerDotDestination: {
+    width: 11,
+    height: 11,
+    borderRadius: 3,
+    backgroundColor: '#5687E8',
+    marginTop: 4,
+    marginRight: 12,
+  },
+
+  offerRouteText: {
+    flex: 1,
+  },
+
+  offerLabel: {
+    color: MUTED,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+
+  offerAddress: {
+    color: DARK,
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '800',
+  },
+
+  offerRouteDivider: {
+    height: 18,
+    width: 2,
+    backgroundColor: '#E8D9DF',
+    marginLeft: 4,
+    marginVertical: 3,
+  },
+
+  offerMeta: {
+    color: MUTED,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+
+  offerFooter: {
+    color: MUTED,
+    fontSize: 10,
+    lineHeight: 15,
+    textAlign: 'center',
+    marginTop: 9,
   },
 
   center: {
@@ -3030,6 +3853,11 @@ const styles = StyleSheet.create({
     padding: 16,
     marginVertical: 9,
     backgroundColor: WHITE,
+  },
+
+  unreadNotification: {
+    borderColor: PINK,
+    backgroundColor: '#FFF8FA',
   },
 
   applicationHeader: {

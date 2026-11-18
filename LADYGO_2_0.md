@@ -1,0 +1,48 @@
+# LadyGo 2.0
+
+LadyGo 2.0 is an additive upgrade of the existing Expo + Supabase app. The production database was upgraded through migrations 001–016; existing profiles and orders were preserved.
+
+## Backend now connected
+- Order lifecycle: new → accepted → arrived → in progress → completed; passenger cancellation is restricted to their own unassigned new order.
+- Driver applications: admin review, automatic role promotion, and support for a new application after rejection.
+- Driver-only order offers: an order is offered to one online approved driver at a time. Skipping, going offline, or timing out moves the offer to the next eligible online driver; acceptance closes competing offers.
+- Explicit driver online/offline presence; offline drivers do not receive new offers.
+- Server-side expiry: a scheduled job checks stale offers every minute. The app's own 25-second timer handles an active driver session; the server sweep is a fallback when the app is closed.
+- Atomic acceptance and server-validated trip-stage transitions.
+- In-app notifications for trip status changes.
+- Driver foreground location sharing while explicitly online for nearby-order dispatch, and during an assigned active trip; passengers can read only their assigned driver's location.
+- Distance-aware dispatch: orders with pickup coordinates are offered first to the online approved driver with the shortest straight-line distance, using a fresh location sample. Drivers without fresh coordinates are considered after drivers with fresh coordinates.
+- Driver presence heartbeat: the app refreshes online status while active; a scheduled server sweep automatically marks stale sessions offline after two minutes and releases pending offers. Coordinates are removed when a driver ends a shift or signs out while idle.
+- Passenger saved-place storage.
+- Expo push-token storage and a private push-dispatch pipeline: pg_net sends offer events to the Edge Function, the webhook secret is stored in Supabase Vault, and the function validates the event before sending Expo Push.
+- Realtime publication includes driver locations, notifications, and order offers.
+
+## Database migrations
+The migrations in `supabase/migrations` are applied to the connected production project in filename order through `202611180001`. The upgrade is additive and does not replace existing user or order records.
+
+## Mobile app behavior
+- Passenger can create an order, add pickup/destination addresses, set a requested time and note, save frequent addresses, and follow the order status.
+- Driver receives a full-screen offer panel with route details, fare entry, and a 25-second response timer.
+- Driver can switch online/offline, accept or skip an assigned offer, mark arrival, start, and complete a trip.
+- Passenger sees the driver's live foreground location while the trip is active.
+- The driver app registers Expo push tokens and receives server push when the app is backgrounded or closed, provided the installed EAS build has valid push credentials and the user granted notification permission.
+- Duplicate local and remote alert scheduling was removed; the server push is the sound/banner alert and realtime opens the in-app offer panel.
+
+## Important limitations before public release
+This is a comparable independently built ride-hailing workflow, not a copy of Yandex Go's proprietary code or private dispatch algorithms. It is not yet a fully equivalent commercial platform.
+- Drivers now explicitly switch online/offline; offline drivers are skipped and going offline releases their pending offer. Dispatch now ranks online approved drivers by straight-line distance to the pickup point when a fresh location is available. This is not road distance, traffic-aware ETA, or route-time optimization. Online location is collected only while the driver has explicitly switched on and the app is in the foreground; if the app stops sending its heartbeat, the server removes the driver from the online queue.
+- The 25-second client timer is exact while the driver app is active; the server fallback sweep runs every minute, so a closed-app timeout can take up to roughly a minute longer.
+- Road-following route geometry, traffic-aware ETA, turn-by-turn navigation, automatic fare calculation, in-app payment, ratings, receipts, support chat, and production analytics are not yet implemented.
+- Push delivery has not yet been verified on a real EAS-installed Android device; no driver device token was registered during the database inspection.
+- The Expo Android JavaScript bundle export now passes in GitHub Actions. This is not a signed APK/AAB build and does not replace physical-device QA or store review.
+
+## Release checklist
+The EAS profiles are configured: `preview` produces an internal Android APK, while `production` produces an Android App Bundle (AAB) using the local app version in `app.json`.
+
+1. Build an Android preview APK with EAS and install it on a real device.
+2. Register a driver device, grant notification permission, and verify a real push offer while the app is backgrounded and closed. The webhook endpoint's authenticated no-op smoke test returned HTTP 200; real device delivery is still unverified.
+3. Test passenger order creation, sequential driver offers, skip/timeout, concurrent acceptance, each trip status, passenger cancellation, and live location access.
+4. Test with separate passenger, driver, and admin accounts.
+5. Review privacy policy, driver verification process, local transport rules, support contacts, and Google Play declarations before public release.
+
+Never place the Supabase service-role key in the app or repository. Push webhook authentication uses a secret stored in Supabase Vault. Online location sharing is foreground-only and runs only while the driver has explicitly switched on; during an active assigned trip, location is also shared with that passenger. Other drivers cannot read another driver's coordinates.
