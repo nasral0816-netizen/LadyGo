@@ -371,6 +371,24 @@ export default function LadyGoApp() {
   }, [isDriver, user]);
 
   useEffect(() => { registerDriverPush(); }, [registerDriverPush]);
+  useEffect(() => {
+    const openFromPush = response => {
+      const data = response?.notification?.request?.content?.data || {};
+      if (!data.orderId) return;
+      if (isDriver) {
+        setMode('driver');
+        setTab('ride');
+      } else if (!isAdmin) {
+        setMode('passenger');
+        setTab('trips');
+      }
+      loadOrders().catch(() => {});
+    };
+    const listener = Notifications.addNotificationResponseReceivedListener(openFromPush);
+    Notifications.getLastNotificationResponseAsync().then(openFromPush).catch(() => {});
+    return () => listener.remove();
+  }, [isDriver, isAdmin, loadOrders]);
+
 
   useEffect(() => {
     if (!isDriver || !user) return;
@@ -812,6 +830,17 @@ export default function LadyGoApp() {
   };
 
   const logout = async () => {
+    if (user) {
+      try {
+        const token = (await Notifications.getExpoPushTokenAsync({
+          projectId: '95ac82ec-010d-4770-9aba-9f52878e1b3b',
+        })).data;
+        await Promise.all([
+          supabase.from('user_push_tokens').delete().eq('user_id', user.id).eq('expo_push_token', token),
+          supabase.from('driver_push_tokens').delete().eq('driver_id', user.id).eq('expo_push_token', token),
+        ]);
+      } catch (_) {}
+    }
     if (isDriver && user) {
       await supabase.from('driver_presence').upsert({
         driver_id: user.id, is_online: false, updated_at: new Date().toISOString(),
