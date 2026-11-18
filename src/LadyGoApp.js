@@ -568,9 +568,10 @@ export default function LadyGoApp() {
         if (error) throw error;
         const contact = Array.isArray(data) ? data[0] : data;
         setAssignedDriver(contact ? {
-          name: contact.full_name || 'Водитель LadyGo',
-          experience: contact.experience || '',
-          phone: contact.phone || null,
+          name: contact.full_name || 'Водитель LadyGo', experience: contact.experience || '', phone: contact.phone || null,
+          avatarUrl: contact.avatar_url || null, vehicleMake: contact.vehicle_make || '', vehicleModel: contact.vehicle_model || '',
+          vehicleColor: contact.vehicle_color || '', vehiclePlate: contact.vehicle_plate || '', vehicleYear: contact.vehicle_year || '',
+          vehiclePhotoUrl: contact.vehicle_photo_url || null, averageRating: contact.average_rating, ratingCount: Number(contact.rating_count || 0),
         } : null);
       }).catch(() => { if (alive) setAssignedDriver(null); });
     return () => { alive = false; };
@@ -962,16 +963,63 @@ export default function LadyGoApp() {
 
   const submitApplication = async () => {
     if (!applicationName.trim() || !applicationPhone.trim()) return Alert.alert('Заполни данные', 'Нужны имя и телефон для связи.');
+    if (!applicationVehicleMake.trim() || !applicationVehicleModel.trim() || !applicationVehiclePlate.trim()) {
+      return Alert.alert('Данные автомобиля', 'Укажи марку, модель и государственный номер автомобиля.');
+    }
     setBusy(true);
-    const { error } = await supabase.from('driver_applications').insert({
-      user_id: user.id, full_name: applicationName.trim(), phone: applicationPhone.trim(),
-      experience: [applicationCar.trim() ? 'Автомобиль: ' + applicationCar.trim() : '', applicationNote.trim()].filter(Boolean).join(' | '),
-      license_info: 'Готов предоставить документы для проверки', status: 'pending',
-    });
-    setBusy(false);
-    if (error) return Alert.alert('Заявка', errorText(error));
-    Alert.alert('Заявка отправлена', 'Администратор рассмотрит её.');
-    loadApplications();
+    try {
+      const [avatarUrl, vehiclePhotoUrl] = await Promise.all([
+        applicationAvatarUri ? uploadDriverPhoto(applicationAvatarUri, 'avatar') : Promise.resolve(null),
+        applicationVehiclePhotoUri ? uploadDriverPhoto(applicationVehiclePhotoUri, 'vehicle') : Promise.resolve(null),
+      ]);
+      const year = applicationVehicleYear.trim() ? Number(applicationVehicleYear) : null;
+      if (year != null && (!Number.isInteger(year) || year < 1950 || year > new Date().getFullYear() + 1)) throw new Error('Проверь год выпуска автомобиля.');
+      const { error } = await supabase.from('driver_applications').insert({
+        user_id: user.id, full_name: applicationName.trim(), phone: applicationPhone.trim(),
+        experience: applicationNote.trim() || null,
+        vehicle_make: applicationVehicleMake.trim(), vehicle_model: applicationVehicleModel.trim(),
+        vehicle_color: applicationVehicleColor.trim() || null,
+        vehicle_plate: applicationVehiclePlate.trim().toUpperCase(), vehicle_year: year,
+        avatar_url: avatarUrl, vehicle_photo_url: vehiclePhotoUrl,
+        license_info: 'Документы будут проверены администратором лично.', status: 'pending',
+      });
+      if (error) throw error;
+      Alert.alert('Заявка отправлена', 'Администратор рассмотрит данные и свяжется с тобой.');
+      setApplicationAvatarUri(null); setApplicationVehiclePhotoUri(null);
+      await loadApplications();
+    } catch (error) { Alert.alert('Заявка', errorText(error)); }
+    finally { setBusy(false); }
+  };
+
+  const saveDriverProfile = async () => {
+    if (!user) return;
+    const draft = driverProfileDraft || {};
+    if (!String(draft.display_name || '').trim() || !String(draft.phone || '').trim()) return Alert.alert('Профиль водителя', 'Укажи имя и номер телефона.');
+    setBusy(true);
+    try {
+      const [avatarUrl, vehiclePhotoUrl] = await Promise.all([
+        driverAvatarUri ? uploadDriverPhoto(driverAvatarUri, 'avatar') : Promise.resolve(driverProfile?.avatar_url || null),
+        driverVehiclePhotoUri ? uploadDriverPhoto(driverVehiclePhotoUri, 'vehicle') : Promise.resolve(driverProfile?.vehicle_photo_url || null),
+      ]);
+      const year = String(draft.vehicle_year || '').trim() ? Number(draft.vehicle_year) : null;
+      if (year != null && (!Number.isInteger(year) || year < 1950 || year > new Date().getFullYear() + 1)) throw new Error('Проверь год выпуска автомобиля.');
+      const payload = {
+        driver_id: user.id, display_name: String(draft.display_name).trim(), phone: String(draft.phone).trim(),
+        experience: String(draft.experience || '').trim() || null,
+        vehicle_make: String(draft.vehicle_make || '').trim() || null,
+        vehicle_model: String(draft.vehicle_model || '').trim() || null,
+        vehicle_color: String(draft.vehicle_color || '').trim() || null,
+        vehicle_plate: String(draft.vehicle_plate || '').trim().toUpperCase() || null,
+        vehicle_year: year, avatar_url: avatarUrl, vehicle_photo_url: vehiclePhotoUrl,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from('driver_profiles').upsert(payload, { onConflict: 'driver_id' });
+      if (error) throw error;
+      setDriverAvatarUri(null); setDriverVehiclePhotoUri(null);
+      await loadDriverProfile();
+      Alert.alert('Профиль сохранён', 'Данные и фотографии обновлены.');
+    } catch (error) { Alert.alert('Профиль водителя', errorText(error)); }
+    finally { setBusy(false); }
   };
 
   const reviewApplication = async (app, approved) => {
