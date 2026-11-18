@@ -504,7 +504,7 @@ export default function LadyGoApp() {
       let start = coords, end = destinationCoords;
       if (!start) { const x = (await Location.geocodeAsync(pickup))[0]; if (x) start = { latitude: x.latitude, longitude: x.longitude }; }
       if (!end) { const x = (await Location.geocodeAsync(destination))[0]; if (x) end = { latitude: x.latitude, longitude: x.longitude }; }
-      const stopAddresses = stopsText.split(/\\n+/).map(x => x.trim()).filter(Boolean);
+      const stopAddresses = stopsText.split(/\n+/).map(x => x.trim()).filter(Boolean);
       if (stopAddresses.length > 20) throw new Error('Можно добавить не больше 20 промежуточных точек.');
       const structuredStops = [];
       for (let i = 0; i < stopAddresses.length; i++) {
