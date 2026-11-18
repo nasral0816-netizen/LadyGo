@@ -8,9 +8,46 @@ import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import * as TaskManager from 'expo-task-manager';
 import { supabase, isConfigured } from './supabase';
 
 Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }) });
+
+const DRIVER_LOCATION_TASK = 'ladygo-driver-background-location';
+
+if (!TaskManager.isTaskDefined(DRIVER_LOCATION_TASK)) {
+  TaskManager.defineTask(DRIVER_LOCATION_TASK, async ({ data, error }) => {
+    if (error || !supabase) return;
+    const locations = data?.locations || [];
+    const latest = locations[locations.length - 1];
+    if (!latest?.coords) return;
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      const currentUser = authData?.user;
+      if (authError || !currentUser) return;
+      const [{ data: currentProfile }, { data: presence }] = await Promise.all([
+        supabase.from('profiles').select('role').eq('id', currentUser.id).maybeSingle(),
+        supabase.from('driver_presence').select('is_online').eq('driver_id', currentUser.id).maybeSingle(),
+      ]);
+      if (currentProfile?.role !== 'driver' || presence?.is_online !== true) return;
+      const now = new Date().toISOString();
+      const { latitude, longitude, heading, accuracy, speed } = latest.coords;
+      const { error: locationError } = await supabase.from('driver_locations').upsert({
+        driver_id: currentUser.id, latitude, longitude,
+        heading: Number.isFinite(heading) ? heading : null,
+        accuracy: Number.isFinite(accuracy) ? accuracy : null,
+        speed: Number.isFinite(speed) ? speed : null,
+        updated_at: now,
+      });
+      if (locationError) throw locationError;
+      const { error: presenceError } = await supabase.from('driver_presence')
+        .update({ updated_at: now }).eq('driver_id', currentUser.id).eq('is_online', true);
+      if (presenceError) throw presenceError;
+    } catch (taskError) {
+      console.warn('LadyGo background location:', taskError?.message || taskError);
+    }
+  });
+}
 
 const C = {
   pink: '#E85D91', pinkDark: '#C94378', pale: '#FFF3F7',
@@ -303,34 +340,58 @@ export default function LadyGoApp() {
     let active = true;
     (async () => {
       try {
-        const permission = await Location.requestForegroundPermissionsAsync();
-        if (permission.status !== 'granted') throw new Error(permission.canAskAgain ? 'Разреши LadyGo доступ к местоположению.' : 'Открой настройки Android → Приложения → LadyGo → Разрешения → Местоположение.');
-        const updateLocation = async location => {
-          if (!active) return;
-          const { latitude, longitude, heading } = location.coords;
-          const now = new Date().toISOString();
-          const results = await Promise.all([
-            supabase.from('driver_locations').upsert({ driver_id: user.id, latitude, longitude, heading, updated_at: now }),
-            supabase.from('driver_presence').upsert({ driver_id: user.id, is_online: true, updated_at: now }),
-          ]);
-          const failure = results.find(x => x.error);
-          if (failure) {
-            setDriverGpsError(errorText(failure.error));
-            console.warn('Driver location update:', failure.error.message);
-          } else {
-            setDriverGpsError('');
-            setDriverGpsUpdatedAt(now);
+        const foreground = await Location.getForegroundPermissionsAsync();
+        if (foreground.status !== 'granted') throw new Error('Разреши LadyGo доступ к геолокации.');
+        const background = await Location.getBackgroundPermissionsAsync();
+        if (background.status !== 'granted') {
+          setDriverGpsError('Для работы при свёрнутом приложении разреши постоянный доступ к местоположению в настройках.');
+        } else {
+          const registered = await Location.hasStartedLocationUpdatesAsync(DRIVER_LOCATION_TASK);
+          if (!registered) {
+            await Location.startLocationUpdatesAsync(DRIVER_LOCATION_TASK, {
+              accuracy: Location.Accuracy.Balanced,
+              timeInterval: 12000,
+              distanceInterval: 20,
+              deferredUpdatesInterval: 30000,
+              deferredUpdatesDistance: 40,
+              pausesUpdatesAutomatically: false,
+              showsBackgroundLocationIndicator: true,
+              ...(Platform.OS === 'android' ? {
+                foregroundService: {
+                  notificationTitle: 'LadyGo — водитель на линии',
+                  notificationBody: 'Геолокация обновляется, пока вы принимаете заказы.',
+                  notificationColor: C.pink,
+                  killServiceOnDestroy: false,
+                },
+              } : {}),
+            });
           }
-        };
+        }
         const initial = await getPositionWithFallback();
-        await updateLocation(initial);
         if (!active) return;
-        locationWatch.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 25 }, updateLocation);
+        const now = new Date().toISOString();
+        const { latitude, longitude, heading } = initial.coords;
+        const { error } = await supabase.from('driver_locations').upsert({
+          driver_id: user.id, latitude, longitude, heading, updated_at: now,
+        });
+        if (error) throw error;
+        setDriverGpsError('');
+        setDriverGpsUpdatedAt(now);
+        locationWatch.current = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 25 },
+          location => {
+            if (active) setDriverGpsUpdatedAt(new Date(location.timestamp || Date.now()).toISOString());
+          },
+          reason => { if (active) setDriverGpsError(errorText(reason)); }
+        );
       } catch (e) {
-        if (active) { setDriverGpsError(errorText(e)); setDriverOnline(false); Alert.alert('Геолокация водителя', errorText(e)); }
+        if (active) { setDriverGpsError(errorText(e)); Alert.alert('Геолокация водителя', errorText(e)); }
       }
     })();
-    return () => { active = false; if (locationWatch.current) { locationWatch.current.remove(); locationWatch.current = null; } };
+    return () => {
+      active = false;
+      if (locationWatch.current) { locationWatch.current.remove(); locationWatch.current = null; }
+    };
   }, [isDriver, user, driverOnline]);
 
   useEffect(() => {
@@ -546,12 +607,63 @@ export default function LadyGoApp() {
 
   const setDriverAvailability = async nextOnline => {
     setBusy(true);
-    const now = new Date().toISOString();
-    const { error } = await supabase.from('driver_presence').upsert({ driver_id: user.id, is_online: nextOnline, updated_at: now });
-    setBusy(false);
-    if (error) return Alert.alert('Статус водителя', errorText(error));
-    setDriverOnline(nextOnline);
-    if (!nextOnline && locationWatch.current) { locationWatch.current.remove(); locationWatch.current = null; }
+    try {
+      if (nextOnline) {
+        if (!(await TaskManager.isAvailableAsync())) throw new Error('Фоновая геолокация недоступна в Expo Go. Нужна установленная Android-сборка LadyGo.');
+        const foreground = await Location.requestForegroundPermissionsAsync();
+        if (foreground.status !== 'granted') throw new Error('Без доступа к геолокации нельзя выйти на линию.');
+        const background = await Location.requestBackgroundPermissionsAsync();
+        if (background.status !== 'granted') throw new Error('Не выдан постоянный доступ к местоположению. В настройках Android выбери «Разрешить всегда», чтобы получать заказы при свёрнутом приложении.');
+        const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(DRIVER_LOCATION_TASK);
+        if (!alreadyStarted) {
+          await Location.startLocationUpdatesAsync(DRIVER_LOCATION_TASK, {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 12000,
+            distanceInterval: 20,
+            deferredUpdatesInterval: 30000,
+            deferredUpdatesDistance: 40,
+            pausesUpdatesAutomatically: false,
+            showsBackgroundLocationIndicator: true,
+            ...(Platform.OS === 'android' ? {
+              foregroundService: {
+                notificationTitle: 'LadyGo — водитель на линии',
+                notificationBody: 'Геолокация обновляется, пока вы принимаете заказы.',
+                notificationColor: C.pink,
+                killServiceOnDestroy: false,
+              },
+            } : {}),
+          });
+        }
+        const initial = await getPositionWithFallback();
+        const now = new Date().toISOString();
+        const { latitude, longitude, heading } = initial.coords;
+        const { error: locationError } = await supabase.from('driver_locations').upsert({
+          driver_id: user.id, latitude, longitude, heading, updated_at: now,
+        });
+        if (locationError) throw locationError;
+        const { error } = await supabase.from('driver_presence').upsert({ driver_id: user.id, is_online: true, updated_at: now });
+        if (error) throw error;
+        setDriverGpsError('');
+        setDriverGpsUpdatedAt(now);
+        setDriverOnline(true);
+      } else {
+        const now = new Date().toISOString();
+        const { error } = await supabase.from('driver_presence').upsert({ driver_id: user.id, is_online: false, updated_at: now });
+        if (error) throw error;
+        setDriverOnline(false);
+        if (locationWatch.current) { locationWatch.current.remove(); locationWatch.current = null; }
+        const registered = await Location.hasStartedLocationUpdatesAsync(DRIVER_LOCATION_TASK).catch(() => false);
+        if (registered) await Location.stopLocationUpdatesAsync(DRIVER_LOCATION_TASK);
+      }
+    } catch (e) {
+      if (nextOnline) {
+        const registered = await Location.hasStartedLocationUpdatesAsync(DRIVER_LOCATION_TASK).catch(() => false);
+        if (registered) await Location.stopLocationUpdatesAsync(DRIVER_LOCATION_TASK).catch(() => {});
+      }
+      Alert.alert('Статус водителя', errorText(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const acceptOfferedOrder = async (order) => {
@@ -696,8 +808,8 @@ export default function LadyGoApp() {
     {mode === 'driver' && <ScrollView contentContainerStyle={s.content}>
       <Text style={s.title}>Рабочий экран</Text>
       <Card><Text style={s.muted}>Статус водителя</Text><Text style={s.heading}>{driverOnline ? 'На линии' : 'Не на линии'}</Text>
-        <Button title={busy ? 'Сохраняем…' : driverOnline ? 'Завершить смену' : 'Выйти на линию'} onPress={() => setDriverAvailability(!driverOnline)} disabled={busy} secondary={!driverOnline} />
-        <Text style={s.disclaimer}>При выходе на линию LadyGo отправляет геопозицию и обновляет статус доступности. Геолокация работает, пока приложение открыто.</Text>
+        <Button title={busy ? 'Сохраняем…' : driverOnline ? 'Завершить смену' : 'Выйти на линию'} onPress={() => driverOnline ? setDriverAvailability(false) : Alert.alert('Фоновая геолокация', 'Во время смены LadyGo будет передавать местоположение, даже когда приложение свёрнуто. На Android появится постоянное системное уведомление. Разрешение нужно только водителю на линии.', [{ text: 'Отмена', style: 'cancel' }, { text: 'Продолжить', onPress: () => setDriverAvailability(true) }])} disabled={busy} secondary={!driverOnline} />
+        <Text style={s.disclaimer}>При выходе на линию LadyGo обновляет геопозицию и статус доступности даже при свёрнутом приложении. На Android отображается системное уведомление о работе геолокации.</Text>
         {driverGpsError ? <Text style={{ color: C.red, fontSize: 12, marginTop: 8 }}>Геолокация: {driverGpsError}</Text> : driverOnline && <Text style={{ color: C.green, fontSize: 12, marginTop: 8 }}>Геопозиция отправлена{driverGpsUpdatedAt ? ' · ' + new Date(driverGpsUpdatedAt).toLocaleTimeString() : ''}</Text>}
       </Card>
       <Text style={s.section}>Доступные заказы</Text>
