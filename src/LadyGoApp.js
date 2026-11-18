@@ -113,6 +113,7 @@ export default function LadyGoApp() {
   const [clock, setClock] = useState(Date.now());
   const [coords, setCoords] = useState(null);
   const [destinationCoords, setDestinationCoords] = useState(null);
+  const [stopCoords, setStopCoords] = useState([]);
   const [driverLocation, setDriverLocation] = useState(null);
   const [route, setRoute] = useState([]);
   const [routeInfo, setRouteInfo] = useState(null);
@@ -389,11 +390,11 @@ export default function LadyGoApp() {
       const json = await response.json();
       const r = json.routes?.[0];
       if (!r || !r.geometry?.coordinates?.length) throw new Error('Не удалось построить автомобильный маршрут по этим адресам.');
-      setCoords(start); setDestinationCoords(end);
+      setCoords(start); setDestinationCoords(end); setStopCoords(points.slice(1, -1));
       setRoute(r.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })));
       setRouteInfo({ km: (r.distance / 1000).toFixed(1), minutes: Math.max(1, Math.round(r.duration / 60)) });
     } catch (e) {
-      setRoute([]); setRouteInfo(null);
+      setRoute([]); setRouteInfo(null); setStopCoords([]);
       Alert.alert('Не удалось построить маршрут', errorText(e));
     } finally {
       setLocationBusy(false);
@@ -550,16 +551,17 @@ export default function LadyGoApp() {
       {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text>{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}</Card>}
       <View style={s.mapWrap}><MapView ref={mapRef} style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
         {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
+        {stopCoords.map((point, index) => <Marker key={'stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} pinColor="#D69A35" />)}
         {destinationCoords && <Marker coordinate={destinationCoords} title="Назначение" pinColor={C.blue} />}
         {driverLocation && <Marker coordinate={driverLocation} title="Автомобиль LadyGo" pinColor="#26865A" />}
         {route.length > 1 && <Polyline coordinates={route} strokeColor={C.pink} strokeWidth={5} />}
       </MapView><TouchableOpacity style={s.locButton} onPress={getCurrentLocation}><Text style={s.locText}>{locationBusy ? 'Определяем…' : '◎ Моё местоположение'}</Text></TouchableOpacity></View>
       <Card>
         <Text style={s.title}>Куда едем?</Text>
-        <Input label="Откуда" value={pickup} onChangeText={v => { setPickup(v); setCoords(null); }} placeholder="Адрес подачи" />
+        <Input label="Откуда" value={pickup} onChangeText={v => { setPickup(v); setCoords(null); setRoute([]); setRouteInfo(null); }} placeholder="Адрес подачи" />
         <Button title="Определить моё местоположение" secondary compact onPress={getCurrentLocation} />
-        <Input label="Куда" value={destination} onChangeText={v => { setDestination(v); setDestinationCoords(null); }} placeholder="Адрес назначения" />
-        <Input label="Промежуточные точки (по одной на строку)" value={stopsText} onChangeText={setStopsText} multiline placeholder="Можно оставить пустым" />
+        <Input label="Куда" value={destination} onChangeText={v => { setDestination(v); setDestinationCoords(null); setRoute([]); setRouteInfo(null); }} placeholder="Адрес назначения" />
+        <Input label="Промежуточные точки (по одной на строку)" value={stopsText} onChangeText={v => { setStopsText(v); setStopCoords([]); setRoute([]); setRouteInfo(null); }} multiline placeholder="Можно оставить пустым" />
         <Input label="Когда подать машину" value={requestedFor} onChangeText={setRequestedFor} placeholder="Как можно скорее или дата и время" />
         {savedPlaces.length > 0 && <View style={{ gap: 6 }}><Text style={s.label}>Сохранённые адреса</Text><View style={s.row}>{savedPlaces.slice(0, 3).map(p => <TouchableOpacity key={p.id} style={s.savedChip} onPress={() => setPickup(p.address)}><Text style={s.savedChipText}>{p.label}</Text></TouchableOpacity>)}</View></View>}
         <Button title="Построить маршрут" secondary compact onPress={buildRoute} />
