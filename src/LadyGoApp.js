@@ -1004,12 +1004,17 @@ export default function LadyGoApp() {
     else { await loadOrders(); }
   };
 
-  const cancelOrder = order => Alert.alert('Отменить заказ?', 'Водитель больше не будет выполнять эту поездку.', [
-    { text: 'Не отменять', style: 'cancel' },
-    { text: 'Отменить', style: 'destructive', onPress: async () => {
-      const { error } = await supabase.rpc('cancel_my_order', { order_id: order.id });
+  const cancelOrder = order => Alert.alert('Отменить поездку?', 'Отмена доступна до начала поездки. После её начала свяжись с поддержкой.', [
+    { text: 'Оставить', style: 'cancel' },
+    { text: 'Подтвердить отмену', style: 'destructive', onPress: async () => {
+      setBusy(true);
+      const { error } = await supabase.rpc('ladygo_cancel_active_order', {
+        p_order_id: order.id,
+        p_reason: isDriver ? 'Отмена водителем' : 'Отмена пассажиром',
+      });
+      setBusy(false);
       if (error) Alert.alert('Не удалось отменить', errorText(error));
-      else await loadOrders();
+      else { await loadOrders(); Alert.alert('Поездка отменена', 'Участники поездки получат уведомление.'); }
     } },
   ]);
 
@@ -1150,6 +1155,7 @@ export default function LadyGoApp() {
 
     {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
       {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripMap order={activeOrder} />{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}
+        {['new','accepted','arrived'].includes(activeOrder.status) && <Button title={busy ? 'Отменяем…' : 'Отменить поездку'} danger secondary compact disabled={busy} onPress={() => cancelOrder(activeOrder)} />}
         <View style={s.row}>
           <View style={{ flex: 1 }}><Button title="Поделиться поездкой" secondary compact onPress={() => shareTripDetails(activeOrder)} /></View>
           <View style={{ flex: 1 }}><Button title="Экстренный вызов 112" danger secondary compact onPress={() => Alert.alert('Экстренная помощь', 'Если есть непосредственная угроза жизни или здоровью, позвони по номеру 112.', [{ text: 'Отмена', style: 'cancel' }, { text: 'Позвонить 112', style: 'destructive', onPress: () => Linking.openURL('tel:112').catch(() => Alert.alert('Звонок', 'Не удалось открыть приложение телефона.')) }])} /></View>
@@ -1264,6 +1270,7 @@ export default function LadyGoApp() {
         {o.status === 'accepted' && <Button title="Я на месте" onPress={() => updateOrder(o, 'arrived')} />}
         {o.status === 'arrived' && <Button title="Начать поездку" onPress={() => updateOrder(o, 'in_progress')} />}
         {o.status === 'in_progress' && <Button title="Завершить поездку" onPress={() => updateOrder(o, 'completed')} />}
+        {['accepted','arrived'].includes(o.status) && <Button title={busy ? 'Отменяем…' : 'Отменить поездку'} danger secondary compact disabled={busy} onPress={() => cancelOrder(o)} />}
       </Card>)}
       {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).length === 0 && <Card><Text style={s.muted}>Активных назначенных заказов пока нет.</Text></Card>}
     </ScrollView>}
