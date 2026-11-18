@@ -235,6 +235,10 @@ export default function LadyGoApp() {
   const [orders, setOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [ratings, setRatings] = useState([]);
+  const [supportTickets, setSupportTickets] = useState([]);
+  const [supportSubject, setSupportSubject] = useState('');
+  const [supportMessage, setSupportMessage] = useState('');
+  const [supportReplyDraft, setSupportReplyDraft] = useState({});
   const [tariffRates, setTariffRates] = useState([]);
   const [rateDraft, setRateDraft] = useState({});
   const [ratingDraft, setRatingDraft] = useState({});
@@ -304,6 +308,15 @@ export default function LadyGoApp() {
     setRatings(data || []);
   }, [user, profile, role, isAdmin]);
 
+  const loadSupportTickets = useCallback(async () => {
+    if (!user || !profile || !supabase) return;
+    let query = supabase.from('support_tickets').select('*').order('created_at', { ascending: false }).limit(80);
+    if (!isAdmin) query = query.eq('user_id', user.id);
+    const { data, error } = await query;
+    if (error) throw error;
+    setSupportTickets(data || []);
+  }, [user, profile, isAdmin]);
+
   const loadTariffRates = useCallback(async () => {
     if (!user || !supabase) return;
     const { data, error } = await supabase.from('tariff_rates').select('*').order('tariff_id');
@@ -328,9 +341,9 @@ export default function LadyGoApp() {
 
   const refreshAll = useCallback(async () => {
     try {
-      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces(), loadNotifications(), loadRatings(), loadTariffRates()]);
+      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces(), loadNotifications(), loadRatings(), loadTariffRates(), loadSupportTickets()]);
     } catch (e) { Alert.alert('Не удалось обновить данные', errorText(e)); }
-  }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications, loadRatings, loadTariffRates]);
+  }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications, loadRatings, loadTariffRates, loadSupportTickets]);
 
   useEffect(() => {
     const handleAuthUrl = async url => {
@@ -720,6 +733,40 @@ export default function LadyGoApp() {
     setBusy(false);
   };
 
+  const submitSupportTicket = async () => {
+    if (supportSubject.trim().length < 3 || supportMessage.trim().length < 5) {
+      return Alert.alert('Обращение в поддержку', 'Укажи тему и опиши вопрос подробнее.');
+    }
+    setBusy(true);
+    const { error } = await supabase.from('support_tickets').insert({
+      user_id: user.id,
+      order_id: activeOrder?.id || null,
+      subject: supportSubject.trim(),
+      message: supportMessage.trim(),
+    });
+    setBusy(false);
+    if (error) return Alert.alert('Не удалось отправить обращение', errorText(error));
+    setSupportSubject('');
+    setSupportMessage('');
+    await loadSupportTickets();
+    Alert.alert('Обращение отправлено', 'Ответ появится в этом разделе.');
+  };
+
+  const replyToSupportTicket = async ticket => {
+    const reply = (supportReplyDraft[ticket.id] || '').trim();
+    if (reply.length < 2) return Alert.alert('Ответ поддержки', 'Напиши ответ перед отправкой.');
+    setBusy(true);
+    const { error } = await supabase.from('support_tickets').update({
+      admin_reply: reply,
+      status: 'resolved',
+      updated_at: new Date().toISOString(),
+    }).eq('id', ticket.id);
+    setBusy(false);
+    if (error) return Alert.alert('Не удалось отправить ответ', errorText(error));
+    setSupportReplyDraft(p => ({ ...p, [ticket.id]: '' }));
+    await loadSupportTickets();
+  };
+
   const saveTariffRates = async () => {
     const now = new Date().toISOString();
     const rows = TARIFFS.map(item => {
@@ -1086,6 +1133,17 @@ export default function LadyGoApp() {
       {applications.map(a => <Card key={a.id}><Text style={s.tariffName}>{a.full_name || 'Водитель'}</Text><Text style={s.muted}>{a.phone}</Text><Text style={s.muted}>{a.experience}</Text><Pill color={a.status === 'approved' ? C.green : a.status === 'rejected' ? C.red : C.pink}>{a.status}</Pill>
         {a.status === 'pending' && <View style={s.row}><View style={{ flex: 1 }}><Button title="Одобрить" onPress={() => reviewApplication(a, true)} /></View><View style={{ flex: 1 }}><Button title="Отклонить" secondary danger onPress={() => reviewApplication(a, false)} /></View></View>}
       </Card>)}
+      <Text style={s.section}>Обращения в поддержку</Text>
+      {supportTickets.length === 0 && <Card><Text style={s.muted}>Открытых обращений пока нет.</Text></Card>}
+      {supportTickets.map(ticket => <Card key={ticket.id}>
+        <View style={s.rowBetween}><Text style={s.tariffName}>{ticket.subject}</Text><Pill color={ticket.status === 'resolved' ? C.green : C.pink}>{ticket.status === 'resolved' ? 'Решено' : ticket.status === 'in_progress' ? 'В работе' : 'Открыто'}</Pill></View>
+        <Text style={s.muted}>Пользователь: {ticket.user_id}</Text>
+        <Text style={s.address}>{ticket.message}</Text>
+        {ticket.admin_reply ? <Text style={s.muted}>Ответ: {ticket.admin_reply}</Text> : <View style={{ gap: 6 }}>
+          <Input label="Ответ пользователю" value={supportReplyDraft[ticket.id] || ''} onChangeText={value => setSupportReplyDraft(p => ({ ...p, [ticket.id]: value }))} multiline placeholder="Напиши ответ…" />
+          <Button title="Ответить и закрыть" onPress={() => replyToSupportTicket(ticket)} disabled={busy} compact />
+        </View>}
+      </Card>)}
       <Text style={s.section}>Последние заказы</Text>
       {orders.slice(0, 12).map(o => <Card key={o.id}><Pill>{STATUS[o.status] || o.status}</Pill><Text style={s.address}>{o.pickup_address} → {o.destination_address}</Text></Card>)}
     </ScrollView>}
@@ -1095,7 +1153,17 @@ export default function LadyGoApp() {
       {!isDriver && !isAdmin && applications[0] && <Card><Text style={s.section}>Заявка водителя</Text><Pill color={applications[0].status === 'approved' ? C.green : applications[0].status === 'rejected' ? C.red : C.pink}>{applications[0].status === 'approved' ? 'Одобрена' : applications[0].status === 'rejected' ? 'Отклонена' : 'На рассмотрении'}</Pill></Card>}
       {!isDriver && !isAdmin && <Card><Text style={s.section}>Сохранённые адреса</Text><Input label="Название" value={savedLabel} onChangeText={setSavedLabel} placeholder="Дом, работа…" /><Input label="Адрес" value={savedAddress} onChangeText={setSavedAddress} placeholder="Введите адрес" /><Button title="Сохранить адрес" onPress={savePlace} compact />{savedPlaces.map(p => <TouchableOpacity key={p.id} onPress={() => { setPickup(p.address); setCoords(null); setRoute([]); setRouteInfo(null); setTab('ride'); }}><Text style={s.address}>{p.label}: {p.address}</Text></TouchableOpacity>)}</Card>}
       {!isDriver && !isAdmin && <Card><Text style={s.section}>Стать водителем</Text><Input label="ФИО" value={applicationName} onChangeText={setApplicationName} /><Input label="Телефон" value={applicationPhone} onChangeText={setApplicationPhone} keyboardType="phone-pad" /><Input label="Автомобиль" value={applicationCar} onChangeText={setApplicationCar} /><Input label="Опыт и комментарий" value={applicationNote} onChangeText={setApplicationNote} multiline /><Button title="Отправить заявку" onPress={submitApplication} disabled={busy} /></Card>}
-      <Button title="Связаться с поддержкой" secondary onPress={() => Linking.openURL('mailto:' + SUPPORT)} />
+      <Card><Text style={s.section}>Поддержка LadyGo</Text>
+        <Input label="Тема обращения" value={supportSubject} onChangeText={setSupportSubject} placeholder="Например, вопрос по поездке" />
+        <Input label="Сообщение" value={supportMessage} onChangeText={setSupportMessage} multiline placeholder="Опиши, что произошло или чем помочь…" />
+        <Button title="Отправить обращение" onPress={submitSupportTicket} disabled={busy} />
+        {supportTickets.map(ticket => <View key={ticket.id} style={{ gap: 5 }}>
+          <View style={s.rowBetween}><Text style={s.tariffName}>{ticket.subject}</Text><Pill color={ticket.status === 'resolved' ? C.green : C.pink}>{ticket.status === 'resolved' ? 'Решено' : 'Открыто'}</Pill></View>
+          <Text style={s.muted}>{ticket.message}</Text>
+          {ticket.admin_reply ? <Text style={s.address}>Ответ поддержки: {ticket.admin_reply}</Text> : null}
+        </View>)}
+      </Card>
+      <Button title="Написать на почту поддержки" secondary onPress={() => Linking.openURL('mailto:' + SUPPORT)} />
       <Button title="Позвонить водителю" secondary onPress={() => Linking.openURL('tel:' + PHONE)} />
       <Button title="Выйти из аккаунта" danger secondary onPress={logout} />
     </ScrollView>}
