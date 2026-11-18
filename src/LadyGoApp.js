@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Linking, Platform, Share,
+  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Linking, Platform, Share, RefreshControl,
   SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
@@ -251,6 +251,7 @@ export default function LadyGoApp() {
   const [profile, setProfile] = useState(null);
   const [booting, setBooting] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [mode, setMode] = useState('passenger');
   const [tab, setTab] = useState('ride');
   const [authMode, setAuthMode] = useState('login');
@@ -316,6 +317,7 @@ export default function LadyGoApp() {
   const isAdmin = role === 'admin';
   const isDriver = role === 'driver';
   const activeOrder = useMemo(() => orders.find(o => ACTIVE.includes(o.status)), [orders]);
+  const unreadCount = notifications.filter(item => !item.read_at).length;
   const selectedTariffRate = tariffRates.find(rate => rate.tariff_id === tariff && rate.is_active);
   const estimatedPrice = routeInfo && selectedTariffRate
     ? Math.max(Number(selectedTariffRate.minimum_fare_rub), Number(selectedTariffRate.base_fare_rub) + Number(routeInfo.km) * Number(selectedTariffRate.per_km_rub))
@@ -431,6 +433,12 @@ export default function LadyGoApp() {
       await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces(), loadNotifications(), loadRatings(), loadTariffRates(), loadSupportTickets(), loadDriverProfile()]);
     } catch (e) { Alert.alert('Не удалось обновить данные', errorText(e)); }
   }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications, loadRatings, loadTariffRates, loadSupportTickets, loadDriverProfile]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshAll();
+    setRefreshing(false);
+  }, [refreshAll]);
 
   useEffect(() => {
     const handleAuthUrl = async url => {
@@ -882,6 +890,22 @@ export default function LadyGoApp() {
     setBusy(false);
   };
 
+  const repeatTrip = order => {
+    setPickup(order.pickup_address || '');
+    setDestination(order.destination_address || '');
+    setStopsText(Array.isArray(order.stops) ? order.stops.map(stop => stop.address).filter(Boolean).join('\\n') : '');
+    setTariff(order.tariff_id || 'economy');
+    setPaymentMethod(order.payment_method || 'cash');
+    setRequestedFor('Как можно скорее');
+    setCoords(null);
+    setDestinationCoords(null);
+    setStopCoords([]);
+    setRoute([]);
+    setRouteInfo(null);
+    setComment('');
+    setTab('ride');
+  };
+
   const submitSupportTicket = async () => {
     if (supportSubject.trim().length < 3 || supportMessage.trim().length < 5) {
       return Alert.alert('Обращение в поддержку', 'Укажи тему и опиши вопрос подробнее.');
@@ -1204,7 +1228,7 @@ export default function LadyGoApp() {
       {isAdmin && <TouchableOpacity onPress={() => { setMode('admin'); setTab('ride'); }} style={[s.roleButton, mode === 'admin' && s.roleActive]}><Text style={[s.roleText, mode === 'admin' && s.roleTextActive]}>Администратор</Text></TouchableOpacity>}
     </View>
 
-    {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
+    {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
       {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripMap order={activeOrder} />{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}
         {['new','accepted','arrived'].includes(activeOrder.status) && <Button title={busy ? 'Отменяем…' : 'Отменить поездку'} danger secondary compact disabled={busy} onPress={() => cancelOrder(activeOrder)} />}
         <View style={s.row}>
@@ -1268,7 +1292,7 @@ export default function LadyGoApp() {
       </Card>
     </ScrollView>}
 
-    {mode === 'passenger' && tab === 'trips' && <ScrollView contentContainerStyle={s.content}>
+    {mode === 'passenger' && tab === 'trips' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
       <Text style={s.title}>Мои поездки</Text>
       {orders.length === 0 && <Card><Text style={s.muted}>Здесь появятся твои заказы.</Text></Card>}
       {orders.map(o => <Card key={o.id}>
@@ -1291,6 +1315,7 @@ export default function LadyGoApp() {
           </View>;
         })()}
         {o.status === 'completed' && <Button title="Поделиться деталями поездки" secondary compact onPress={() => shareTripDetails(o)} />}
+        {['completed', 'cancelled'].includes(o.status) && <Button title="Повторить маршрут" secondary compact onPress={() => repeatTrip(o)} />}
         {o.status === 'new' && !o.driver_id && <Button title="Отменить заказ" danger secondary onPress={() => cancelOrder(o)} />}
       </Card>)}
     </ScrollView>}
@@ -1444,7 +1469,7 @@ export default function LadyGoApp() {
     <View style={s.bottomNav}>
       {(mode === 'passenger' ? [{ id: 'ride', label: 'Заказать', icon: '⌖' }, { id: 'trips', label: 'Поездки', icon: '▤' }, { id: 'notifications', label: 'События', icon: '♧' }, { id: 'profile', label: 'Профиль', icon: '◯' }] : [{ id: 'ride', label: mode === 'admin' ? 'Обзор' : 'Работа', icon: '⌖' }, { id: 'notifications', label: 'События', icon: '♧' }, { id: 'profile', label: 'Профиль', icon: '◯' }]).map(item =>
         <TouchableOpacity key={item.id} onPress={() => setTab(item.id)} style={s.navItem}>
-          <Text style={[s.navIcon, tab === item.id && { color: C.pink }]}>{item.icon}</Text>
+          <View style={s.navIconWrap}><Text style={[s.navIcon, tab === item.id && { color: C.pink }]}>{item.icon}</Text>{item.id === 'notifications' && unreadCount > 0 && <View style={s.navBadge}><Text style={s.navBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text></View>}</View>
           <Text style={[s.navLabel, tab === item.id && { color: C.pink, fontWeight: '800' }]}>{item.label}</Text>
         </TouchableOpacity>)}
     </View>
@@ -1452,14 +1477,14 @@ export default function LadyGoApp() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.white },
+  safe: { flex: 1, backgroundColor: '#FCFAFB' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, backgroundColor: C.pale },
   auth: { flex: 1, justifyContent: 'center', padding: 22, backgroundColor: C.pale },
   brand: { color: C.pink, fontSize: 42, fontWeight: '900', textAlign: 'center', letterSpacing: -1 },
   brandSmall: { color: C.pink, fontSize: 26, fontWeight: '900', letterSpacing: -0.7 },
   tagline: { textAlign: 'center', color: C.muted, marginBottom: 28, marginTop: 4 },
   topSub: { color: C.muted, fontSize: 11, marginTop: -2 },
-  topbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 10 },
+  topbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 13, backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: '#F7EEF1' },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.pale, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: C.pinkDark, fontSize: 17, fontWeight: '800' },
   driverAvatar: { width: 68, height: 68, borderRadius: 34, backgroundColor: C.pale },
@@ -1471,19 +1496,19 @@ const s = StyleSheet.create({
   roleActive: { backgroundColor: C.white, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 5, elevation: 2 },
   roleText: { color: C.muted, fontWeight: '700', fontSize: 12 },
   roleTextActive: { color: C.pinkDark },
-  content: { padding: 16, paddingBottom: 30, gap: 12 },
+  content: { padding: 16, paddingBottom: 36, gap: 14 },
   mapWrap: { height: 245, borderRadius: 20, overflow: 'hidden', position: 'relative', backgroundColor: C.map },
   map: { flex: 1 },
   locButton: { position: 'absolute', bottom: 12, right: 12, backgroundColor: C.white, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, elevation: 3 },
   locText: { color: C.ink, fontSize: 12, fontWeight: '700' },
-  card: { backgroundColor: C.white, borderRadius: 19, borderWidth: 1, borderColor: C.line, padding: 16, gap: 10 },
+  card: { backgroundColor: C.white, borderRadius: 20, borderWidth: 1, borderColor: '#F2E8EC', padding: 17, gap: 11, shadowColor: '#5A3444', shadowOpacity: 0.045, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
   title: { fontSize: 23, fontWeight: '900', color: C.ink, letterSpacing: -0.4 },
   heading: { fontSize: 19, fontWeight: '800', color: C.ink },
   section: { color: C.ink, fontSize: 16, fontWeight: '800', marginTop: 4 },
   field: { gap: 6, marginTop: 4 },
   label: { color: C.muted, fontSize: 12, fontWeight: '700' },
   input: { borderWidth: 1, borderColor: C.line, borderRadius: 13, paddingHorizontal: 13, paddingVertical: 12, color: C.ink, backgroundColor: '#FFFCFD', fontSize: 15 },
-  button: { backgroundColor: C.pink, paddingVertical: 15, paddingHorizontal: 15, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  button: { backgroundColor: C.pink, paddingVertical: 15, paddingHorizontal: 15, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 4, shadowColor: C.pinkDark, shadowOpacity: 0.13, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   buttonSecondary: { backgroundColor: C.pale, borderWidth: 1, borderColor: '#F5D8E3' },
   buttonDanger: { backgroundColor: '#FFF5F6', borderColor: '#F1D6DC' },
   buttonText: { color: C.white, fontWeight: '800', fontSize: 14 },
@@ -1505,9 +1530,12 @@ const s = StyleSheet.create({
   stats: { flexDirection: 'row', gap: 10 },
   stat: { flex: 1, alignItems: 'center' },
   statNum: { fontSize: 26, color: C.pink, fontWeight: '900' },
-  bottomNav: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.line, paddingTop: 8, paddingBottom: Platform.OS === 'android' ? 8 : 4, backgroundColor: C.white },
+  bottomNav: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.line, paddingTop: 9, paddingBottom: Platform.OS === 'android' ? 10 : 6, paddingHorizontal: 7, backgroundColor: C.white, elevation: 10 },
   navItem: { flex: 1, alignItems: 'center', gap: 2 },
-  navIcon: { color: C.muted, fontSize: 20, fontWeight: '700' },
+  navIconWrap: { position: 'relative', minWidth: 26, alignItems: 'center' },
+  navBadge: { position: 'absolute', top: -5, right: -12, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: C.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3, borderWidth: 1, borderColor: C.white },
+  navBadgeText: { color: C.white, fontSize: 9, fontWeight: '900' },
+  navIcon: { color: C.muted, fontSize: 22, fontWeight: '700' },
   navLabel: { color: C.muted, fontSize: 10, fontWeight: '600' },
   savedChip: { backgroundColor: C.pale, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   savedChipText: { color: C.pinkDark, fontWeight: '700', fontSize: 12 },
