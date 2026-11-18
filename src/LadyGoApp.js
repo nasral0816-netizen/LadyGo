@@ -291,6 +291,7 @@ export default function LadyGoApp() {
     const { data, error } = await supabase.from('driver_profiles').select('*').eq('driver_id', user.id).maybeSingle();
     if (error) throw error;
     setDriverProfile(data || null);
+    if (!data) { setDriverProfileDraft({}); return; }
     if (data) setDriverProfileDraft({
       display_name: data.display_name || '', phone: data.phone || '', experience: data.experience || '',
       vehicle_make: data.vehicle_make || '', vehicle_model: data.vehicle_model || '',
@@ -575,7 +576,7 @@ export default function LadyGoApp() {
         } : null);
       }).catch(() => { if (alive) setAssignedDriver(null); });
     return () => { alive = false; };
-  }, [mode, activeOrder?.driver_id, activeOrder?.status]);
+  }, [mode, activeOrder?.id, activeOrder?.driver_id, activeOrder?.status]);
 
   useEffect(() => {
     if (mode !== 'passenger' || !activeOrder?.driver_id) { setDriverLocation(null); return; }
@@ -600,6 +601,14 @@ export default function LadyGoApp() {
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user, loadApplications, loadProfile]);
+
+  useEffect(() => {
+    if (!isDriver || !user) return;
+    const channel = supabase.channel('ladygo-driver-profile-' + user.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_profiles', filter: 'driver_id=eq.' + user.id }, () => loadDriverProfile().catch(() => {}))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [isDriver, user, loadDriverProfile]);
 
   useEffect(() => {
     if (!isDriver || !user) return;
