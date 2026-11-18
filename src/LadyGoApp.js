@@ -156,6 +156,7 @@ export default function LadyGoApp() {
   const registerDriverPush = useCallback(async () => {
     if (!isDriver || !user || !Device.isDevice) return;
     try {
+      if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('driver-orders', { name: 'Заказы LadyGo', importance: Notifications.AndroidImportance.MAX, sound: 'default', vibrationPattern: [0, 250, 150, 250] });
       const permission = await Notifications.getPermissionsAsync();
       let status = permission.status;
       if (status !== 'granted') status = (await Notifications.requestPermissionsAsync()).status;
