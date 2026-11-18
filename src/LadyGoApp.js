@@ -63,12 +63,17 @@ function Card({ children, style }) { return <View style={[s.card, style]}>{child
 function TripMap({ order }) {
   const [roadRoute, setRoadRoute] = useState([]);
   const [routeSummary, setRouteSummary] = useState(null);
-  if (order.pickup_lat == null || order.pickup_lng == null || order.destination_lat == null || order.destination_lng == null) return null;
-  const start = { latitude: Number(order.pickup_lat), longitude: Number(order.pickup_lng) };
-  const end = { latitude: Number(order.destination_lat), longitude: Number(order.destination_lng) };
+  const hasCoords = order.pickup_lat != null && order.pickup_lng != null && order.destination_lat != null && order.destination_lng != null;
+  const start = { latitude: Number(order.pickup_lat || 0), longitude: Number(order.pickup_lng || 0) };
+  const end = { latitude: Number(order.destination_lat || 0), longitude: Number(order.destination_lng || 0) };
 
   useEffect(() => {
     let active = true;
+    if (!hasCoords) {
+      setRoadRoute([]);
+      setRouteSummary(null);
+      return () => { active = false; };
+    }
     setRoadRoute([]);
     setRouteSummary(null);
     const coordinates = `${start.longitude},${start.latitude};${end.longitude},${end.latitude}`;
@@ -86,8 +91,9 @@ function TripMap({ order }) {
       })
       .catch(() => { if (active) { setRoadRoute([]); setRouteSummary(null); } });
     return () => { active = false; };
-  }, [start.latitude, start.longitude, end.latitude, end.longitude]);
+  }, [hasCoords, start.latitude, start.longitude, end.latitude, end.longitude]);
 
+  if (!hasCoords) return null;
   return <View style={{ gap: 7 }}>
     <MapView style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: (start.latitude + end.latitude) / 2, longitude: (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
       <Marker coordinate={start} title="Подача" pinColor={C.pink} />
