@@ -281,6 +281,7 @@ export default function LadyGoApp() {
   const [orders, setOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [ratings, setRatings] = useState([]);
+  const [completedOrdersToRate, setCompletedOrdersToRate] = useState([]);
   const [supportTickets, setSupportTickets] = useState([]);
   const [supportSubject, setSupportSubject] = useState('');
   const [supportMessage, setSupportMessage] = useState('');
@@ -371,11 +372,34 @@ export default function LadyGoApp() {
       setOrders([...unique.values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 40));
       return;
     }
-    let query = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(40);
-    if (!isAdmin) query = query.eq('passenger_id', user.id).in('status', ACTIVE);
-    const { data, error } = await query;
-    if (error) throw error;
-    setOrders(data || []);
+    if (isAdmin) {
+      const { data, error } = await supabase.from('orders').select('*')
+        .order('created_at', { ascending: false }).limit(40);
+      if (error) throw error;
+      setOrders(data || []);
+      setCompletedOrdersToRate([]);
+      return;
+    }
+
+    const [{ data: active, error: activeError }, { data: completed, error: completedError }] = await Promise.all([
+      supabase.from('orders').select('*').eq('passenger_id', user.id)
+        .in('status', ACTIVE).order('created_at', { ascending: false }).limit(10),
+      supabase.from('orders').select('*').eq('passenger_id', user.id)
+        .eq('status', 'completed').order('completed_at', { ascending: false }).limit(10),
+    ]);
+    if (activeError) throw activeError;
+    if (completedError) throw completedError;
+
+    const completedIds = (completed || []).map(order => order.id);
+    let ratedIds = [];
+    if (completedIds.length) {
+      const { data: existingRatings, error: ratingsError } = await supabase
+        .from('order_ratings').select('order_id').in('order_id', completedIds);
+      if (ratingsError) throw ratingsError;
+      ratedIds = (existingRatings || []).map(item => item.order_id);
+    }
+    setOrders(active || []);
+    setCompletedOrdersToRate((completed || []).filter(order => !ratedIds.includes(order.id)));
   }, [user, profile, role, isAdmin]);
 
   const loadNotifications = useCallback(async () => {
@@ -970,7 +994,7 @@ export default function LadyGoApp() {
     });
     setBusy(false);
     if (error) return Alert.alert('Не удалось отправить оценку', errorText(error));
-    await loadRatings();
+    await Promise.all([loadRatings(), loadOrders()]);
     Alert.alert('Спасибо за оценку!', 'Твой отзыв сохранён.');
   };
 
@@ -1249,6 +1273,21 @@ export default function LadyGoApp() {
         </View> : null}
         {assignedDriver.phone ? <Button title="Позвонить водителю" secondary compact onPress={() => Linking.openURL('tel:' + assignedDriver.phone)} /> : null}
       </View>}<TripChat order={activeOrder} userId={user?.id} /></Card>}
+      {completedOrdersToRate.map(order => <Card key={'rate-' + order.id}>
+        <Text style={s.section}>Оцените завершённую поездку</Text>
+        <Text style={s.address}>{order.pickup_address} → {order.destination_address}</Text>
+        <View style={[s.row, { justifyContent: 'space-between' }]}>
+          {[1, 2, 3, 4, 5].map(value => <TouchableOpacity key={value} onPress={() => setRatingDraft(p => ({ ...p, [order.id]: value }))}
+            style={[s.savedChip, Number(ratingDraft[order.id]) === value && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
+            <Text style={[s.savedChipText, { fontSize: 16 }]}>{value} ★</Text>
+          </TouchableOpacity>)}
+        </View>
+        <Input label="Комментарий (необязательно)" value={ratingComments[order.id] || ''}
+          onChangeText={value => setRatingComments(p => ({ ...p, [order.id]: value }))}
+          placeholder="Расскажите о поездке" multiline />
+        <Button title={busy ? 'Отправляем…' : 'Отправить оценку'} disabled={busy || !ratingDraft[order.id]}
+          onPress={() => submitRating(order)} />
+      </Card>)}
       <View style={s.mapWrap}><MapView ref={mapRef} style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
         {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
         {stopCoords.map((point, index) => <Marker key={'stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} pinColor="#D69A35" />)}
