@@ -371,7 +371,7 @@ export default function LadyGoApp() {
       return;
     }
     let query = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(40);
-    if (!isAdmin) query = query.eq('passenger_id', user.id);
+    if (!isAdmin) query = query.eq('passenger_id', user.id).in('status', ACTIVE);
     const { data, error } = await query;
     if (error) throw error;
     setOrders(data || []);
@@ -531,7 +531,7 @@ export default function LadyGoApp() {
         setTab('ride');
       } else if (!isAdmin) {
         setMode('passenger');
-        setTab('trips');
+        setTab('ride');
       }
       loadOrders().catch(() => {});
     };
@@ -884,26 +884,10 @@ export default function LadyGoApp() {
       const { error } = await supabase.from('orders').insert(payload);
       if (error) throw error;
       Alert.alert('Заказ отправлен', 'Ищем свободного водителя. Стоимость подтвердит водитель.');
-      setTab('trips');
+      setTab('ride');
       await loadOrders();
     } catch (e) { Alert.alert('Не удалось заказать поездку', errorText(e)); }
     setBusy(false);
-  };
-
-  const repeatTrip = order => {
-    setPickup(order.pickup_address || '');
-    setDestination(order.destination_address || '');
-    setStopsText(Array.isArray(order.stops) ? order.stops.map(stop => stop.address).filter(Boolean).join('\\n') : '');
-    setTariff(order.tariff_id || 'economy');
-    setPaymentMethod(order.payment_method || 'cash');
-    setRequestedFor('Как можно скорее');
-    setCoords(null);
-    setDestinationCoords(null);
-    setStopCoords([]);
-    setRoute([]);
-    setRouteInfo(null);
-    setComment('');
-    setTab('ride');
   };
 
   const submitSupportTicket = async () => {
@@ -1292,34 +1276,6 @@ export default function LadyGoApp() {
       </Card>
     </ScrollView>}
 
-    {mode === 'passenger' && tab === 'trips' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
-      <Text style={s.title}>Мои поездки</Text>
-      {orders.length === 0 && <Card><Text style={s.muted}>Здесь появятся твои заказы.</Text></Card>}
-      {orders.map(o => <Card key={o.id}>
-        <View style={s.rowBetween}><Pill color={o.status === 'completed' ? C.green : o.status === 'cancelled' ? C.red : C.pink}>{STATUS[o.status] || o.status}</Pill><Text style={s.price}>{money(o.price_rub)}</Text></View>
-        <Text style={s.address}>● {o.pickup_address}</Text><Text style={s.address}>● {o.destination_address}</Text>
-        <Text style={s.muted}>Оплата: {o.payment_method === 'transfer_to_driver' ? 'Перевод водителю' : 'Наличными'}</Text>
-        {o.driver_id && <Text style={s.muted}>Водитель назначен</Text>}
-        {o.status === 'completed' && o.driver_id && (() => {
-          const existingRating = ratings.find(item => item.order_id === o.id);
-          if (existingRating) return <Pill color={C.green}>Твоя оценка: {existingRating.rating}/5 ★</Pill>;
-          return <View style={{ gap: 8 }}>
-            <Text style={s.label}>Оцени поездку</Text>
-            <View style={s.row}>
-              {[1, 2, 3, 4, 5].map(value => <TouchableOpacity key={value} onPress={() => setRatingDraft(p => ({ ...p, [o.id]: value }))} style={{ padding: 7 }}>
-                <Text style={{ fontSize: 27, color: value <= (ratingDraft[o.id] || 0) ? '#E6A23C' : '#CFC5CA' }}>★</Text>
-              </TouchableOpacity>)}
-            </View>
-            <Input label="Комментарий (необязательно)" value={ratingComments[o.id] || ''} onChangeText={value => setRatingComments(p => ({ ...p, [o.id]: value }))} placeholder="Как прошла поездка?" multiline />
-            <Button title="Отправить оценку" onPress={() => submitRating(o)} disabled={busy || !ratingDraft[o.id]} compact />
-          </View>;
-        })()}
-        {o.status === 'completed' && <Button title="Поделиться деталями поездки" secondary compact onPress={() => shareTripDetails(o)} />}
-        {['completed', 'cancelled'].includes(o.status) && <Button title="Повторить маршрут" secondary compact onPress={() => repeatTrip(o)} />}
-        {o.status === 'new' && !o.driver_id && <Button title="Отменить заказ" danger secondary onPress={() => cancelOrder(o)} />}
-      </Card>)}
-    </ScrollView>}
-
     {mode === 'driver' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
       <Text style={s.title}>Рабочий экран</Text>
       <Card><Text style={s.muted}>Рейтинг водителя</Text><Text style={s.heading}>{ratings.length ? (ratings.reduce((sum, item) => sum + Number(item.rating), 0) / ratings.length).toFixed(1) + ' ★' : 'Пока нет оценок'}</Text><Text style={s.muted}>{ratings.length} оценок пассажиров</Text></Card>
@@ -1467,7 +1423,7 @@ export default function LadyGoApp() {
     </ScrollView>}
 
     <View style={s.bottomNav}>
-      {(mode === 'passenger' ? [{ id: 'ride', label: 'Заказать', icon: '⌖' }, { id: 'trips', label: 'Поездки', icon: '▤' }, { id: 'notifications', label: 'События', icon: '♧' }, { id: 'profile', label: 'Профиль', icon: '◯' }] : [{ id: 'ride', label: mode === 'admin' ? 'Обзор' : 'Работа', icon: '⌖' }, { id: 'notifications', label: 'События', icon: '♧' }, { id: 'profile', label: 'Профиль', icon: '◯' }]).map(item =>
+      {(mode === 'passenger' ? [{ id: 'ride', label: 'Заказать', icon: '⌖' }, { id: 'notifications', label: 'События', icon: '♧' }, { id: 'profile', label: 'Профиль', icon: '◯' }] : [{ id: 'ride', label: mode === 'admin' ? 'Обзор' : 'Работа', icon: '⌖' }, { id: 'notifications', label: 'События', icon: '♧' }, { id: 'profile', label: 'Профиль', icon: '◯' }]).map(item =>
         <TouchableOpacity key={item.id} onPress={() => setTab(item.id)} style={s.navItem}>
           <View style={s.navIconWrap}><Text style={[s.navIcon, tab === item.id && { color: C.pink }]}>{item.icon}</Text>{item.id === 'notifications' && unreadCount > 0 && <View style={s.navBadge}><Text style={s.navBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text></View>}</View>
           <Text style={[s.navLabel, tab === item.id && { color: C.pink, fontWeight: '800' }]}>{item.label}</Text>
