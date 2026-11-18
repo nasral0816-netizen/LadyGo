@@ -810,9 +810,24 @@ export default function LadyGoApp() {
         structuredStops.push({ sequence: i + 1, address: stopAddresses[i], latitude: point.latitude, longitude: point.longitude });
       }
       const selected = TARIFFS.find(t => t.id === tariff);
+      const scheduleText = requestedFor.trim();
+      let scheduledAt = null;
+      if (scheduleText && !/^как можно скорее$|^сейчас$/i.test(scheduleText)) {
+        const match = scheduleText.match(/^(\\d{2})\\.(\\d{2})\\.(\\d{4})\\s+(\\d{2}):(\\d{2})$/);
+        if (!match) throw new Error('Для предварительного заказа укажи дату и время в формате ДД.ММ.ГГГГ ЧЧ:ММ. Например: 25.12.2026 14:30.');
+        const [, day, month, year, hour, minute] = match;
+        const localDate = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), 0, 0);
+        if (localDate.getFullYear() !== Number(year) || localDate.getMonth() !== Number(month) - 1 ||
+            localDate.getDate() !== Number(day) || localDate.getHours() !== Number(hour) || localDate.getMinutes() !== Number(minute)) {
+          throw new Error('Проверь дату и время предварительного заказа.');
+        }
+        if (localDate.getTime() < Date.now() + 5 * 60 * 1000) throw new Error('Предварительный заказ должен быть минимум через 5 минут.');
+        if (localDate.getTime() > Date.now() + 30 * 24 * 60 * 60 * 1000) throw new Error('Заказ можно запланировать не более чем на 30 дней вперёд.');
+        scheduledAt = localDate.toISOString();
+      }
       const payload = {
         passenger_id: user.id, pickup_address: pickup.trim(), destination_address: destination.trim(),
-        requested_for: requestedFor.trim() || 'Как можно скорее', passenger_phone: phone.trim() || null,
+        requested_for: scheduleText || 'Как можно скорее', ...(scheduledAt ? { scheduled_at: scheduledAt } : {}), passenger_phone: phone.trim() || null,
         notes: [comment.trim(), 'Тариф: ' + (selected?.name || 'Эконом'), routeInfo ? `Маршрут: ${routeInfo.km} км, около ${routeInfo.minutes} мин` : ''].filter(Boolean).join(' | '),
         stops: structuredStops,
         tariff_id: tariff,
@@ -1188,7 +1203,8 @@ export default function LadyGoApp() {
         <Button title="Определить моё местоположение" secondary compact onPress={getCurrentLocation} />
         <Input label="Куда" value={destination} onChangeText={v => { setDestination(v); setDestinationCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }} placeholder="Адрес назначения" />
         <Input label="Промежуточные точки (по одной на строку)" value={stopsText} onChangeText={v => { setStopsText(v); setStopCoords([]); setRoute([]); setRouteInfo(null); }} multiline placeholder="Можно оставить пустым" />
-        <Input label="Когда подать машину" value={requestedFor} onChangeText={setRequestedFor} placeholder="Как можно скорее или дата и время" />
+        <Input label="Когда подать машину" value={requestedFor} onChangeText={setRequestedFor} placeholder="Как можно скорее или ДД.ММ.ГГГГ ЧЧ:ММ" />
+        <Text style={s.muted}>Для предварительного заказа введи дату и время, например 25.12.2026 14:30. Такие заказы автоматически отправляются водителям в назначенное время.</Text>
         {savedPlaces.length > 0 && <View style={{ gap: 6 }}><Text style={s.label}>Сохранённые адреса</Text><View style={s.row}>{savedPlaces.slice(0, 3).map(p => <TouchableOpacity key={p.id} style={s.savedChip} onPress={() => { setPickup(p.address); setCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }}><Text style={s.savedChipText}>{p.label}</Text></TouchableOpacity>)}</View></View>}
         <Button title="Построить маршрут" secondary compact onPress={buildRoute} />
         {routeInfo && <View style={{ gap: 4 }}><Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text><Text style={s.routeInfo}>{estimatedPrice == null ? 'Цена будет согласована с водителем' : 'Ориентировочная стоимость: ' + money(Math.round(estimatedPrice))}</Text></View>}
