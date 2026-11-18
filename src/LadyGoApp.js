@@ -279,6 +279,7 @@ export default function LadyGoApp() {
   const [routeInfo, setRouteInfo] = useState(null);
   const [locationBusy, setLocationBusy] = useState(false);
   const [orders, setOrders] = useState([]);
+  const [historyOrders, setHistoryOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [ratings, setRatings] = useState([]);
   const [completedOrdersToRate, setCompletedOrdersToRate] = useState([]);
@@ -381,14 +382,20 @@ export default function LadyGoApp() {
       return;
     }
 
-    const [{ data: active, error: activeError }, { data: completed, error: completedError }] = await Promise.all([
+    const [{ data: active, error: activeError }, { data: completed, error: completedError }, { data: closed, error: closedError }] = await Promise.all([
       supabase.from('orders').select('*').eq('passenger_id', user.id)
         .in('status', ACTIVE).order('created_at', { ascending: false }).limit(10),
       supabase.from('orders').select('*').eq('passenger_id', user.id)
-        .eq('status', 'completed').order('completed_at', { ascending: false }).limit(10),
+        .eq('status', 'completed').order('completed_at', { ascending: false }).limit(30),
+      supabase.from('orders').select('*').eq('passenger_id', user.id)
+        .in('status', ['cancelled', 'declined']).order('created_at', { ascending: false }).limit(30),
     ]);
     if (activeError) throw activeError;
     if (completedError) throw completedError;
+    if (closedError) throw closedError;
+    setHistoryOrders([...(completed || []), ...(closed || [])]
+      .sort((a, b) => new Date(b.completed_at || b.created_at) - new Date(a.completed_at || a.created_at))
+      .slice(0, 50));
 
     const completedIds = (completed || []).map(order => order.id);
     let ratedIds = [];
@@ -495,7 +502,7 @@ export default function LadyGoApp() {
     }).catch(e => { if (mounted) { setBooting(false); Alert.alert('Ошибка запуска', errorText(e)); } });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
-      if (!nextSession) { setProfile(null); setOrders([]); }
+      if (!nextSession) { setProfile(null); setOrders([]); setHistoryOrders([]); }
       else loadProfile(nextSession.user).catch(e => Alert.alert('Профиль', errorText(e)));
     });
     return () => { mounted = false; listener.subscription.unsubscribe(); };
@@ -849,6 +856,24 @@ export default function LadyGoApp() {
     });
     if (error) throw error;
     return supabase.storage.from('ladygo-driver-media').getPublicUrl(objectPath).data.publicUrl;
+  };
+
+  const repeatOrder = order => {
+    if (!order) return;
+    setPickup(order.pickup_address || '');
+    setDestination(order.destination_address || '');
+    setStopsText(Array.isArray(order.stops) ? order.stops.map(stop => stop.address).filter(Boolean).join('\n') : '');
+    setTariff(TARIFFS.some(item => item.id === order.tariff_id) ? order.tariff_id : 'economy');
+    setPaymentMethod(order.payment_method || 'cash');
+    setPhone('');
+    setComment('');
+    setCoords(null);
+    setDestinationCoords(null);
+    setStopCoords([]);
+    setRoute([]);
+    setRouteInfo(null);
+    setMode('passenger');
+    setTab('ride');
   };
 
   const savePlace = async () => {
@@ -1422,6 +1447,20 @@ export default function LadyGoApp() {
 
     {tab === 'profile' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
       <Text style={s.title}>Профиль</Text><Card><Text style={s.tariffName}>{profile?.email}</Text><Text style={s.muted}>Роль: {role}</Text></Card>
+      {!isDriver && !isAdmin && <Card>
+        <Text style={s.section}>История поездок</Text>
+        {historyOrders.length === 0
+          ? <Text style={s.muted}>Завершённые и отменённые поездки появятся здесь.</Text>
+          : historyOrders.map(order => <View key={'history-' + order.id} style={{ gap: 6, borderBottomWidth: 1, borderBottomColor: C.line, paddingBottom: 10 }}>
+              <View style={s.rowBetween}>
+                <Pill color={order.status === 'completed' ? C.green : C.muted}>{STATUS[order.status] || order.status}</Pill>
+                <Text style={s.muted}>{new Date(order.completed_at || order.created_at).toLocaleDateString()}</Text>
+              </View>
+              <Text style={s.address}>{order.pickup_address} → {order.destination_address}</Text>
+              <Text style={s.muted}>{money(order.price_rub)} · {TARIFFS.find(item => item.id === order.tariff_id)?.name || 'Поездка'}</Text>
+              <Button title="Повторить маршрут" secondary compact onPress={() => repeatOrder(order)} />
+            </View>)}
+      </Card>}
       {isDriver && <Card>
         <Text style={s.section}>Моя карточка водителя</Text>
         <View style={s.row}>
