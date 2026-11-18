@@ -416,19 +416,17 @@ export default function LadyGoApp() {
     }
     let alive = true;
     const driverId = activeOrder.driver_id;
-    Promise.all([
-      supabase.from('profiles').select('phone').eq('id', driverId).maybeSingle(),
-      supabase.from('driver_applications').select('full_name, experience, phone')
-        .eq('user_id', driverId).eq('status', 'approved')
-        .order('reviewed_at', { ascending: false }).limit(1).maybeSingle(),
-    ]).then(([profileResult, applicationResult]) => {
-      if (!alive) return;
-      setAssignedDriver({
-        name: applicationResult.data?.full_name || 'Водитель LadyGo',
-        experience: applicationResult.data?.experience || '',
-        phone: applicationResult.data?.phone || profileResult.data?.phone || null,
-      });
-    }).catch(() => { if (alive) setAssignedDriver(null); });
+    supabase.rpc('ladygo_get_assigned_driver_contact', { p_order_id: activeOrder.id })
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) throw error;
+        const contact = Array.isArray(data) ? data[0] : data;
+        setAssignedDriver(contact ? {
+          name: contact.full_name || 'Водитель LadyGo',
+          experience: contact.experience || '',
+          phone: contact.phone || null,
+        } : null);
+      }).catch(() => { if (alive) setAssignedDriver(null); });
     return () => { alive = false; };
   }, [mode, activeOrder?.driver_id, activeOrder?.status]);
 
