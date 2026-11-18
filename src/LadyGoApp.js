@@ -950,6 +950,9 @@ export default function LadyGoApp() {
   };
 
   const logout = async () => {
+    if (isDriver && user && orders.some(order => order.driver_id === user.id && ['accepted', 'arrived', 'in_progress'].includes(order.status))) {
+      return Alert.alert('Поездка ещё не завершена', 'Сначала заверши активную поездку, затем можно выйти из аккаунта.');
+    }
     if (user) {
       try {
         const token = (await Notifications.getExpoPushTokenAsync({
