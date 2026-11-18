@@ -21,6 +21,13 @@
       "android": {
         "buildType": "app-bundle"
       }
+    },
+    "apk": {
+      "distribution": "internal",
+      "node": "22.23.3",
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {
