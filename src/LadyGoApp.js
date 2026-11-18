@@ -1097,7 +1097,22 @@ export default function LadyGoApp() {
     </View>
 
     {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
-      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripMap order={activeOrder} />{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}{assignedDriver && <View style={{ gap: 6 }}><Text style={s.tariffName}>{assignedDriver.name}</Text>{assignedDriver.experience ? <Text style={s.muted}>{assignedDriver.experience}</Text> : null}{assignedDriver.phone ? <Button title="Позвонить водителю" secondary compact onPress={() => Linking.openURL('tel:' + assignedDriver.phone)} /> : null}</View>}</Card>}
+      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripMap order={activeOrder} />{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}{assignedDriver && <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 12 }}>
+        <View style={s.row}>
+          {assignedDriver.avatarUrl ? <Image source={{ uri: assignedDriver.avatarUrl }} style={s.driverAvatar} /> : <View style={s.driverAvatarPlaceholder}><Text style={s.avatarText}>{assignedDriver.name.slice(0,1).toUpperCase()}</Text></View>}
+          <View style={{ flex: 1, justifyContent: 'center', gap: 3 }}>
+            <Text style={s.tariffName}>{assignedDriver.name}</Text>
+            <Text style={s.muted}>{assignedDriver.averageRating == null ? 'Новый водитель' : '★ ' + assignedDriver.averageRating + ' · ' + assignedDriver.ratingCount + ' оценок'}</Text>
+            {assignedDriver.experience ? <Text style={s.muted}>{assignedDriver.experience}</Text> : null}
+          </View>
+        </View>
+        {(assignedDriver.vehicleMake || assignedDriver.vehicleModel) ? <View style={{ gap: 5 }}>
+          {assignedDriver.vehiclePhotoUrl ? <Image source={{ uri: assignedDriver.vehiclePhotoUrl }} style={s.vehiclePhoto} resizeMode="cover" /> : null}
+          <Text style={s.tariffName}>{[assignedDriver.vehicleMake, assignedDriver.vehicleModel, assignedDriver.vehicleYear].filter(Boolean).join(' ')}</Text>
+          <Text style={s.muted}>{[assignedDriver.vehicleColor, assignedDriver.vehiclePlate].filter(Boolean).join(' · ')}</Text>
+        </View> : null}
+        {assignedDriver.phone ? <Button title="Позвонить водителю" secondary compact onPress={() => Linking.openURL('tel:' + assignedDriver.phone)} /> : null}
+      </View>}</Card>}
       <View style={s.mapWrap}><MapView ref={mapRef} style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
         {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
         {stopCoords.map((point, index) => <Marker key={'stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} pinColor="#D69A35" />)}
@@ -1226,7 +1241,7 @@ export default function LadyGoApp() {
         <Button title={busy ? 'Сохраняем…' : 'Сохранить тарифы'} onPress={() => saveTariffRates().catch(e => Alert.alert('Тарифы', errorText(e)))} disabled={busy} />
       </Card>
       <Text style={s.section}>Заявки водителей</Text>
-      {applications.map(a => <Card key={a.id}><Text style={s.tariffName}>{a.full_name || 'Водитель'}</Text><Text style={s.muted}>{a.phone}</Text><Text style={s.muted}>{a.experience}</Text><Pill color={a.status === 'approved' ? C.green : a.status === 'rejected' ? C.red : C.pink}>{a.status}</Pill>
+      {applications.map(a => <Card key={a.id}>{a.avatar_url ? <Image source={{ uri: a.avatar_url }} style={s.driverAvatar} /> : null}<Text style={s.tariffName}>{a.full_name || 'Водитель'}</Text><Text style={s.muted}>{a.phone}</Text>{a.vehicle_photo_url ? <Image source={{ uri: a.vehicle_photo_url }} style={s.vehiclePhoto} resizeMode="cover" /> : null}<Text style={s.muted}>{[a.vehicle_make, a.vehicle_model, a.vehicle_color, a.vehicle_year, a.vehicle_plate].filter(Boolean).join(' · ')}</Text><Text style={s.muted}>{a.experience}</Text><Pill color={a.status === 'approved' ? C.green : a.status === 'rejected' ? C.red : C.pink}>{a.status}</Pill>
         {a.status === 'pending' && <View style={s.row}><View style={{ flex: 1 }}><Button title="Одобрить" onPress={() => reviewApplication(a, true)} /></View><View style={{ flex: 1 }}><Button title="Отклонить" secondary danger onPress={() => reviewApplication(a, false)} /></View></View>}
       </Card>)}
       <Text style={s.section}>Обращения в поддержку</Text>
@@ -1246,9 +1261,54 @@ export default function LadyGoApp() {
 
     {tab === 'profile' && <ScrollView contentContainerStyle={s.content}>
       <Text style={s.title}>Профиль</Text><Card><Text style={s.tariffName}>{profile?.email}</Text><Text style={s.muted}>Роль: {role}</Text></Card>
+      {isDriver && <Card>
+        <Text style={s.section}>Моя карточка водителя</Text>
+        <View style={s.row}>
+          {driverAvatarUri || driverProfile?.avatar_url
+            ? <Image source={{ uri: driverAvatarUri || driverProfile.avatar_url }} style={s.driverAvatar} />
+            : <View style={s.driverAvatarPlaceholder}><Text style={s.avatarText}>В</Text></View>}
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <Text style={s.tariffName}>Фотография водителя</Text>
+            <Text style={s.muted}>Эту фотографию увидит пассажир после назначения поездки.</Text>
+          </View>
+        </View>
+        <Button title="Выбрать фотографию" secondary compact onPress={() => chooseProfilePhoto(setDriverAvatarUri)} />
+        {(driverVehiclePhotoUri || driverProfile?.vehicle_photo_url)
+          ? <Image source={{ uri: driverVehiclePhotoUri || driverProfile.vehicle_photo_url }} style={s.vehiclePhoto} resizeMode="cover" />
+          : null}
+        <Button title="Фото автомобиля" secondary compact onPress={() => chooseProfilePhoto(setDriverVehiclePhotoUri, [4, 3])} />
+        <Input label="Имя для пассажиров" value={driverProfileDraft.display_name || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, display_name: value }))} />
+        <Input label="Телефон" value={driverProfileDraft.phone || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, phone: value }))} keyboardType="phone-pad" />
+        <Input label="Опыт" value={driverProfileDraft.experience || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, experience: value }))} />
+        <Input label="Марка автомобиля" value={driverProfileDraft.vehicle_make || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_make: value }))} />
+        <Input label="Модель автомобиля" value={driverProfileDraft.vehicle_model || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_model: value }))} />
+        <Input label="Цвет автомобиля" value={driverProfileDraft.vehicle_color || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_color: value }))} />
+        <Input label="Государственный номер" value={driverProfileDraft.vehicle_plate || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_plate: value }))} />
+        <Input label="Год выпуска" value={driverProfileDraft.vehicle_year || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_year: value }))} keyboardType="number-pad" />
+        <Button title={busy ? 'Сохраняем…' : 'Сохранить карточку водителя'} onPress={saveDriverProfile} disabled={busy} />
+      </Card>}
       {!isDriver && !isAdmin && applications[0] && <Card><Text style={s.section}>Заявка водителя</Text><Pill color={applications[0].status === 'approved' ? C.green : applications[0].status === 'rejected' ? C.red : C.pink}>{applications[0].status === 'approved' ? 'Одобрена' : applications[0].status === 'rejected' ? 'Отклонена' : 'На рассмотрении'}</Pill></Card>}
       {!isDriver && !isAdmin && <Card><Text style={s.section}>Сохранённые адреса</Text><Input label="Название" value={savedLabel} onChangeText={setSavedLabel} placeholder="Дом, работа…" /><Input label="Адрес" value={savedAddress} onChangeText={setSavedAddress} placeholder="Введите адрес" /><Button title="Сохранить адрес" onPress={savePlace} compact />{savedPlaces.map(p => <TouchableOpacity key={p.id} onPress={() => { setPickup(p.address); setCoords(null); setRoute([]); setRouteInfo(null); setTab('ride'); }}><Text style={s.address}>{p.label}: {p.address}</Text></TouchableOpacity>)}</Card>}
-      {!isDriver && !isAdmin && <Card><Text style={s.section}>Стать водителем</Text><Input label="ФИО" value={applicationName} onChangeText={setApplicationName} /><Input label="Телефон" value={applicationPhone} onChangeText={setApplicationPhone} keyboardType="phone-pad" /><Input label="Автомобиль" value={applicationCar} onChangeText={setApplicationCar} /><Input label="Опыт и комментарий" value={applicationNote} onChangeText={setApplicationNote} multiline /><Button title="Отправить заявку" onPress={submitApplication} disabled={busy} /></Card>}
+      {!isDriver && !isAdmin && <Card>
+        <Text style={s.section}>Стать водителем LadyGo</Text>
+        <Text style={s.muted}>Заполни карточку водителя и автомобиля. Документы предъявишь администратору лично.</Text>
+        <Input label="ФИО" value={applicationName} onChangeText={setApplicationName} />
+        <Input label="Телефон" value={applicationPhone} onChangeText={setApplicationPhone} keyboardType="phone-pad" />
+        <Text style={s.label}>Фотография водителя</Text>
+        {applicationAvatarUri ? <Image source={{ uri: applicationAvatarUri }} style={s.profilePreview} /> : null}
+        <Button title={applicationAvatarUri ? 'Изменить фотографию' : 'Добавить фотографию'} secondary compact onPress={() => chooseProfilePhoto(setApplicationAvatarUri)} />
+        <Text style={s.section}>Автомобиль</Text>
+        <Input label="Марка" value={applicationVehicleMake} onChangeText={setApplicationVehicleMake} placeholder="Например, Kia" />
+        <Input label="Модель" value={applicationVehicleModel} onChangeText={setApplicationVehicleModel} placeholder="Например, Rio" />
+        <Input label="Цвет" value={applicationVehicleColor} onChangeText={setApplicationVehicleColor} />
+        <Input label="Государственный номер" value={applicationVehiclePlate} onChangeText={setApplicationVehiclePlate} />
+        <Input label="Год выпуска" value={applicationVehicleYear} onChangeText={setApplicationVehicleYear} keyboardType="number-pad" />
+        <Text style={s.label}>Фотография автомобиля</Text>
+        {applicationVehiclePhotoUri ? <Image source={{ uri: applicationVehiclePhotoUri }} style={s.vehiclePhoto} resizeMode="cover" /> : null}
+        <Button title={applicationVehiclePhotoUri ? 'Изменить фото автомобиля' : 'Добавить фото автомобиля'} secondary compact onPress={() => chooseProfilePhoto(setApplicationVehiclePhotoUri, [4, 3])} />
+        <Input label="Опыт и дополнительная информация" value={applicationNote} onChangeText={setApplicationNote} multiline />
+        <Button title={busy ? 'Отправляем…' : 'Отправить заявку'} onPress={submitApplication} disabled={busy} />
+      </Card>}
       <Card><Text style={s.section}>Поддержка LadyGo</Text>
         <Input label="Тема обращения" value={supportSubject} onChangeText={setSupportSubject} placeholder="Например, вопрос по поездке" />
         <Input label="Сообщение" value={supportMessage} onChangeText={setSupportMessage} multiline placeholder="Опиши, что произошло или чем помочь…" />
@@ -1285,6 +1345,10 @@ const s = StyleSheet.create({
   topbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 10 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.pale, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: C.pinkDark, fontSize: 17, fontWeight: '800' },
+  driverAvatar: { width: 68, height: 68, borderRadius: 34, backgroundColor: C.pale },
+  driverAvatarPlaceholder: { width: 68, height: 68, borderRadius: 34, backgroundColor: C.pale, alignItems: 'center', justifyContent: 'center' },
+  profilePreview: { width: 112, height: 112, borderRadius: 18, backgroundColor: C.pale },
+  vehiclePhoto: { width: '100%', height: 150, borderRadius: 15, backgroundColor: C.pale },
   rolebar: { flexDirection: 'row', marginHorizontal: 16, backgroundColor: C.pale, borderRadius: 15, padding: 4, marginBottom: 4 },
   roleButton: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center' },
   roleActive: { backgroundColor: C.white, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 5, elevation: 2 },
