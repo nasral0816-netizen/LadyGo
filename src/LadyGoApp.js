@@ -61,14 +61,41 @@ function Pill({ children, color = C.pink }) {
 function Card({ children, style }) { return <View style={[s.card, style]}>{children}</View>; }
 
 function TripMap({ order }) {
+  const [roadRoute, setRoadRoute] = useState([]);
+  const [routeSummary, setRouteSummary] = useState(null);
   if (order.pickup_lat == null || order.pickup_lng == null || order.destination_lat == null || order.destination_lng == null) return null;
   const start = { latitude: Number(order.pickup_lat), longitude: Number(order.pickup_lng) };
   const end = { latitude: Number(order.destination_lat), longitude: Number(order.destination_lng) };
-  return <MapView style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: (start.latitude + end.latitude) / 2, longitude: (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
-    <Marker coordinate={start} title="Подача" pinColor={C.pink} />
-    <Marker coordinate={end} title="Назначение" pinColor={C.blue} />
-    <Polyline coordinates={[start, end]} strokeColor={C.pink} strokeWidth={4} />
-  </MapView>;
+
+  useEffect(() => {
+    let active = true;
+    setRoadRoute([]);
+    setRouteSummary(null);
+    const coordinates = `${start.longitude},${start.latitude};${end.longitude},${end.latitude}`;
+    fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson`)
+      .then(response => {
+        if (!response.ok) throw new Error('Route service unavailable');
+        return response.json();
+      })
+      .then(json => {
+        const route = json.routes?.[0];
+        if (!route?.geometry?.coordinates?.length) throw new Error('Route not found');
+        if (!active) return;
+        setRoadRoute(route.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })));
+        setRouteSummary({ km: (route.distance / 1000).toFixed(1), minutes: Math.max(1, Math.round(route.duration / 60)) });
+      })
+      .catch(() => { if (active) { setRoadRoute([]); setRouteSummary(null); } });
+    return () => { active = false; };
+  }, [start.latitude, start.longitude, end.latitude, end.longitude]);
+
+  return <View style={{ gap: 7 }}>
+    <MapView style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: (start.latitude + end.latitude) / 2, longitude: (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
+      <Marker coordinate={start} title="Подача" pinColor={C.pink} />
+      <Marker coordinate={end} title="Назначение" pinColor={C.blue} />
+      <Polyline coordinates={roadRoute.length > 1 ? roadRoute : [start, end]} strokeColor={C.pink} strokeWidth={4} />
+    </MapView>
+    {routeSummary && <Text style={s.routeInfo}>{routeSummary.km} км · около {routeSummary.minutes} мин по дороге</Text>}
+  </View>;
 }
 
 async function getPositionWithFallback() {
@@ -589,7 +616,7 @@ export default function LadyGoApp() {
         <Input label="Куда" value={destination} onChangeText={v => { setDestination(v); setDestinationCoords(null); setRoute([]); setRouteInfo(null); }} placeholder="Адрес назначения" />
         <Input label="Промежуточные точки (по одной на строку)" value={stopsText} onChangeText={v => { setStopsText(v); setStopCoords([]); setRoute([]); setRouteInfo(null); }} multiline placeholder="Можно оставить пустым" />
         <Input label="Когда подать машину" value={requestedFor} onChangeText={setRequestedFor} placeholder="Как можно скорее или дата и время" />
-        {savedPlaces.length > 0 && <View style={{ gap: 6 }}><Text style={s.label}>Сохранённые адреса</Text><View style={s.row}>{savedPlaces.slice(0, 3).map(p => <TouchableOpacity key={p.id} style={s.savedChip} onPress={() => setPickup(p.address)}><Text style={s.savedChipText}>{p.label}</Text></TouchableOpacity>)}</View></View>}
+        {savedPlaces.length > 0 && <View style={{ gap: 6 }}><Text style={s.label}>Сохранённые адреса</Text><View style={s.row}>{savedPlaces.slice(0, 3).map(p => <TouchableOpacity key={p.id} style={s.savedChip} onPress={() => { setPickup(p.address); setCoords(null); setRoute([]); setRouteInfo(null); }}><Text style={s.savedChipText}>{p.label}</Text></TouchableOpacity>)}</View></View>}
         <Button title="Построить маршрут" secondary compact onPress={buildRoute} />
         {routeInfo && <Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text>}
       </Card>
@@ -669,7 +696,7 @@ export default function LadyGoApp() {
     {tab === 'profile' && <ScrollView contentContainerStyle={s.content}>
       <Text style={s.title}>Профиль</Text><Card><Text style={s.tariffName}>{profile?.email}</Text><Text style={s.muted}>Роль: {role}</Text></Card>
       {!isDriver && !isAdmin && applications[0] && <Card><Text style={s.section}>Заявка водителя</Text><Pill color={applications[0].status === 'approved' ? C.green : applications[0].status === 'rejected' ? C.red : C.pink}>{applications[0].status === 'approved' ? 'Одобрена' : applications[0].status === 'rejected' ? 'Отклонена' : 'На рассмотрении'}</Pill></Card>}
-      {!isDriver && !isAdmin && <Card><Text style={s.section}>Сохранённые адреса</Text><Input label="Название" value={savedLabel} onChangeText={setSavedLabel} placeholder="Дом, работа…" /><Input label="Адрес" value={savedAddress} onChangeText={setSavedAddress} placeholder="Введите адрес" /><Button title="Сохранить адрес" onPress={savePlace} compact />{savedPlaces.map(p => <TouchableOpacity key={p.id} onPress={() => { setPickup(p.address); setTab('ride'); }}><Text style={s.address}>{p.label}: {p.address}</Text></TouchableOpacity>)}</Card>}
+      {!isDriver && !isAdmin && <Card><Text style={s.section}>Сохранённые адреса</Text><Input label="Название" value={savedLabel} onChangeText={setSavedLabel} placeholder="Дом, работа…" /><Input label="Адрес" value={savedAddress} onChangeText={setSavedAddress} placeholder="Введите адрес" /><Button title="Сохранить адрес" onPress={savePlace} compact />{savedPlaces.map(p => <TouchableOpacity key={p.id} onPress={() => { setPickup(p.address); setCoords(null); setRoute([]); setRouteInfo(null); setTab('ride'); }}><Text style={s.address}>{p.label}: {p.address}</Text></TouchableOpacity>)}</Card>}
       {!isDriver && !isAdmin && <Card><Text style={s.section}>Стать водителем</Text><Input label="ФИО" value={applicationName} onChangeText={setApplicationName} /><Input label="Телефон" value={applicationPhone} onChangeText={setApplicationPhone} keyboardType="phone-pad" /><Input label="Автомобиль" value={applicationCar} onChangeText={setApplicationCar} /><Input label="Опыт и комментарий" value={applicationNote} onChangeText={setApplicationNote} multiline /><Button title="Отправить заявку" onPress={submitApplication} disabled={busy} /></Card>}
       <Button title="Связаться с поддержкой" secondary onPress={() => Linking.openURL('mailto:' + SUPPORT)} />
       <Button title="Позвонить водителю" secondary onPress={() => Linking.openURL('tel:' + PHONE)} />
