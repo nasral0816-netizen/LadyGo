@@ -1050,7 +1050,7 @@ export default function LadyGoApp() {
         <View style={s.rowBetween}><Pill color={o.status === 'completed' ? C.green : o.status === 'cancelled' ? C.red : C.pink}>{STATUS[o.status] || o.status}</Pill><Text style={s.price}>{money(o.price_rub)}</Text></View>
         <Text style={s.address}>● {o.pickup_address}</Text><Text style={s.address}>● {o.destination_address}</Text>
         <Text style={s.muted}>Оплата: {o.payment_method === 'transfer_to_driver' ? 'Перевод водителю' : 'Наличными'}</Text>
-        {o.driver_id && <Text style={s.muted}>Водитель назначен</Text>
+        {o.driver_id && <Text style={s.muted}>Водитель назначен</Text>}
         {o.status === 'completed' && o.driver_id && (() => {
           const existingRating = ratings.find(item => item.order_id === o.id);
           if (existingRating) return <Pill color={C.green}>Твоя оценка: {existingRating.rating}/5 ★</Pill>;
