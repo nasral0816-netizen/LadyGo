@@ -1,5 +1,4 @@
 -- Prevent one driver from receiving multiple simultaneous offers or trips.
--- This migration is staged in GitHub; it is not applied to the live database.
 
 create or replace function public.ladygo_dispatch_next_driver(p_order_id uuid)
 returns uuid
