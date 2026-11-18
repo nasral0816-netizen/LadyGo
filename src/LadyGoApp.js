@@ -31,12 +31,10 @@ if (!TaskManager.isTaskDefined(DRIVER_LOCATION_TASK)) {
       ]);
       if (currentProfile?.role !== 'driver' || presence?.is_online !== true) return;
       const now = new Date().toISOString();
-      const { latitude, longitude, heading, accuracy, speed } = latest.coords;
+      const { latitude, longitude, heading } = latest.coords;
       const { error: locationError } = await supabase.from('driver_locations').upsert({
         driver_id: currentUser.id, latitude, longitude,
         heading: Number.isFinite(heading) ? heading : null,
-        accuracy: Number.isFinite(accuracy) ? accuracy : null,
-        speed: Number.isFinite(speed) ? speed : null,
         updated_at: now,
       });
       if (locationError) throw locationError;
@@ -145,6 +143,23 @@ function TripMap({ order }) {
     {routeSummary && <Text style={s.routeInfo}>{routeSummary.km} км · около {routeSummary.minutes} мин по дороге</Text>}
   </View>;
 }
+
+const openDriverNavigation = async order => {
+  const stops = Array.isArray(order.stops) ? order.stops : [];
+  const waypoints = stops.slice(0, 3).map(stop => stop.address).filter(Boolean).join('|');
+  const query = [
+    'api=1',
+    'destination=' + encodeURIComponent(order.destination_address || ''),
+    'travelmode=driving',
+    waypoints ? 'waypoints=' + encodeURIComponent(waypoints) : '',
+  ].filter(Boolean).join('&');
+  const url = 'https://www.google.com/maps/dir/?' + query;
+  try {
+    await Linking.openURL(url);
+  } catch (_) {
+    Alert.alert('Навигация', 'Не удалось открыть карты на этом устройстве.');
+  }
+};
 
 async function getPositionWithFallback() {
   const enabled = await Location.hasServicesEnabledAsync();
@@ -821,7 +836,7 @@ export default function LadyGoApp() {
       </Card>)}
       <Text style={s.section}>Мои активные поездки</Text>
       {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).map(o => <Card key={o.id}>
-        <Pill>{STATUS[o.status] || o.status}</Pill><TripMap order={o} /><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
+        <Pill>{STATUS[o.status] || o.status}</Pill><TripMap order={o} /><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text><Button title="Открыть навигацию" secondary onPress={() => openDriverNavigation(o)} />
         {Array.isArray(o.stops) && o.stops.length > 0 ? <View style={{ gap: 4 }}><Text style={s.label}>Промежуточные остановки</Text>{o.stops.map((stop, index) => <Text key={'order-stop-' + index} style={s.muted}>{index + 1}. {stop.address}</Text>)}</View> : null}
         {o.notes ? <Text style={s.muted}>{o.notes}</Text> : null}
         {o.passenger_phone ? <Button title="Позвонить пассажиру" secondary compact onPress={() => Linking.openURL('tel:' + o.passenger_phone)} /> : null}
