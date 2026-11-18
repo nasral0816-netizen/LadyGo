@@ -101,44 +101,36 @@ begin
 end;
 $function$;
 
--- Safe helper avoids recursive RLS evaluation when profiles and orders
--- reference each other in their row policies.
-create or replace function public.ladygo_can_view_assigned_driver(p_driver_id uuid)
-returns boolean
+-- Return only the assigned driver's public trip contact fields. This avoids
+-- granting passengers broad SELECT access to profiles or driver applications.
+create or replace function public.ladygo_get_assigned_driver_contact(p_order_id uuid)
+returns table(full_name text, phone text, experience text)
 language sql
 stable
 security definer
 set search_path to 'public', 'pg_temp'
 as $function$
-  select (select auth.uid()) is not null and exists (
-    select 1
-    from public.orders o
-    where o.driver_id = p_driver_id
-      and o.passenger_id = (select auth.uid())
-      and o.status in ('accepted', 'arrived', 'in_progress')
-  );
+  select
+    coalesce(application.full_name, 'Водитель LadyGo') as full_name,
+    coalesce(application.phone, profile.phone) as phone,
+    coalesce(application.experience, '') as experience
+  from public.orders o
+  join public.profiles profile on profile.id = o.driver_id
+  left join lateral (
+    select da.full_name, da.phone, da.experience
+    from public.driver_applications da
+    where da.user_id = o.driver_id and da.status = 'approved'
+    order by da.reviewed_at desc nulls last, da.created_at desc
+    limit 1
+  ) application on true
+  where o.id = p_order_id
+    and o.passenger_id = (select auth.uid())
+    and o.status in ('accepted', 'arrived', 'in_progress')
+  limit 1;
 $function$;
 
-revoke all on function public.ladygo_can_view_assigned_driver(uuid) from public, anon, authenticated;
-grant execute on function public.ladygo_can_view_assigned_driver(uuid) to authenticated;
-
--- A passenger can see only the assigned driver's contact details during an active trip.
-drop policy if exists "passengers read assigned driver contact" on public.profiles;
-create policy "passengers read assigned driver contact"
-on public.profiles
-for select
-to authenticated
-using (public.ladygo_can_view_assigned_driver(profiles.id));
-
-drop policy if exists "passengers read assigned driver application" on public.driver_applications;
-create policy "passengers read assigned driver application"
-on public.driver_applications
-for select
-to authenticated
-using (
-  status = 'approved'
-  and public.ladygo_can_view_assigned_driver(driver_applications.user_id)
-);
+revoke all on function public.ladygo_get_assigned_driver_contact(uuid) from public, anon;
+grant execute on function public.ladygo_get_assigned_driver_contact(uuid) to authenticated;
 
 -- Keep intermediate stops as structured route data instead of burying them in notes.
 alter table public.orders
@@ -155,8 +147,10 @@ begin
     alter table public.orders
       add constraint orders_stops_array_limit
       check (
-        jsonb_typeof(stops) = 'array'
-        and jsonb_array_length(stops) <= 20
+        case
+          when jsonb_typeof(stops) = 'array' then jsonb_array_length(stops) <= 20
+          else false
+        end
       );
   end if;
 end
