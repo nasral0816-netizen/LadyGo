@@ -77,6 +77,7 @@ export default function LadyGoApp() {
   const [tariff, setTariff] = useState('economy');
   const [coords, setCoords] = useState(null);
   const [destinationCoords, setDestinationCoords] = useState(null);
+  const [driverLocation, setDriverLocation] = useState(null);
   const [route, setRoute] = useState([]);
   const [routeInfo, setRouteInfo] = useState(null);
   const [locationBusy, setLocationBusy] = useState(false);
@@ -208,6 +209,20 @@ export default function LadyGoApp() {
     })();
     return () => { active = false; if (locationWatch.current) { locationWatch.current.remove(); locationWatch.current = null; } };
   }, [isDriver, user, driverOnline]);
+
+  useEffect(() => {
+    if (mode !== 'passenger' || !activeOrder?.driver_id) { setDriverLocation(null); return; }
+    let alive = true;
+    const driverId = activeOrder.driver_id;
+    supabase.from('driver_locations').select('*').eq('driver_id', driverId).maybeSingle()
+      .then(({ data }) => { if (alive && data) setDriverLocation({ latitude: data.latitude, longitude: data.longitude, updated_at: data.updated_at }); });
+    const channel = supabase.channel('ladygo-driver-location-' + driverId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_locations', filter: 'driver_id=eq.' + driverId }, payload => {
+        const row = payload.new;
+        if (alive && row?.latitude != null && row?.longitude != null) setDriverLocation({ latitude: row.latitude, longitude: row.longitude, updated_at: row.updated_at });
+      }).subscribe();
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [mode, activeOrder?.driver_id]);
 
   useEffect(() => {
     if (!isDriver || !user) return;
@@ -400,9 +415,11 @@ export default function LadyGoApp() {
     </View>
 
     {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
-      <View style={s.mapWrap}><MapView style={s.map} region={mapRegion} onRegionChangeComplete={r => { if (!coords) return; }} showsUserLocation>
+      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text>{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}</Card>}
+      <View style={s.mapWrap}><MapView style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation>
         {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
         {destinationCoords && <Marker coordinate={destinationCoords} title="Назначение" pinColor={C.blue} />}
+        {driverLocation && <Marker coordinate={driverLocation} title="Автомобиль LadyGo" pinColor="#26865A" />}
         {route.length > 1 && <Polyline coordinates={route} strokeColor={C.pink} strokeWidth={5} />}
       </MapView><TouchableOpacity style={s.locButton} onPress={getCurrentLocation}><Text style={s.locText}>{locationBusy ? 'Определяем…' : '◎ Моё местоположение'}</Text></TouchableOpacity></View>
       <Card>
