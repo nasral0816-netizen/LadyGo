@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Platform,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Platform, Share,
   SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
@@ -143,6 +143,28 @@ function TripMap({ order }) {
     {routeSummary && <Text style={s.routeInfo}>{routeSummary.km} км · около {routeSummary.minutes} мин по дороге</Text>}
   </View>;
 }
+
+const shareTripDetails = async order => {
+  const tariffName = TARIFFS.find(item => item.id === order.tariff_id)?.name || 'Поездка';
+  const stops = Array.isArray(order.stops) ? order.stops.map((stop, index) => (index + 1) + '. ' + stop.address).join('\n') : '';
+  const details = [
+    'LadyGo — детали поездки',
+    'Номер заказа: ' + order.id,
+    'Дата: ' + new Date(order.created_at).toLocaleString(),
+    'Откуда: ' + order.pickup_address,
+    stops ? 'Остановки:\n' + stops : '',
+    'Куда: ' + order.destination_address,
+    'Тариф: ' + tariffName,
+    'Стоимость: ' + money(order.price_rub),
+    'Оплата: ' + (order.payment_method === 'transfer_to_driver' ? 'Перевод водителю' : 'Наличными'),
+    'Статус: ' + (STATUS[order.status] || order.status),
+  ].filter(Boolean).join('\n');
+  try {
+    await Share.share({ message: details });
+  } catch (_) {
+    Alert.alert('Поделиться поездкой', 'Не удалось открыть меню отправки.');
+  }
+};
 
 const openDriverNavigation = async order => {
   const stops = Array.isArray(order.stops) ? order.stops : [];
@@ -996,6 +1018,7 @@ export default function LadyGoApp() {
             <Button title="Отправить оценку" onPress={() => submitRating(o)} disabled={busy || !ratingDraft[o.id]} compact />
           </View>;
         })()}
+        {o.status === 'completed' && <Button title="Поделиться деталями поездки" secondary compact onPress={() => shareTripDetails(o)} />}
         {o.status === 'new' && !o.driver_id && <Button title="Отменить заказ" danger secondary onPress={() => cancelOrder(o)} />}
       </Card>)}
     </ScrollView>}
