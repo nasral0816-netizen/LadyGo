@@ -197,6 +197,7 @@ export default function LadyGoApp() {
   const [requestedFor, setRequestedFor] = useState('Как можно скорее');
   const [stopsText, setStopsText] = useState('');
   const [tariff, setTariff] = useState('economy');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
   const [savedPlaces, setSavedPlaces] = useState([]);
   const [savedLabel, setSavedLabel] = useState('Дом');
   const [savedAddress, setSavedAddress] = useState('');
@@ -683,6 +684,7 @@ export default function LadyGoApp() {
         stops: structuredStops,
         tariff_id: tariff,
         estimated_price_rub: estimatedPrice == null ? null : Math.round(estimatedPrice),
+        payment_method: paymentMethod,
         status: 'new',
         ...(start ? { pickup_lat: start.latitude, pickup_lng: start.longitude } : {}),
         ...(end ? { destination_lat: end.latitude, destination_lng: end.longitude } : {}),
@@ -955,6 +957,15 @@ export default function LadyGoApp() {
         <View style={{ flex: 1 }}><Text style={s.tariffName}>{t.name}</Text><Text style={s.muted}>{t.detail}</Text></View>
         <View style={[s.radio, tariff === t.id && s.radioOn]} />
       </TouchableOpacity>)}
+      <Text style={s.section}>Способ оплаты</Text>
+      <View style={s.row}>
+        <TouchableOpacity onPress={() => setPaymentMethod('cash')} style={[s.savedChip, paymentMethod === 'cash' && { borderWidth: 1, borderColor: C.pink }]}>
+          <Text style={s.savedChipText}>Наличными</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setPaymentMethod('transfer_to_driver')} style={[s.savedChip, paymentMethod === 'transfer_to_driver' && { borderWidth: 1, borderColor: C.pink }]}>
+          <Text style={s.savedChipText}>Перевод водителю</Text>
+        </TouchableOpacity>
+      </View>
       <Card><Text style={s.section}>Пожелания к поездке</Text>
         <Input label="Телефон для связи (необязательно)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+7…" />
         <Input label="Комментарий водителю" value={comment} onChangeText={setComment} multiline placeholder="Например, подъехать к главному входу" />
@@ -969,7 +980,8 @@ export default function LadyGoApp() {
       {orders.map(o => <Card key={o.id}>
         <View style={s.rowBetween}><Pill color={o.status === 'completed' ? C.green : o.status === 'cancelled' ? C.red : C.pink}>{STATUS[o.status] || o.status}</Pill><Text style={s.price}>{money(o.price_rub)}</Text></View>
         <Text style={s.address}>● {o.pickup_address}</Text><Text style={s.address}>● {o.destination_address}</Text>
-        {o.driver_id && <Text style={s.muted}>Водитель назначен</Text>}
+        <Text style={s.muted}>Оплата: {o.payment_method === 'transfer_to_driver' ? 'Перевод водителю' : 'Наличными'}</Text>
+        {o.driver_id && <Text style={s.muted}>Водитель назначен</Text>
         {o.status === 'completed' && o.driver_id && (() => {
           const existingRating = ratings.find(item => item.order_id === o.id);
           if (existingRating) return <Pill color={C.green}>Твоя оценка: {existingRating.rating}/5 ★</Pill>;
@@ -1000,6 +1012,7 @@ export default function LadyGoApp() {
       {orders.filter(o => o.status === 'new' && !o.driver_id).map(o => <Card key={o.id}>
         <View style={s.rowBetween}><Pill>Новый заказ</Pill><Text style={s.price}>{Math.max(0, 30 - Math.floor((clock - new Date(offerTimes[o.id] || o.created_at).getTime()) / 1000))} сек.</Text></View><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
         {o.estimated_price_rub != null ? <Text style={s.muted}>Ориентир для пассажира: {money(o.estimated_price_rub)}</Text> : null}
+        <Text style={s.muted}>Оплата: {o.payment_method === 'transfer_to_driver' ? 'Перевод водителю' : 'Наличными'}</Text>
         <Input label="Подтвердить стоимость, ₽" value={String(fare[o.id] || '')} onChangeText={v => setFare(p => ({ ...p, [o.id]: v }))} keyboardType="numeric" placeholder="Например, 450" />
         <Button title="Принять заказ" disabled={busy} onPress={() => acceptOfferedOrder(o)} />
         <Button title="Пропустить" secondary onPress={() => skipOfferedOrder(o)} disabled={busy} compact />
