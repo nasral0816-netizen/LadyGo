@@ -576,9 +576,27 @@ export default function LadyGoApp() {
         setDriverGpsError('');
         setDriverGpsUpdatedAt(now);
         locationWatch.current = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 25 },
+          { accuracy: Location.Accuracy.Balanced, timeInterval: 12000, distanceInterval: 15 },
           location => {
-            if (active) setDriverGpsUpdatedAt(new Date(location.timestamp || Date.now()).toISOString());
+            if (!active || !location?.coords) return;
+            const updatedAt = new Date(location.timestamp || Date.now()).toISOString();
+            const { latitude: liveLat, longitude: liveLng, heading: liveHeading } = location.coords;
+            setDriverGpsUpdatedAt(updatedAt);
+            // Keep the live vehicle marker and dispatcher's freshness heartbeat current while the app is open.
+            Promise.all([
+              supabase.from('driver_locations').upsert({
+                driver_id: user.id, latitude: liveLat, longitude: liveLng,
+                heading: Number.isFinite(liveHeading) ? liveHeading : null, updated_at: updatedAt,
+              }),
+              supabase.from('driver_presence').update({ is_online: true, updated_at: updatedAt }).eq('driver_id', user.id),
+            ]).then(([locationResult, presenceResult]) => {
+              if (!active) return;
+              if (locationResult.error || presenceResult.error) {
+                setDriverGpsError(errorText(locationResult.error || presenceResult.error));
+              } else {
+                setDriverGpsError('');
+              }
+            }).catch(error => { if (active) setDriverGpsError(errorText(error)); });
           },
           reason => { if (active) setDriverGpsError(errorText(reason)); }
         );
