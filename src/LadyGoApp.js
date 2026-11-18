@@ -211,6 +211,9 @@ export default function LadyGoApp() {
   const [locationBusy, setLocationBusy] = useState(false);
   const [orders, setOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [ratings, setRatings] = useState([]);
+  const [ratingDraft, setRatingDraft] = useState({});
+  const [ratingComments, setRatingComments] = useState({});
   const [applications, setApplications] = useState([]);
   const [driverOnline, setDriverOnline] = useState(false);
   const [driverGpsError, setDriverGpsError] = useState('');
@@ -260,6 +263,18 @@ export default function LadyGoApp() {
     setNotifications(data || []);
   }, [user]);
 
+  const loadRatings = useCallback(async () => {
+    if (!user || !profile || !supabase) return;
+    let query = supabase.from('order_ratings')
+      .select('id, order_id, passenger_id, driver_id, rating, comment, created_at')
+      .order('created_at', { ascending: false }).limit(100);
+    if (role === 'driver') query = query.eq('driver_id', user.id);
+    else if (!isAdmin) query = query.eq('passenger_id', user.id);
+    const { data, error } = await query;
+    if (error) throw error;
+    setRatings(data || []);
+  }, [user, profile, role, isAdmin]);
+
   const loadApplications = useCallback(async () => {
     if (!user || !profile || !supabase) return;
     let query = supabase.from('driver_applications').select('*').order('created_at', { ascending: false });
@@ -277,9 +292,9 @@ export default function LadyGoApp() {
 
   const refreshAll = useCallback(async () => {
     try {
-      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces(), loadNotifications()]);
+      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces(), loadNotifications(), loadRatings()]);
     } catch (e) { Alert.alert('Не удалось обновить данные', errorText(e)); }
-  }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications]);
+  }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications, loadRatings]);
 
   useEffect(() => {
     const handleAuthUrl = async url => {
@@ -625,6 +640,25 @@ export default function LadyGoApp() {
     setBusy(false);
   };
 
+  const submitRating = async order => {
+    const value = Number(ratingDraft[order.id] || 0);
+    if (!Number.isInteger(value) || value < 1 || value > 5) {
+      return Alert.alert('Оценка поездки', 'Выбери оценку от 1 до 5 звёзд.');
+    }
+    setBusy(true);
+    const { error } = await supabase.from('order_ratings').insert({
+      order_id: order.id,
+      passenger_id: user.id,
+      driver_id: order.driver_id,
+      rating: value,
+      comment: (ratingComments[order.id] || '').trim() || null,
+    });
+    setBusy(false);
+    if (error) return Alert.alert('Не удалось отправить оценку', errorText(error));
+    await loadRatings();
+    Alert.alert('Спасибо за оценку!', 'Твой отзыв сохранён.');
+  };
+
   const updateOrder = async (order, status) => {
     setBusy(true);
     const { data, error } = await supabase.rpc('ladygo_update_trip_status', { p_order_id: order.id, p_status: status });
@@ -842,12 +876,27 @@ export default function LadyGoApp() {
         <View style={s.rowBetween}><Pill color={o.status === 'completed' ? C.green : o.status === 'cancelled' ? C.red : C.pink}>{STATUS[o.status] || o.status}</Pill><Text style={s.price}>{money(o.price_rub)}</Text></View>
         <Text style={s.address}>● {o.pickup_address}</Text><Text style={s.address}>● {o.destination_address}</Text>
         {o.driver_id && <Text style={s.muted}>Водитель назначен</Text>}
+        {o.status === 'completed' && o.driver_id && (() => {
+          const existingRating = ratings.find(item => item.order_id === o.id);
+          if (existingRating) return <Pill color={C.green}>Твоя оценка: {existingRating.rating}/5 ★</Pill>;
+          return <View style={{ gap: 8 }}>
+            <Text style={s.label}>Оцени поездку</Text>
+            <View style={s.row}>
+              {[1, 2, 3, 4, 5].map(value => <TouchableOpacity key={value} onPress={() => setRatingDraft(p => ({ ...p, [o.id]: value }))} style={{ padding: 7 }}>
+                <Text style={{ fontSize: 27, color: value <= (ratingDraft[o.id] || 0) ? '#E6A23C' : '#CFC5CA' }}>★</Text>
+              </TouchableOpacity>)}
+            </View>
+            <Input label="Комментарий (необязательно)" value={ratingComments[o.id] || ''} onChangeText={value => setRatingComments(p => ({ ...p, [o.id]: value }))} placeholder="Как прошла поездка?" multiline />
+            <Button title="Отправить оценку" onPress={() => submitRating(o)} disabled={busy || !ratingDraft[o.id]} compact />
+          </View>;
+        })()}
         {o.status === 'new' && !o.driver_id && <Button title="Отменить заказ" danger secondary onPress={() => cancelOrder(o)} />}
       </Card>)}
     </ScrollView>}
 
     {mode === 'driver' && <ScrollView contentContainerStyle={s.content}>
       <Text style={s.title}>Рабочий экран</Text>
+      <Card><Text style={s.muted}>Рейтинг водителя</Text><Text style={s.heading}>{ratings.length ? (ratings.reduce((sum, item) => sum + Number(item.rating), 0) / ratings.length).toFixed(1) + ' ★' : 'Пока нет оценок'}</Text><Text style={s.muted}>{ratings.length} оценок пассажиров</Text></Card>
       <Card><Text style={s.muted}>Статус водителя</Text><Text style={s.heading}>{driverOnline ? 'На линии' : 'Не на линии'}</Text>
         <Button title={busy ? 'Сохраняем…' : driverOnline ? 'Завершить смену' : 'Выйти на линию'} onPress={() => driverOnline ? setDriverAvailability(false) : Alert.alert('Фоновая геолокация', 'Во время смены LadyGo будет передавать местоположение, даже когда приложение свёрнуто. На Android появится постоянное системное уведомление. Разрешение нужно только водителю на линии.', [{ text: 'Отмена', style: 'cancel' }, { text: 'Продолжить', onPress: () => setDriverAvailability(true) }])} disabled={busy} secondary={!driverOnline} />
         <Text style={s.disclaimer}>При выходе на линию LadyGo обновляет геопозицию и статус доступности даже при свёрнутом приложении. На Android отображается системное уведомление о работе геолокации.</Text>
