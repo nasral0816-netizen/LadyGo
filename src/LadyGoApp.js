@@ -337,9 +337,18 @@ export default function LadyGoApp() {
   useEffect(() => { if (isDriver) setMode('driver'); else if (isAdmin) setMode('admin'); else setMode('passenger'); }, [isDriver, isAdmin]);
 
   const registerDriverPush = useCallback(async () => {
-    if (!isDriver || !user || !Device.isDevice) return;
+    if (!user || !supabase || !Device.isDevice) return;
     try {
-      if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('driver-orders', { name: 'Заказы LadyGo', importance: Notifications.AndroidImportance.MAX, sound: 'default', vibrationPattern: [0, 250, 150, 250] });
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('driver-orders', {
+          name: 'Заказы LadyGo', importance: Notifications.AndroidImportance.MAX,
+          sound: 'default', vibrationPattern: [0, 250, 150, 250],
+        });
+        await Notifications.setNotificationChannelAsync('trip-updates', {
+          name: 'Статусы поездок', importance: Notifications.AndroidImportance.HIGH,
+          sound: 'default', vibrationPattern: [0, 180, 120, 180],
+        });
+      }
       const permission = await Notifications.getPermissionsAsync();
       let status = permission.status;
       if (status !== 'granted') status = (await Notifications.requestPermissionsAsync()).status;
@@ -347,10 +356,17 @@ export default function LadyGoApp() {
       const projectId = '95ac82ec-010d-4770-9aba-9f52878e1b3b';
       const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
       const platform = Platform.OS === 'ios' ? 'ios' : 'android';
-      const { error } = await supabase.from('driver_push_tokens').upsert({
-        driver_id: user.id, expo_push_token: token, device_platform: platform, updated_at: new Date().toISOString(),
-      }, { onConflict: 'driver_id,expo_push_token' });
-      if (error) console.warn('Push token registration:', error.message);
+      const now = new Date().toISOString();
+      const { error: userTokenError } = await supabase.from('user_push_tokens').upsert({
+        user_id: user.id, expo_push_token: token, device_platform: platform, updated_at: now,
+      }, { onConflict: 'user_id,expo_push_token' });
+      if (userTokenError) console.warn('User push token registration:', userTokenError.message);
+      if (isDriver) {
+        const { error } = await supabase.from('driver_push_tokens').upsert({
+          driver_id: user.id, expo_push_token: token, device_platform: platform, updated_at: now,
+        }, { onConflict: 'driver_id,expo_push_token' });
+        if (error) console.warn('Driver push token registration:', error.message);
+      }
     } catch (e) { console.warn('Push registration:', e?.message || e); }
   }, [isDriver, user]);
 
