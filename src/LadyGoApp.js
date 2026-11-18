@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Platform, Share,
+  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Linking, Platform, Share,
   SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
@@ -9,6 +9,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import * as TaskManager from 'expo-task-manager';
+import * as ImagePicker from 'expo-image-picker';
 import { supabase, isConfigured } from './supabase';
 
 Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }) });
@@ -253,6 +254,17 @@ export default function LadyGoApp() {
   const [applicationPhone, setApplicationPhone] = useState('');
   const [applicationCar, setApplicationCar] = useState('');
   const [applicationNote, setApplicationNote] = useState('');
+  const [applicationVehicleMake, setApplicationVehicleMake] = useState('');
+  const [applicationVehicleModel, setApplicationVehicleModel] = useState('');
+  const [applicationVehicleColor, setApplicationVehicleColor] = useState('');
+  const [applicationVehiclePlate, setApplicationVehiclePlate] = useState('');
+  const [applicationVehicleYear, setApplicationVehicleYear] = useState('');
+  const [applicationAvatarUri, setApplicationAvatarUri] = useState(null);
+  const [applicationVehiclePhotoUri, setApplicationVehiclePhotoUri] = useState(null);
+  const [driverProfile, setDriverProfile] = useState(null);
+  const [driverProfileDraft, setDriverProfileDraft] = useState({});
+  const [driverAvatarUri, setDriverAvatarUri] = useState(null);
+  const [driverVehiclePhotoUri, setDriverVehiclePhotoUri] = useState(null);
   const locationWatch = useRef(null);
   const mapRef = useRef(null);
 
@@ -273,6 +285,19 @@ export default function LadyGoApp() {
     setProfile(data || null);
     return data || null;
   }, []);
+
+  const loadDriverProfile = useCallback(async () => {
+    if (!user || !isDriver || !supabase) { setDriverProfile(null); return; }
+    const { data, error } = await supabase.from('driver_profiles').select('*').eq('driver_id', user.id).maybeSingle();
+    if (error) throw error;
+    setDriverProfile(data || null);
+    if (data) setDriverProfileDraft({
+      display_name: data.display_name || '', phone: data.phone || '', experience: data.experience || '',
+      vehicle_make: data.vehicle_make || '', vehicle_model: data.vehicle_model || '',
+      vehicle_color: data.vehicle_color || '', vehicle_plate: data.vehicle_plate || '',
+      vehicle_year: data.vehicle_year == null ? '' : String(data.vehicle_year),
+    });
+  }, [user, isDriver]);
 
   const loadOrders = useCallback(async () => {
     if (!user || !profile || !supabase) return;
@@ -341,9 +366,9 @@ export default function LadyGoApp() {
 
   const refreshAll = useCallback(async () => {
     try {
-      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces(), loadNotifications(), loadRatings(), loadTariffRates(), loadSupportTickets()]);
+      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces(), loadNotifications(), loadRatings(), loadTariffRates(), loadSupportTickets(), loadDriverProfile()]);
     } catch (e) { Alert.alert('Не удалось обновить данные', errorText(e)); }
-  }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications, loadRatings, loadTariffRates, loadSupportTickets]);
+  }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications, loadRatings, loadTariffRates, loadSupportTickets, loadDriverProfile]);
 
   useEffect(() => {
     const handleAuthUrl = async url => {
@@ -682,6 +707,26 @@ export default function LadyGoApp() {
     } finally {
       setLocationBusy(false);
     }
+  };
+
+  const chooseProfilePhoto = async (setter, aspect = [1, 1]) => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect, quality: 0.78 });
+      if (!result.canceled && result.assets?.[0]?.uri) setter(result.assets[0].uri);
+    } catch (error) { Alert.alert('Фотография', errorText(error)); }
+  };
+
+  const uploadDriverPhoto = async (uri, kind) => {
+    if (!uri || !user) return null;
+    const response = await fetch(uri);
+    if (!response.ok) throw new Error('Не удалось прочитать выбранную фотографию.');
+    const file = await response.arrayBuffer();
+    const objectPath = user.id + '/' + kind + '-' + Date.now() + '.jpg';
+    const { error } = await supabase.storage.from('ladygo-driver-media').upload(objectPath, file, {
+      contentType: 'image/jpeg', cacheControl: '3600', upsert: false,
+    });
+    if (error) throw error;
+    return supabase.storage.from('ladygo-driver-media').getPublicUrl(objectPath).data.publicUrl;
   };
 
   const savePlace = async () => {
