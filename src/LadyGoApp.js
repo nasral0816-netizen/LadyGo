@@ -621,6 +621,9 @@ export default function LadyGoApp() {
   };
 
   const setDriverAvailability = async nextOnline => {
+    if (!nextOnline && orders.some(order => order.driver_id === user.id && ['accepted', 'arrived', 'in_progress'].includes(order.status))) {
+      return Alert.alert('Поездка ещё не завершена', 'Сначала заверши активную поездку, затем можно закончить смену.');
+    }
     setBusy(true);
     try {
       if (nextOnline) {
@@ -744,7 +747,16 @@ export default function LadyGoApp() {
     else Alert.alert('Письмо отправлено', 'Проверь почту и перейди по ссылке для восстановления пароля.');
   };
 
-  const logout = async () => { await supabase.auth.signOut(); };
+  const logout = async () => {
+    if (isDriver && user) {
+      await supabase.from('driver_presence').upsert({
+        driver_id: user.id, is_online: false, updated_at: new Date().toISOString(),
+      });
+      const registered = await Location.hasStartedLocationUpdatesAsync(DRIVER_LOCATION_TASK).catch(() => false);
+      if (registered) await Location.stopLocationUpdatesAsync(DRIVER_LOCATION_TASK).catch(() => {});
+    }
+    await supabase.auth.signOut();
+  };
 
   if (booting) return <View style={s.center}><ActivityIndicator color={C.pink} size="large" /><Text style={s.muted}>Загружаем LadyGo…</Text></View>;
   if (!isConfigured) return <View style={s.center}><Text style={s.brand}>LadyGo</Text><Text style={s.heading}>Нужно подключить сервер</Text><Text style={s.muted}>Добавь EXPO_PUBLIC_SUPABASE_URL и EXPO_PUBLIC_SUPABASE_ANON_KEY в переменные окружения Expo.</Text></View>;
