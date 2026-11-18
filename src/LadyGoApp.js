@@ -212,6 +212,8 @@ export default function LadyGoApp() {
   const [orders, setOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [ratings, setRatings] = useState([]);
+  const [tariffRates, setTariffRates] = useState([]);
+  const [rateDraft, setRateDraft] = useState({});
   const [ratingDraft, setRatingDraft] = useState({});
   const [ratingComments, setRatingComments] = useState({});
   const [applications, setApplications] = useState([]);
@@ -232,6 +234,10 @@ export default function LadyGoApp() {
   const isAdmin = role === 'admin';
   const isDriver = role === 'driver';
   const activeOrder = useMemo(() => orders.find(o => ACTIVE.includes(o.status)), [orders]);
+  const selectedTariffRate = tariffRates.find(rate => rate.tariff_id === tariff && rate.is_active);
+  const estimatedPrice = routeInfo && selectedTariffRate
+    ? Math.max(Number(selectedTariffRate.minimum_fare_rub), Number(selectedTariffRate.base_fare_rub) + Number(routeInfo.km) * Number(selectedTariffRate.per_km_rub))
+    : null;
 
   const loadProfile = useCallback(async currentUser => {
     if (!currentUser || !supabase) return null;
@@ -275,6 +281,13 @@ export default function LadyGoApp() {
     setRatings(data || []);
   }, [user, profile, role, isAdmin]);
 
+  const loadTariffRates = useCallback(async () => {
+    if (!user || !supabase) return;
+    const { data, error } = await supabase.from('tariff_rates').select('*').order('tariff_id');
+    if (error) throw error;
+    setTariffRates(data || []);
+  }, [user]);
+
   const loadApplications = useCallback(async () => {
     if (!user || !profile || !supabase) return;
     let query = supabase.from('driver_applications').select('*').order('created_at', { ascending: false });
@@ -292,9 +305,9 @@ export default function LadyGoApp() {
 
   const refreshAll = useCallback(async () => {
     try {
-      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces(), loadNotifications(), loadRatings()]);
+      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces(), loadNotifications(), loadRatings(), loadTariffRates()]);
     } catch (e) { Alert.alert('Не удалось обновить данные', errorText(e)); }
-  }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications, loadRatings]);
+  }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications, loadRatings, loadTariffRates]);
 
   useEffect(() => {
     const handleAuthUrl = async url => {
@@ -333,6 +346,13 @@ export default function LadyGoApp() {
   }, [loadProfile]);
 
   useEffect(() => { if (user && profile) refreshAll(); }, [user, profile, refreshAll]);
+  useEffect(() => {
+    setRateDraft(Object.fromEntries(tariffRates.map(rate => [rate.tariff_id, {
+      base_fare_rub: String(rate.base_fare_rub ?? ''),
+      per_km_rub: String(rate.per_km_rub ?? ''),
+      minimum_fare_rub: String(rate.minimum_fare_rub ?? ''),
+    }])));
+  }, [tariffRates]);
   useEffect(() => { const id = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(id); }, []);
   useEffect(() => { if (isDriver) setMode('driver'); else if (isAdmin) setMode('admin'); else setMode('passenger'); }, [isDriver, isAdmin]);
 
@@ -661,6 +681,8 @@ export default function LadyGoApp() {
         requested_for: requestedFor.trim() || 'Как можно скорее', passenger_phone: phone.trim() || null,
         notes: [comment.trim(), 'Тариф: ' + (selected?.name || 'Эконом'), routeInfo ? `Маршрут: ${routeInfo.km} км, около ${routeInfo.minutes} мин` : ''].filter(Boolean).join(' | '),
         stops: structuredStops,
+        tariff_id: tariff,
+        estimated_price_rub: estimatedPrice == null ? null : Math.round(estimatedPrice),
         status: 'new',
         ...(start ? { pickup_lat: start.latitude, pickup_lng: start.longitude } : {}),
         ...(end ? { destination_lat: end.latitude, destination_lng: end.longitude } : {}),
@@ -672,6 +694,33 @@ export default function LadyGoApp() {
       await loadOrders();
     } catch (e) { Alert.alert('Не удалось заказать поездку', errorText(e)); }
     setBusy(false);
+  };
+
+  const saveTariffRates = async () => {
+    const now = new Date().toISOString();
+    const rows = TARIFFS.map(item => {
+      const draft = rateDraft[item.id] || {};
+      const base = Number(String(draft.base_fare_rub ?? '0').replace(',', '.'));
+      const perKm = Number(String(draft.per_km_rub ?? '0').replace(',', '.'));
+      const minimum = Number(String(draft.minimum_fare_rub ?? '0').replace(',', '.'));
+      if (![base, perKm, minimum].every(value => Number.isFinite(value) && value >= 0)) {
+        throw new Error('В тарифах должны быть неотрицательные числовые значения.');
+      }
+      return {
+        tariff_id: item.id,
+        base_fare_rub: base,
+        per_km_rub: perKm,
+        minimum_fare_rub: minimum,
+        is_active: base > 0 || perKm > 0 || minimum > 0,
+        updated_at: now,
+      };
+    });
+    setBusy(true);
+    const { error } = await supabase.from('tariff_rates').upsert(rows, { onConflict: 'tariff_id' });
+    setBusy(false);
+    if (error) return Alert.alert('Тарифы', errorText(error));
+    await loadTariffRates();
+    Alert.alert('Тарифы сохранены', 'Новые цены будут использоваться в оценке стоимости поездки.');
   };
 
   const submitRating = async order => {
@@ -898,7 +947,7 @@ export default function LadyGoApp() {
         <Input label="Когда подать машину" value={requestedFor} onChangeText={setRequestedFor} placeholder="Как можно скорее или дата и время" />
         {savedPlaces.length > 0 && <View style={{ gap: 6 }}><Text style={s.label}>Сохранённые адреса</Text><View style={s.row}>{savedPlaces.slice(0, 3).map(p => <TouchableOpacity key={p.id} style={s.savedChip} onPress={() => { setPickup(p.address); setCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }}><Text style={s.savedChipText}>{p.label}</Text></TouchableOpacity>)}</View></View>}
         <Button title="Построить маршрут" secondary compact onPress={buildRoute} />
-        {routeInfo && <Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text>}
+        {routeInfo && <View style={{ gap: 4 }}><Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text><Text style={s.routeInfo}>{estimatedPrice == null ? 'Цена будет согласована с водителем' : 'Ориентировочная стоимость: ' + money(Math.round(estimatedPrice))}</Text></View>}
       </Card>
       <Text style={s.section}>Выберите тариф</Text>
       {TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[s.tariff, tariff === t.id && s.tariffSelected]}>
@@ -950,7 +999,8 @@ export default function LadyGoApp() {
       <Text style={s.section}>Доступные заказы</Text>
       {orders.filter(o => o.status === 'new' && !o.driver_id).map(o => <Card key={o.id}>
         <View style={s.rowBetween}><Pill>Новый заказ</Pill><Text style={s.price}>{Math.max(0, 30 - Math.floor((clock - new Date(offerTimes[o.id] || o.created_at).getTime()) / 1000))} сек.</Text></View><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
-        <Input label="Предложить стоимость, ₽" value={String(fare[o.id] || '')} onChangeText={v => setFare(p => ({ ...p, [o.id]: v }))} keyboardType="numeric" placeholder="Например, 450" />
+        {o.estimated_price_rub != null ? <Text style={s.muted}>Ориентир для пассажира: {money(o.estimated_price_rub)}</Text> : null}
+        <Input label="Подтвердить стоимость, ₽" value={String(fare[o.id] || '')} onChangeText={v => setFare(p => ({ ...p, [o.id]: v }))} keyboardType="numeric" placeholder="Например, 450" />
         <Button title="Принять заказ" disabled={busy} onPress={() => acceptOfferedOrder(o)} />
         <Button title="Пропустить" secondary onPress={() => skipOfferedOrder(o)} disabled={busy} compact />
       </Card>)}
@@ -982,6 +1032,20 @@ export default function LadyGoApp() {
     {mode === 'admin' && <ScrollView contentContainerStyle={s.content}>
       <Text style={s.title}>Панель администратора</Text>
       <View style={s.stats}><Card style={s.stat}><Text style={s.statNum}>{orders.length}</Text><Text style={s.muted}>Заказов</Text></Card><Card style={s.stat}><Text style={s.statNum}>{applications.filter(a => a.status === 'pending').length}</Text><Text style={s.muted}>Заявок</Text></Card></View>
+      <Text style={s.section}>Настройки тарифов</Text>
+      <Card>
+        <Text style={s.muted}>Укажи реальные цены LadyGo. Пока значения равны нулю, пассажирам не показывается выдуманная стоимость.</Text>
+        {TARIFFS.map(item => {
+          const draft = rateDraft[item.id] || {};
+          return <View key={'rate-' + item.id} style={{ gap: 6 }}>
+            <Text style={s.tariffName}>{item.name}</Text>
+            <Input label="Базовая стоимость, ₽" value={draft.base_fare_rub || ''} onChangeText={value => setRateDraft(p => ({ ...p, [item.id]: { ...(p[item.id] || {}), base_fare_rub: value } }))} keyboardType="numeric" placeholder="0" />
+            <Input label="Стоимость за 1 км, ₽" value={draft.per_km_rub || ''} onChangeText={value => setRateDraft(p => ({ ...p, [item.id]: { ...(p[item.id] || {}), per_km_rub: value } }))} keyboardType="numeric" placeholder="0" />
+            <Input label="Минимальная стоимость, ₽" value={draft.minimum_fare_rub || ''} onChangeText={value => setRateDraft(p => ({ ...p, [item.id]: { ...(p[item.id] || {}), minimum_fare_rub: value } }))} keyboardType="numeric" placeholder="0" />
+          </View>;
+        })}
+        <Button title={busy ? 'Сохраняем…' : 'Сохранить тарифы'} onPress={() => saveTariffRates().catch(e => Alert.alert('Тарифы', errorText(e)))} disabled={busy} />
+      </Card>
       <Text style={s.section}>Заявки водителей</Text>
       {applications.map(a => <Card key={a.id}><Text style={s.tariffName}>{a.full_name || 'Водитель'}</Text><Text style={s.muted}>{a.phone}</Text><Text style={s.muted}>{a.experience}</Text><Pill color={a.status === 'approved' ? C.green : a.status === 'rejected' ? C.red : C.pink}>{a.status}</Pill>
         {a.status === 'pending' && <View style={s.row}><View style={{ flex: 1 }}><Button title="Одобрить" onPress={() => reviewApplication(a, true)} /></View><View style={{ flex: 1 }}><Button title="Отклонить" secondary danger onPress={() => reviewApplication(a, false)} /></View></View>}
