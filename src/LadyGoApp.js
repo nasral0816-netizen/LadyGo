@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Platform,
   SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput,
@@ -6,7 +6,11 @@ import {
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 import { supabase, isConfigured } from './supabase';
+
+Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }) });
 
 const C = {
   pink: '#E85D91', pinkDark: '#C94378', pale: '#FFF3F7',
@@ -84,6 +88,7 @@ export default function LadyGoApp() {
   const [applicationPhone, setApplicationPhone] = useState('');
   const [applicationCar, setApplicationCar] = useState('');
   const [applicationNote, setApplicationNote] = useState('');
+  const locationWatch = useRef(null);
 
   const user = session?.user;
   const role = profile?.role || 'passenger';
@@ -146,6 +151,71 @@ export default function LadyGoApp() {
 
   useEffect(() => { if (user && profile) refreshAll(); }, [user, profile, refreshAll]);
   useEffect(() => { if (isDriver) setMode('driver'); else if (isAdmin) setMode('admin'); else setMode('passenger'); }, [isDriver, isAdmin]);
+
+  const registerDriverPush = useCallback(async () => {
+    if (!isDriver || !user || !Device.isDevice) return;
+    try {
+      const permission = await Notifications.getPermissionsAsync();
+      let status = permission.status;
+      if (status !== 'granted') status = (await Notifications.requestPermissionsAsync()).status;
+      if (status !== 'granted') return;
+      const projectId = '95ac82ec-010d-4770-9aba-9f52878e1b3b';
+      const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+      const platform = Platform.OS === 'ios' ? 'ios' : 'android';
+      const { error } = await supabase.from('driver_push_tokens').upsert({
+        driver_id: user.id, expo_push_token: token, device_platform: platform, updated_at: new Date().toISOString(),
+      }, { onConflict: 'driver_id,expo_push_token' });
+      if (error) console.warn('Push token registration:', error.message);
+    } catch (e) { console.warn('Push registration:', e?.message || e); }
+  }, [isDriver, user]);
+
+  useEffect(() => { registerDriverPush(); }, [registerDriverPush]);
+
+  useEffect(() => {
+    if (!isDriver || !user) return;
+    supabase.from('driver_presence').select('is_online').eq('driver_id', user.id).maybeSingle()
+      .then(({ data }) => { if (data) setDriverOnline(Boolean(data.is_online)); });
+  }, [isDriver, user]);
+
+  useEffect(() => {
+    if (!isDriver || !user || !driverOnline) {
+      if (locationWatch.current) { locationWatch.current.remove(); locationWatch.current = null; }
+      return;
+    }
+    let active = true;
+    (async () => {
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (permission.status !== 'granted') throw new Error('Для выхода на линию разреши геолокацию.');
+        const updateLocation = async location => {
+          if (!active) return;
+          const { latitude, longitude, heading } = location.coords;
+          const now = new Date().toISOString();
+          const results = await Promise.all([
+            supabase.from('driver_locations').upsert({ driver_id: user.id, latitude, longitude, heading, updated_at: now }),
+            supabase.from('driver_presence').upsert({ driver_id: user.id, is_online: true, updated_at: now }),
+          ]);
+          const failure = results.find(x => x.error);
+          if (failure) console.warn('Driver location update:', failure.error.message);
+        };
+        const initial = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        await updateLocation(initial);
+        if (!active) return;
+        locationWatch.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 25 }, updateLocation);
+      } catch (e) {
+        if (active) { setDriverOnline(false); Alert.alert('Геолокация водителя', errorText(e)); }
+      }
+    })();
+    return () => { active = false; if (locationWatch.current) { locationWatch.current.remove(); locationWatch.current = null; } };
+  }, [isDriver, user, driverOnline]);
+
+  useEffect(() => {
+    if (!isDriver || !user) return;
+    const channel = supabase.channel('ladygo-offers-' + user.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_offers', filter: 'driver_id=eq.' + user.id }, () => loadOrders().catch(() => {}))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [isDriver, user, loadOrders]);
   useEffect(() => {
     if (!user || !supabase) return;
     const channel = supabase.channel('ladygo-orders-' + user.id)
@@ -226,15 +296,43 @@ export default function LadyGoApp() {
     setBusy(false);
   };
 
-  const updateOrder = async (order, status, extra = {}) => {
+  const updateOrder = async (order, status) => {
     setBusy(true);
-    let query = supabase.from('orders').update({ status, ...extra }).eq('id', order.id).eq('status', order.status);
-    if (isDriver) query = query.eq('driver_id', user.id);
-    const { data, error } = await query.select('id').maybeSingle();
+    const { data, error } = await supabase.rpc('ladygo_update_trip_status', { p_order_id: order.id, p_status: status });
     setBusy(false);
     if (error) return Alert.alert('Ошибка заказа', errorText(error));
-    if (!data) return Alert.alert('Статус уже изменился', 'Обнови список заказов.');
+    if (!data) return Alert.alert('Статус не изменён', 'Обнови список заказов.');
     await loadOrders();
+  };
+
+  const setDriverAvailability = async nextOnline => {
+    setBusy(true);
+    const now = new Date().toISOString();
+    const { error } = await supabase.from('driver_presence').upsert({ driver_id: user.id, is_online: nextOnline, updated_at: now });
+    setBusy(false);
+    if (error) return Alert.alert('Статус водителя', errorText(error));
+    setDriverOnline(nextOnline);
+    if (!nextOnline && locationWatch.current) { locationWatch.current.remove(); locationWatch.current = null; }
+  };
+
+  const acceptOfferedOrder = async (order) => {
+    const value = Number(String(fare[order.id] || '').replace(',', '.'));
+    if (!Number.isFinite(value) || value <= 0 || value > 1000000) return Alert.alert('Стоимость', 'Введи стоимость от 1 до 1 000 000 ₽.');
+    setBusy(true);
+    const { error } = await supabase.rpc('ladygo_accept_order', { p_order_id: order.id, p_price: value });
+    setBusy(false);
+    if (error) return Alert.alert('Не удалось принять заказ', errorText(error));
+    setFare(p => ({ ...p, [order.id]: '' }));
+    await loadOrders();
+    Alert.alert('Заказ принят', 'Стоимость: ' + value + ' ₽');
+  };
+
+  const skipOfferedOrder = async order => {
+    setBusy(true);
+    const { data, error } = await supabase.rpc('ladygo_skip_order_offer', { p_order_id: order.id });
+    setBusy(false);
+    if (error) Alert.alert('Не удалось пропустить заказ', errorText(error));
+    else { await loadOrders(); }
   };
 
   const cancelOrder = order => Alert.alert('Отменить заказ?', 'Водитель больше не будет выполнять эту поездку.', [
@@ -343,23 +441,15 @@ export default function LadyGoApp() {
     {mode === 'driver' && <ScrollView contentContainerStyle={s.content}>
       <Text style={s.title}>Рабочий экран</Text>
       <Card><Text style={s.muted}>Статус водителя</Text><Text style={s.heading}>{driverOnline ? 'На линии' : 'Не на линии'}</Text>
-        <Button title={driverOnline ? 'Завершить смену' : 'Выйти на линию'} onPress={() => setDriverOnline(v => !v)} secondary={!driverOnline} />
-        <Text style={s.disclaimer}>Переключатель пока управляет только интерфейсом. Перед реальной работой подключим серверное присутствие водителя и распределение предложений.</Text>
+        <Button title={busy ? 'Сохраняем…' : driverOnline ? 'Завершить смену' : 'Выйти на линию'} onPress={() => setDriverAvailability(!driverOnline)} disabled={busy} secondary={!driverOnline} />
+        <Text style={s.disclaimer}>При выходе на линию LadyGo отправляет геопозицию и обновляет статус доступности. Геолокация работает, пока приложение открыто.</Text>
       </Card>
       <Text style={s.section}>Доступные заказы</Text>
       {orders.filter(o => o.status === 'new' && !o.driver_id).map(o => <Card key={o.id}>
         <Pill>Новый заказ</Pill><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
         <Input label="Предложить стоимость, ₽" value={String(fare[o.id] || '')} onChangeText={v => setFare(p => ({ ...p, [o.id]: v }))} keyboardType="numeric" placeholder="Например, 450" />
-        <Button title="Принять заказ" disabled={busy} onPress={async () => {
-          const value = Number(String(fare[o.id] || '').replace(',', '.'));
-          if (!Number.isFinite(value) || value <= 0) return Alert.alert('Стоимость', 'Укажи корректную стоимость поездки.');
-          setBusy(true);
-          const { data, error } = await supabase.from('orders').update({ driver_id: user.id, price_rub: value, status: 'accepted' }).eq('id', o.id).eq('status', 'new').is('driver_id', null).select('id').maybeSingle();
-          setBusy(false);
-          if (error) Alert.alert('Не удалось принять заказ', errorText(error));
-          else if (!data) Alert.alert('Заказ уже принят', 'Обнови список.');
-          else { setFare(p => ({ ...p, [o.id]: '' })); await loadOrders(); }
-        }} />
+        <Button title="Принять заказ" disabled={busy} onPress={() => acceptOfferedOrder(o)} />
+        <Button title="Пропустить" secondary onPress={() => skipOfferedOrder(o)} disabled={busy} compact />
       </Card>)}
       <Text style={s.section}>Мои активные поездки</Text>
       {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).map(o => <Card key={o.id}>
