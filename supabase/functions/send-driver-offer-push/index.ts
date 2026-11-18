@@ -101,11 +101,12 @@ Deno.serve(async (req: Request) => {
       if (!delivery.ok) {
         await supabase.from("notifications").update({ push_sent_at: null }).eq("id", notification.id);
         claimed = null;
-        for (const error of delivery.errors) {
-          if (error.details?.error === "DeviceNotRegistered" && error.details?.expoPushToken) {
+        const tickets = Array.isArray(delivery.result?.data) ? delivery.result.data : [];
+        for (let index = 0; index < tickets.length; index++) {
+          if (tickets[index]?.details?.error === "DeviceNotRegistered" && tokens[index]?.expo_push_token) {
             await supabase.from("user_push_tokens").delete()
               .eq("user_id", notification.user_id)
-              .eq("expo_push_token", error.details.expoPushToken);
+              .eq("expo_push_token", tokens[index].expo_push_token);
           }
         }
         return json({ error: "Expo Push rejected one or more messages", details: delivery.result }, 502);
@@ -172,11 +173,12 @@ Deno.serve(async (req: Request) => {
     if (!delivery.ok) {
       await supabase.from("order_offers").update({ push_sent_at: null }).eq("id", offer.id);
       claimed = null;
-      for (const error of delivery.errors) {
-        if (error.details?.error === "DeviceNotRegistered" && error.details?.expoPushToken) {
+      const tickets = Array.isArray(delivery.result?.data) ? delivery.result.data : [];
+      for (let index = 0; index < tickets.length; index++) {
+        if (tickets[index]?.details?.error === "DeviceNotRegistered" && tokens[index]?.expo_push_token) {
           await supabase.from("driver_push_tokens").delete()
             .eq("driver_id", offer.driver_id)
-            .eq("expo_push_token", error.details.expoPushToken);
+            .eq("expo_push_token", tokens[index].expo_push_token);
         }
       }
       return json({ error: "Expo Push rejected one or more messages", details: delivery.result }, 502);
