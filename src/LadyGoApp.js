@@ -849,7 +849,7 @@ export default function LadyGoApp() {
       const scheduleText = requestedFor.trim();
       let scheduledAt = null;
       if (scheduleText && !/^как можно скорее$|^сейчас$/i.test(scheduleText)) {
-        const match = scheduleText.match(/^(\\d{2})\\.(\\d{2})\\.(\\d{4})\\s+(\\d{2}):(\\d{2})$/);
+        const match = scheduleText.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})$/);
         if (!match) throw new Error('Для предварительного заказа укажи дату и время в формате ДД.ММ.ГГГГ ЧЧ:ММ. Например: 25.12.2026 14:30.');
         const [, day, month, year, hour, minute] = match;
         const localDate = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), 0, 0);
