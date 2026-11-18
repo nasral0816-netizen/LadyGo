@@ -345,16 +345,34 @@ export default function LadyGoApp() {
 
   const loadOrders = useCallback(async () => {
     if (!user || !profile || !supabase) return;
+    if (role === 'driver') {
+      // A driver must see only trips assigned to them and offers explicitly dispatched to them.
+      const [{ data: assigned, error: assignedError }, { data: offers, error: offersError }] = await Promise.all([
+        supabase.from('orders').select('*').eq('driver_id', user.id).order('created_at', { ascending: false }).limit(40),
+        supabase.from('order_offers').select('order_id, created_at').eq('driver_id', user.id).eq('status', 'pending'),
+      ]);
+      if (assignedError) throw assignedError;
+      if (offersError) throw offersError;
+      const pendingOffers = offers || [];
+      setOfferTimes(Object.fromEntries(pendingOffers.map(item => [item.order_id, item.created_at])));
+      const offeredIds = pendingOffers.map(item => item.order_id);
+      let offeredOrders = [];
+      if (offeredIds.length) {
+        const { data, error } = await supabase.from('orders').select('*')
+          .in('id', offeredIds).eq('status', 'new').is('driver_id', null);
+        if (error) throw error;
+        offeredOrders = data || [];
+      }
+      const unique = new Map();
+      [...(assigned || []), ...offeredOrders].forEach(order => unique.set(order.id, order));
+      setOrders([...unique.values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 40));
+      return;
+    }
     let query = supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(40);
-    if (role === 'driver') query = query.or('driver_id.eq.' + user.id + ',and(status.eq.new,driver_id.is.null)');
-    else if (!isAdmin) query = query.eq('passenger_id', user.id);
+    if (!isAdmin) query = query.eq('passenger_id', user.id);
     const { data, error } = await query;
     if (error) throw error;
     setOrders(data || []);
-    if (role === 'driver') {
-      const { data: offers, error: offerError } = await supabase.from('order_offers').select('order_id, created_at').eq('driver_id', user.id).eq('status', 'pending');
-      if (!offerError) setOfferTimes(Object.fromEntries((offers || []).map(x => [x.order_id, x.created_at])));
-    }
   }, [user, profile, role, isAdmin]);
 
   const loadNotifications = useCallback(async () => {
