@@ -133,3 +133,25 @@ using (
       and o.status in ('accepted', 'arrived', 'in_progress')
   )
 );
+
+-- Keep intermediate stops as structured route data instead of burying them in notes.
+alter table public.orders
+  add column if not exists stops jsonb not null default '[]'::jsonb;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.orders'::regclass
+      and conname = 'orders_stops_array_limit'
+  ) then
+    alter table public.orders
+      add constraint orders_stops_array_limit
+      check (
+        jsonb_typeof(stops) = 'array'
+        and jsonb_array_length(stops) <= 20
+      );
+  end if;
+end
+$$;
