@@ -180,3 +180,16 @@ create policy "ladygo driver media delete own" on storage.objects
 for delete to authenticated using (
   bucket_id = 'ladygo-driver-media' and (storage.foldername(name))[1] = (select auth.uid()::text)
 );
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'driver_profiles'
+  ) then
+    alter publication supabase_realtime add table public.driver_profiles;
+  end if;
+end
+$$;
