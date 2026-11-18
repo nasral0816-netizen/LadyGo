@@ -101,22 +101,34 @@ begin
 end;
 $function$;
 
--- Let a passenger see only the contact details of the driver assigned to
--- that passenger's own active trip.
+-- Safe helper avoids recursive RLS evaluation when profiles and orders
+-- reference each other in their row policies.
+create or replace function public.ladygo_can_view_assigned_driver(p_driver_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path to 'public', 'pg_temp'
+as $function$
+  select (select auth.uid()) is not null and exists (
+    select 1
+    from public.orders o
+    where o.driver_id = p_driver_id
+      and o.passenger_id = (select auth.uid())
+      and o.status in ('accepted', 'arrived', 'in_progress')
+  );
+$function$;
+
+revoke all on function public.ladygo_can_view_assigned_driver(uuid) from public, anon, authenticated;
+grant execute on function public.ladygo_can_view_assigned_driver(uuid) to authenticated;
+
+-- A passenger can see only the assigned driver's contact details during an active trip.
 drop policy if exists "passengers read assigned driver contact" on public.profiles;
 create policy "passengers read assigned driver contact"
 on public.profiles
 for select
 to authenticated
-using (
-  exists (
-    select 1
-    from public.orders o
-    where o.driver_id = profiles.id
-      and o.passenger_id = (select auth.uid())
-      and o.status in ('accepted', 'arrived', 'in_progress')
-  )
-);
+using (public.ladygo_can_view_assigned_driver(profiles.id));
 
 drop policy if exists "passengers read assigned driver application" on public.driver_applications;
 create policy "passengers read assigned driver application"
@@ -125,13 +137,7 @@ for select
 to authenticated
 using (
   status = 'approved'
-  and exists (
-    select 1
-    from public.orders o
-    where o.driver_id = driver_applications.user_id
-      and o.passenger_id = (select auth.uid())
-      and o.status in ('accepted', 'arrived', 'in_progress')
-  )
+  and public.ladygo_can_view_assigned_driver(driver_applications.user_id)
 );
 
 -- Keep intermediate stops as structured route data instead of burying them in notes.
