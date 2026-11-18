@@ -3,6 +3,7 @@ name: LadyGo clean rewrite validation
 on:
   push:
     branches:
+      - main
       - ladygo-clean-rewrite
   pull_request:
     branches:
