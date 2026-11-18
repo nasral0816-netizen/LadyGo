@@ -108,12 +108,8 @@ export default function LadyGoApp() {
     if (!currentUser || !supabase) return null;
     const { data, error } = await supabase.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
     if (error) throw error;
-    if (data) { setProfile(data); return data; }
-    const { data: created, error: createError } = await supabase.from('profiles')
-      .insert({ id: currentUser.id, email: currentUser.email, role: 'passenger' }).select('*').single();
-    if (createError) throw createError;
-    setProfile(created);
-    return created;
+    setProfile(data || null);
+    return data || null;
   }, []);
 
   const loadOrders = useCallback(async () => {
@@ -153,7 +149,7 @@ export default function LadyGoApp() {
 
   useEffect(() => {
     const handleAuthUrl = async url => {
-      if (!url || !url.startsWith('ladygo://')) return;
+      if (!supabase || !url || !url.startsWith('ladygo://')) return;
       try {
         const parsed = new URL(url);
         const code = parsed.searchParams.get('code');
