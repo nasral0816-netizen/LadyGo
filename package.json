@@ -6,7 +6,9 @@
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build:android:apk": "eas build --platform android --profile apk",
+    "build:android:store": "eas build --platform android --profile production"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
