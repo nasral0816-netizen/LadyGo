@@ -152,6 +152,24 @@ export default function LadyGoApp() {
   }, [loadOrders, loadApplications, loadSavedPlaces]);
 
   useEffect(() => {
+    const handleAuthUrl = async url => {
+      if (!url || !url.startsWith('ladygo://')) return;
+      try {
+        const parsed = new URL(url);
+        const code = parsed.searchParams.get('code');
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) Alert.alert('Подтверждение почты', errorText(error));
+          else Alert.alert('LadyGo', 'Почта подтверждена.');
+        }
+      } catch (e) { Alert.alert('Ссылка авторизации', errorText(e)); }
+    };
+    Linking.getInitialURL().then(handleAuthUrl);
+    const urlListener = Linking.addEventListener('url', ({ url }) => handleAuthUrl(url));
+    return () => urlListener.remove();
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     if (!supabase) { setBooting(false); return; }
     supabase.auth.getSession().then(async ({ data, error }) => {
@@ -274,7 +292,7 @@ export default function LadyGoApp() {
     if (!email.trim() || !password) return Alert.alert('Заполни поля', 'Укажи почту и пароль.');
     setBusy(true);
     const result = authMode === 'signup'
-      ? await supabase.auth.signUp({ email: email.trim(), password })
+      ? await supabase.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: 'ladygo://auth/callback' } })
       : await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setBusy(false);
     if (result.error) return Alert.alert('Авторизация', errorText(result.error));
@@ -422,6 +440,15 @@ export default function LadyGoApp() {
     setBusy(false);
   };
 
+  const resetPassword = async () => {
+    if (!email.trim()) return Alert.alert('Восстановление пароля', 'Сначала введи свою почту.');
+    setBusy(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: 'ladygo://auth/callback' });
+    setBusy(false);
+    if (error) Alert.alert('Не удалось отправить письмо', errorText(error));
+    else Alert.alert('Письмо отправлено', 'Проверь почту и перейди по ссылке для восстановления пароля.');
+  };
+
   const logout = async () => { await supabase.auth.signOut(); };
 
   if (booting) return <View style={s.center}><ActivityIndicator color={C.pink} size="large" /><Text style={s.muted}>Загружаем LadyGo…</Text></View>;
@@ -431,6 +458,7 @@ export default function LadyGoApp() {
     <Card><Text style={s.title}>{authMode === 'login' ? 'С возвращением' : 'Создать аккаунт'}</Text>
       <Input label="Электронная почта" value={email} onChangeText={setEmail} keyboardType="email-address" />
       <Input label="Пароль" value={password} onChangeText={setPassword} secureTextEntry />
+      {authMode === 'login' && <TouchableOpacity onPress={resetPassword} disabled={busy}><Text style={{ color: C.pinkDark, fontWeight: '700', textAlign: 'right', paddingVertical: 8 }}>Забыли пароль?</Text></TouchableOpacity>}
       <Button title={busy ? 'Подождите…' : authMode === 'login' ? 'Войти' : 'Зарегистрироваться'} onPress={signIn} disabled={busy} />
       <Button title={authMode === 'login' ? 'Создать аккаунт' : 'У меня уже есть аккаунт'} secondary onPress={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} />
     </Card><Text style={s.muted}>LadyGo • Комфортные поездки</Text>
@@ -530,7 +558,7 @@ export default function LadyGoApp() {
       {orders.slice(0, 12).map(o => <Card key={o.id}><Pill>{STATUS[o.status] || o.status}</Pill><Text style={s.address}>{o.pickup_address} → {o.destination_address}</Text></Card>)}
     </ScrollView>}
 
-    {mode === 'passenger' && tab === 'profile' && <ScrollView contentContainerStyle={s.content}>
+    {tab === 'profile' && <ScrollView contentContainerStyle={s.content}>
       <Text style={s.title}>Профиль</Text><Card><Text style={s.tariffName}>{profile?.email}</Text><Text style={s.muted}>Роль: {role}</Text></Card>
       {!isDriver && !isAdmin && applications[0] && <Card><Text style={s.section}>Заявка водителя</Text><Pill color={applications[0].status === 'approved' ? C.green : applications[0].status === 'rejected' ? C.red : C.pink}>{applications[0].status === 'approved' ? 'Одобрена' : applications[0].status === 'rejected' ? 'Отклонена' : 'На рассмотрении'}</Pill></Card>}
       {!isDriver && !isAdmin && <Card><Text style={s.section}>Сохранённые адреса</Text><Input label="Название" value={savedLabel} onChangeText={setSavedLabel} placeholder="Дом, работа…" /><Input label="Адрес" value={savedAddress} onChangeText={setSavedAddress} placeholder="Введите адрес" /><Button title="Сохранить адрес" onPress={savePlace} compact />{savedPlaces.map(p => <TouchableOpacity key={p.id} onPress={() => { setPickup(p.address); setTab('ride'); }}><Text style={s.address}>{p.label}: {p.address}</Text></TouchableOpacity>)}</Card>}
