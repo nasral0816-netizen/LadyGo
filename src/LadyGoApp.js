@@ -119,6 +119,7 @@ export default function LadyGoApp() {
   const [routeInfo, setRouteInfo] = useState(null);
   const [locationBusy, setLocationBusy] = useState(false);
   const [orders, setOrders] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [applications, setApplications] = useState([]);
   const [driverOnline, setDriverOnline] = useState(false);
   const [driverGpsError, setDriverGpsError] = useState('');
@@ -160,6 +161,14 @@ export default function LadyGoApp() {
     }
   }, [user, profile, role, isAdmin]);
 
+  const loadNotifications = useCallback(async () => {
+    if (!user || !supabase) return;
+    const { data, error } = await supabase.from('notifications').select('*')
+      .eq('user_id', user.id).order('created_at', { ascending: false }).limit(60);
+    if (error) throw error;
+    setNotifications(data || []);
+  }, [user]);
+
   const loadApplications = useCallback(async () => {
     if (!user || !profile || !supabase) return;
     let query = supabase.from('driver_applications').select('*').order('created_at', { ascending: false });
@@ -177,9 +186,9 @@ export default function LadyGoApp() {
 
   const refreshAll = useCallback(async () => {
     try {
-      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces()]);
+      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces(), loadNotifications()]);
     } catch (e) { Alert.alert('Не удалось обновить данные', errorText(e)); }
-  }, [loadOrders, loadApplications, loadSavedPlaces]);
+  }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications]);
 
   useEffect(() => {
     const handleAuthUrl = async url => {
@@ -323,6 +332,23 @@ export default function LadyGoApp() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user, loadOrders]);
+
+  useEffect(() => {
+    if (!user || !supabase) return;
+    const channel = supabase.channel('ladygo-notifications-' + user.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: 'user_id=eq.' + user.id }, () => loadNotifications().catch(() => {}))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user, loadNotifications]);
+
+  const markNotificationRead = async notification => {
+    if (notification.read_at) return;
+    const readAt = new Date().toISOString();
+    const { error } = await supabase.from('notifications').update({ read_at: readAt })
+      .eq('id', notification.id).eq('user_id', user.id);
+    if (error) return Alert.alert('Уведомления', errorText(error));
+    setNotifications(current => current.map(item => item.id === notification.id ? { ...item, read_at: readAt } : item));
+  };
 
   const signIn = async () => {
     if (!email.trim() || !password) return Alert.alert('Заполни поля', 'Укажи почту и пароль.');
@@ -617,6 +643,18 @@ export default function LadyGoApp() {
       {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).length === 0 && <Card><Text style={s.muted}>Активных назначенных заказов пока нет.</Text></Card>}
     </ScrollView>}
 
+    {tab === 'notifications' && <ScrollView contentContainerStyle={s.content}>
+      <Text style={s.title}>Уведомления</Text>
+      {notifications.length === 0 && <Card><Text style={s.muted}>Пока новых уведомлений нет.</Text></Card>}
+      {notifications.map(item => <TouchableOpacity key={item.id} activeOpacity={0.85} onPress={() => markNotificationRead(item)}>
+        <Card style={!item.read_at ? { borderColor: C.pink, borderWidth: 1 } : null}>
+          <View style={s.rowBetween}><Text style={s.heading}>{item.title}</Text>{!item.read_at && <Pill>Новое</Pill>}</View>
+          <Text style={s.address}>{item.body}</Text>
+          <Text style={s.muted}>{new Date(item.created_at).toLocaleString()}</Text>
+        </Card>
+      </TouchableOpacity>)}
+    </ScrollView>}
+
     {mode === 'admin' && <ScrollView contentContainerStyle={s.content}>
       <Text style={s.title}>Панель администратора</Text>
       <View style={s.stats}><Card style={s.stat}><Text style={s.statNum}>{orders.length}</Text><Text style={s.muted}>Заказов</Text></Card><Card style={s.stat}><Text style={s.statNum}>{applications.filter(a => a.status === 'pending').length}</Text><Text style={s.muted}>Заявок</Text></Card></View>
@@ -639,7 +677,7 @@ export default function LadyGoApp() {
     </ScrollView>}
 
     <View style={s.bottomNav}>
-      {(mode === 'passenger' ? [{ id: 'ride', label: 'Заказать', icon: '⌖' }, { id: 'trips', label: 'Поездки', icon: '▤' }, { id: 'profile', label: 'Профиль', icon: '◯' }] : [{ id: 'ride', label: mode === 'admin' ? 'Обзор' : 'Работа', icon: '⌖' }, { id: 'profile', label: 'Профиль', icon: '◯' }]).map(item =>
+      {(mode === 'passenger' ? [{ id: 'ride', label: 'Заказать', icon: '⌖' }, { id: 'trips', label: 'Поездки', icon: '▤' }, { id: 'notifications', label: 'События', icon: '♧' }, { id: 'profile', label: 'Профиль', icon: '◯' }] : [{ id: 'ride', label: mode === 'admin' ? 'Обзор' : 'Работа', icon: '⌖' }, { id: 'notifications', label: 'События', icon: '♧' }, { id: 'profile', label: 'Профиль', icon: '◯' }]).map(item =>
         <TouchableOpacity key={item.id} onPress={() => setTab(item.id)} style={s.navItem}>
           <Text style={[s.navIcon, tab === item.id && { color: C.pink }]}>{item.icon}</Text>
           <Text style={[s.navLabel, tab === item.id && { color: C.pink, fontWeight: '800' }]}>{item.label}</Text>
