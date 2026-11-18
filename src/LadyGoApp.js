@@ -145,6 +145,49 @@ function TripMap({ order }) {
   </View>;
 }
 
+
+function TripChat({ order, userId }) {
+  const [messages, setMessages] = useState([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const load = useCallback(async () => {
+    if (!supabase || !order?.id) return;
+    const { data, error } = await supabase.from('trip_messages').select('*')
+      .eq('order_id', order.id).order('created_at', { ascending: true }).limit(200);
+    if (!error) setMessages(data || []);
+  }, [order?.id]);
+  useEffect(() => {
+    load();
+    if (!supabase || !order?.id) return;
+    const channel = supabase.channel('trip-chat-' + order.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_messages', filter: 'order_id=eq.' + order.id }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [load, order?.id]);
+  const send = async () => {
+    const message = draft.trim();
+    if (!message || sending || !supabase) return;
+    setSending(true);
+    const { error } = await supabase.from('trip_messages').insert({
+      order_id: order.id, sender_id: userId, message,
+    });
+    setSending(false);
+    if (error) return Alert.alert('Сообщение не отправлено', errorText(error));
+    setDraft('');
+    await load();
+  };
+  return <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 12 }}>
+    <Text style={s.section}>Чат поездки</Text>
+    {messages.length === 0 ? <Text style={s.muted}>Сообщений пока нет. Можно написать участнику поездки.</Text> :
+      messages.map(item => <View key={item.id} style={{ alignSelf: item.sender_id === userId ? 'flex-end' : 'flex-start', maxWidth: '88%', backgroundColor: item.sender_id === userId ? C.pale : '#F6F4F5', borderRadius: 13, padding: 10 }}>
+        <Text style={s.address}>{item.message}</Text>
+        <Text style={[s.muted, { fontSize: 10, textAlign: 'right' }]}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+      </View>)}
+    <Input label="Сообщение" value={draft} onChangeText={setDraft} placeholder="Написать участнику поездки…" />
+    <Button title={sending ? 'Отправляем…' : 'Отправить сообщение'} compact disabled={sending || !draft.trim()} onPress={send} />
+  </View>;
+}
+
 const shareTripDetails = async order => {
   const tariffName = TARIFFS.find(item => item.id === order.tariff_id)?.name || 'Поездка';
   const stops = Array.isArray(order.stops) ? order.stops.map((stop, index) => (index + 1) + '. ' + stop.address).join('\n') : '';
@@ -1121,7 +1164,7 @@ export default function LadyGoApp() {
           <Text style={s.muted}>{[assignedDriver.vehicleColor, assignedDriver.vehiclePlate].filter(Boolean).join(' · ')}</Text>
         </View> : null}
         {assignedDriver.phone ? <Button title="Позвонить водителю" secondary compact onPress={() => Linking.openURL('tel:' + assignedDriver.phone)} /> : null}
-      </View>}</Card>}
+      </View>}<TripChat order={activeOrder} userId={user?.id} /></Card>}
       <View style={s.mapWrap}><MapView ref={mapRef} style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
         {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
         {stopCoords.map((point, index) => <Marker key={'stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} pinColor="#D69A35" />)}
@@ -1211,6 +1254,7 @@ export default function LadyGoApp() {
       {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).map(o => <Card key={o.id}>
         <Pill>{STATUS[o.status] || o.status}</Pill><TripMap order={o} /><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text><Button title="Открыть навигацию" secondary onPress={() => openDriverNavigation(o)} />
         {Array.isArray(o.stops) && o.stops.length > 0 ? <View style={{ gap: 4 }}><Text style={s.label}>Промежуточные остановки</Text>{o.stops.map((stop, index) => <Text key={'order-stop-' + index} style={s.muted}>{index + 1}. {stop.address}</Text>)}</View> : null}
+        <TripChat order={o} userId={user?.id} />
         {o.notes ? <Text style={s.muted}>{o.notes}</Text> : null}
         {o.passenger_phone ? <Button title="Позвонить пассажиру" secondary compact onPress={() => Linking.openURL('tel:' + o.passenger_phone)} /> : null}
         {o.status === 'accepted' && <Button title="Я на месте" onPress={() => updateOrder(o, 'arrived')} />}
