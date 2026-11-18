@@ -37,22 +37,15 @@ with check (
   )
 );
 
-drop policy if exists "Recipients can mark messages read" on public.trip_messages;
-create policy "Recipients can mark messages read"
-on public.trip_messages for update to authenticated
-using (
-  sender_id <> auth.uid()
-  and exists (
-    select 1 from public.orders o
-    where o.id = trip_messages.order_id
-      and auth.uid() in (o.passenger_id, o.driver_id)
-  )
-)
-with check (
-  sender_id <> auth.uid()
-  and exists (
-    select 1 from public.orders o
-    where o.id = trip_messages.order_id
-      and auth.uid() in (o.passenger_id, o.driver_id)
-  )
-);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'trip_messages'
+  ) then
+    alter publication supabase_realtime add table public.trip_messages;
+  end if;
+end $$;
