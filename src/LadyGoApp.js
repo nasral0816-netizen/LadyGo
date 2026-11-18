@@ -66,6 +66,11 @@ function TripMap({ order }) {
   const hasCoords = order.pickup_lat != null && order.pickup_lng != null && order.destination_lat != null && order.destination_lng != null;
   const start = { latitude: Number(order.pickup_lat || 0), longitude: Number(order.pickup_lng || 0) };
   const end = { latitude: Number(order.destination_lat || 0), longitude: Number(order.destination_lng || 0) };
+  const stops = Array.isArray(order.stops) ? order.stops.filter(point =>
+    Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude))
+  ).map(point => ({ latitude: Number(point.latitude), longitude: Number(point.longitude), address: point.address })) : [];
+  const routePoints = [start, ...stops, end];
+  const routeKey = routePoints.map(point => point.longitude + ',' + point.latitude).join(';');
 
   useEffect(() => {
     let active = true;
@@ -76,8 +81,7 @@ function TripMap({ order }) {
     }
     setRoadRoute([]);
     setRouteSummary(null);
-    const coordinates = `${start.longitude},${start.latitude};${end.longitude},${end.latitude}`;
-    fetch(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson`)
+    fetch(`https://router.project-osrm.org/route/v1/driving/${routeKey}?overview=full&geometries=geojson`)
       .then(response => {
         if (!response.ok) throw new Error('Route service unavailable');
         return response.json();
@@ -91,14 +95,15 @@ function TripMap({ order }) {
       })
       .catch(() => { if (active) { setRoadRoute([]); setRouteSummary(null); } });
     return () => { active = false; };
-  }, [hasCoords, start.latitude, start.longitude, end.latitude, end.longitude]);
+  }, [hasCoords, routeKey]);
 
   if (!hasCoords) return null;
   return <View style={{ gap: 7 }}>
     <MapView style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: (start.latitude + end.latitude) / 2, longitude: (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
       <Marker coordinate={start} title="Подача" pinColor={C.pink} />
+      {stops.map((point, index) => <Marker key={'trip-stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} description={point.address} pinColor="#D69A35" />)}
       <Marker coordinate={end} title="Назначение" pinColor={C.blue} />
-      <Polyline coordinates={roadRoute.length > 1 ? roadRoute : [start, end]} strokeColor={C.pink} strokeWidth={4} />
+      <Polyline coordinates={roadRoute.length > 1 ? roadRoute : routePoints} strokeColor={C.pink} strokeWidth={4} />
     </MapView>
     {routeSummary && <Text style={s.routeInfo}>{routeSummary.km} км · около {routeSummary.minutes} мин по дороге</Text>}
   </View>;
@@ -499,11 +504,24 @@ export default function LadyGoApp() {
       let start = coords, end = destinationCoords;
       if (!start) { const x = (await Location.geocodeAsync(pickup))[0]; if (x) start = { latitude: x.latitude, longitude: x.longitude }; }
       if (!end) { const x = (await Location.geocodeAsync(destination))[0]; if (x) end = { latitude: x.latitude, longitude: x.longitude }; }
+      const stopAddresses = stopsText.split(/\\n+/).map(x => x.trim()).filter(Boolean);
+      if (stopAddresses.length > 20) throw new Error('Можно добавить не больше 20 промежуточных точек.');
+      const structuredStops = [];
+      for (let i = 0; i < stopAddresses.length; i++) {
+        let point = stopCoords.length === stopAddresses.length ? stopCoords[i] : null;
+        if (!point) {
+          const found = (await Location.geocodeAsync(stopAddresses[i]))[0];
+          if (!found) throw new Error('Не удалось найти промежуточную точку: ' + stopAddresses[i]);
+          point = { latitude: found.latitude, longitude: found.longitude };
+        }
+        structuredStops.push({ sequence: i + 1, address: stopAddresses[i], latitude: point.latitude, longitude: point.longitude });
+      }
       const selected = TARIFFS.find(t => t.id === tariff);
       const payload = {
         passenger_id: user.id, pickup_address: pickup.trim(), destination_address: destination.trim(),
         requested_for: requestedFor.trim() || 'Как можно скорее', passenger_phone: phone.trim() || null,
-        notes: [comment.trim(), stopsText.trim() ? 'Промежуточные точки: ' + stopsText.trim() : '', 'Тариф: ' + (selected?.name || 'Эконом'), routeInfo ? `Маршрут: ${routeInfo.km} км, около ${routeInfo.minutes} мин` : ''].filter(Boolean).join(' | '),
+        notes: [comment.trim(), 'Тариф: ' + (selected?.name || 'Эконом'), routeInfo ? `Маршрут: ${routeInfo.km} км, около ${routeInfo.minutes} мин` : ''].filter(Boolean).join(' | '),
+        stops: structuredStops,
         status: 'new',
         ...(start ? { pickup_lat: start.latitude, pickup_lng: start.longitude } : {}),
         ...(end ? { destination_lat: end.latitude, destination_lng: end.longitude } : {}),
@@ -641,12 +659,12 @@ export default function LadyGoApp() {
       </MapView><TouchableOpacity style={s.locButton} onPress={getCurrentLocation}><Text style={s.locText}>{locationBusy ? 'Определяем…' : '◎ Моё местоположение'}</Text></TouchableOpacity></View>
       <Card>
         <Text style={s.title}>Куда едем?</Text>
-        <Input label="Откуда" value={pickup} onChangeText={v => { setPickup(v); setCoords(null); setRoute([]); setRouteInfo(null); }} placeholder="Адрес подачи" />
+        <Input label="Откуда" value={pickup} onChangeText={v => { setPickup(v); setCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }} placeholder="Адрес подачи" />
         <Button title="Определить моё местоположение" secondary compact onPress={getCurrentLocation} />
-        <Input label="Куда" value={destination} onChangeText={v => { setDestination(v); setDestinationCoords(null); setRoute([]); setRouteInfo(null); }} placeholder="Адрес назначения" />
+        <Input label="Куда" value={destination} onChangeText={v => { setDestination(v); setDestinationCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }} placeholder="Адрес назначения" />
         <Input label="Промежуточные точки (по одной на строку)" value={stopsText} onChangeText={v => { setStopsText(v); setStopCoords([]); setRoute([]); setRouteInfo(null); }} multiline placeholder="Можно оставить пустым" />
         <Input label="Когда подать машину" value={requestedFor} onChangeText={setRequestedFor} placeholder="Как можно скорее или дата и время" />
-        {savedPlaces.length > 0 && <View style={{ gap: 6 }}><Text style={s.label}>Сохранённые адреса</Text><View style={s.row}>{savedPlaces.slice(0, 3).map(p => <TouchableOpacity key={p.id} style={s.savedChip} onPress={() => { setPickup(p.address); setCoords(null); setRoute([]); setRouteInfo(null); }}><Text style={s.savedChipText}>{p.label}</Text></TouchableOpacity>)}</View></View>}
+        {savedPlaces.length > 0 && <View style={{ gap: 6 }}><Text style={s.label}>Сохранённые адреса</Text><View style={s.row}>{savedPlaces.slice(0, 3).map(p => <TouchableOpacity key={p.id} style={s.savedChip} onPress={() => { setPickup(p.address); setCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }}><Text style={s.savedChipText}>{p.label}</Text></TouchableOpacity>)}</View></View>}
         <Button title="Построить маршрут" secondary compact onPress={buildRoute} />
         {routeInfo && <Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text>}
       </Card>
@@ -692,6 +710,7 @@ export default function LadyGoApp() {
       <Text style={s.section}>Мои активные поездки</Text>
       {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).map(o => <Card key={o.id}>
         <Pill>{STATUS[o.status] || o.status}</Pill><TripMap order={o} /><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
+        {Array.isArray(o.stops) && o.stops.length > 0 ? <View style={{ gap: 4 }}><Text style={s.label}>Промежуточные остановки</Text>{o.stops.map((stop, index) => <Text key={'order-stop-' + index} style={s.muted}>{index + 1}. {stop.address}</Text>)}</View> : null}
         {o.notes ? <Text style={s.muted}>{o.notes}</Text> : null}
         {o.passenger_phone ? <Button title="Позвонить пассажиру" secondary compact onPress={() => Linking.openURL('tel:' + o.passenger_phone)} /> : null}
         {o.status === 'accepted' && <Button title="Я на месте" onPress={() => updateOrder(o, 'arrived')} />}
