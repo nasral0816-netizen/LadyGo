@@ -313,7 +313,7 @@ export default function LadyGoApp() {
     const channel = supabase.channel('ladygo-applications-' + user.id)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_applications', filter: 'user_id=eq.' + user.id }, async () => {
         await loadApplications();
-        await loadProfile(user.id);
+        await loadProfile(user);
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user, loadApplications, loadProfile]);
@@ -659,7 +659,7 @@ export default function LadyGoApp() {
       <Text style={s.title}>Панель администратора</Text>
       <View style={s.stats}><Card style={s.stat}><Text style={s.statNum}>{orders.length}</Text><Text style={s.muted}>Заказов</Text></Card><Card style={s.stat}><Text style={s.statNum}>{applications.filter(a => a.status === 'pending').length}</Text><Text style={s.muted}>Заявок</Text></Card></View>
       <Text style={s.section}>Заявки водителей</Text>
-      {applications.map(a => <Card key={a.id}><Text style={s.tariffName}>{a.full_name || 'Водитель'}</Text><Text style={s.muted}>{a.phone}</Text><Text style={s.muted}>{a.car}</Text><Pill color={a.status === 'approved' ? C.green : a.status === 'rejected' ? C.red : C.pink}>{a.status}</Pill>
+      {applications.map(a => <Card key={a.id}><Text style={s.tariffName}>{a.full_name || 'Водитель'}</Text><Text style={s.muted}>{a.phone}</Text><Text style={s.muted}>{a.experience}</Text><Pill color={a.status === 'approved' ? C.green : a.status === 'rejected' ? C.red : C.pink}>{a.status}</Pill>
         {a.status === 'pending' && <View style={s.row}><View style={{ flex: 1 }}><Button title="Одобрить" onPress={() => reviewApplication(a, true)} /></View><View style={{ flex: 1 }}><Button title="Отклонить" secondary danger onPress={() => reviewApplication(a, false)} /></View></View>}
       </Card>)}
       <Text style={s.section}>Последние заказы</Text>
