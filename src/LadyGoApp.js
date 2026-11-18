@@ -60,6 +60,17 @@ function Pill({ children, color = C.pink }) {
 }
 function Card({ children, style }) { return <View style={[s.card, style]}>{children}</View>; }
 
+function TripMap({ order }) {
+  if (order.pickup_lat == null || order.pickup_lng == null || order.destination_lat == null || order.destination_lng == null) return null;
+  const start = { latitude: Number(order.pickup_lat), longitude: Number(order.pickup_lng) };
+  const end = { latitude: Number(order.destination_lat), longitude: Number(order.destination_lng) };
+  return <MapView style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: (start.latitude + end.latitude) / 2, longitude: (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
+    <Marker coordinate={start} title="Подача" pinColor={C.pink} />
+    <Marker coordinate={end} title="Назначение" pinColor={C.blue} />
+    <Polyline coordinates={[start, end]} strokeColor={C.pink} strokeWidth={4} />
+  </MapView>;
+}
+
 export default function LadyGoApp() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -535,7 +546,7 @@ export default function LadyGoApp() {
       </Card>)}
       <Text style={s.section}>Мои активные поездки</Text>
       {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).map(o => <Card key={o.id}>
-        <Pill>{STATUS[o.status] || o.status}</Pill><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
+        <Pill>{STATUS[o.status] || o.status}</Pill><TripMap order={o} /><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
         {o.status === 'accepted' && <Button title="Я на месте" onPress={() => updateOrder(o, 'arrived')} />}
         {o.status === 'arrived' && <Button title="Начать поездку" onPress={() => updateOrder(o, 'in_progress')} />}
         {o.status === 'in_progress' && <Button title="Завершить поездку" onPress={() => updateOrder(o, 'completed')} />}
