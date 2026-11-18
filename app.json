@@ -1,4 +1,3 @@
-
 {
   "expo": {
     "name": "LadyGo",
@@ -20,7 +19,8 @@
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "POST_NOTIFICATIONS"
       ]
     },
     "plugins": [
@@ -29,7 +29,8 @@
         {
           "locationWhenInUsePermission": "LadyGo использует геолокацию для определения места подачи автомобиля и организации поездки."
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     "extra": {
       "eas": {
