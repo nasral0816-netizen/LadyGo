@@ -58,7 +58,7 @@ export default function LadyGoApp() {
     if(!session||!profile) return;
     let q=supabase.from('orders').select('*').order('created_at',{ascending:false}).limit(40);
     if(role==='passenger') q=q.eq('passenger_id',session.user.id);
-    if(role==='driver') q=q.or('driver_id.eq.'+session.user.id+',id.in.(select order_id from order_offers where driver_id.eq.'+session.user.id+')');
+    if(role==='driver') q=q.eq('driver_id',session.user.id);
     const {data,error}=await q;
     if(!error) setOrders(data||[]);
   }
@@ -179,7 +179,7 @@ export default function LadyGoApp() {
     setBusy(true);
     try{
       const a=pickup||await geocode(from.trim()),b=dropoff||await geocode(to.trim());
-      const {data,error}=await supabase.from('orders').insert({passenger_id:session.user.id,passenger_phone:profile?.phone||session.user.user_metadata?.phone||phone||null,pickup_address:from.trim(),destination_address:to.trim(),requested_for:when,notes:note.trim()||null,status:'new',driver_id:null,price_rub:null,pickup_lat:a?.latitude??null,pickup_lng:a?.longitude??null,destination_lat:b?.latitude??null,destination_lng:b?.longitude??null}).select().single();
+      const {data,error}=await supabase.from('orders').insert({passenger_id:session.user.id,passenger_phone:profile?.phone||session.user.user_metadata?.phone||phone||null,pickup_address:from.trim(),destination_address:to.trim(),requested_for:when,notes:[selectedTariff,note.trim()].filter(Boolean).join(' · ')||null,status:'new',driver_id:null,price_rub:null,pickup_lat:a?.latitude??null,pickup_lng:a?.longitude??null,destination_lat:b?.latitude??null,destination_lng:b?.longitude??null}).select().single();
       if(error)throw error;
       setFrom('');setTo('');setPickup(null);setDropoff(null);setNote('');setTab('trips');setOrders(prev=>[data,...prev]);
       say('Заказ создан 💗','Ищем свободного водителя. Статус поездки будет обновляться здесь.');
