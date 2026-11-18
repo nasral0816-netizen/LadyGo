@@ -365,23 +365,39 @@ export default function LadyGoApp() {
   };
 
   const buildRoute = async () => {
-    if (!pickup.trim() || !destination.trim()) return;
+    if (!pickup.trim() || !destination.trim()) return Alert.alert('Маршрут', 'Укажи адрес подачи и назначения.');
+    setLocationBusy(true);
     try {
-      const a = coords || (await Location.geocodeAsync(pickup))[0];
-      const b = destinationCoords || (await Location.geocodeAsync(destination))[0];
-      if (!a || !b) return;
-      const start = { latitude: a.latitude, longitude: a.longitude };
-      const end = { latitude: b.latitude, longitude: b.longitude };
-      setCoords(start); setDestinationCoords(end);
-      const url = `https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson`;
+      const addresses = [pickup.trim(), ...stopsText.split(/\n+/).map(x => x.trim()).filter(Boolean), destination.trim()];
+      if (addresses.length > 22) throw new Error('Можно добавить не больше 20 промежуточных точек.');
+      const points = [];
+      for (let i = 0; i < addresses.length; i++) {
+        let result;
+        if (i === 0 && coords) result = coords;
+        else if (i === addresses.length - 1 && destinationCoords) result = destinationCoords;
+        else result = (await Location.geocodeAsync(addresses[i]))[0];
+        if (!result || !Number.isFinite(result.latitude) || !Number.isFinite(result.longitude)) {
+          throw new Error('Не удалось найти адрес: ' + addresses[i]);
+        }
+        points.push({ latitude: result.latitude, longitude: result.longitude });
+      }
+      const start = points[0], end = points[points.length - 1];
+      const coordinates = points.map(p => p.longitude + ',' + p.latitude).join(';');
+      const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=true`;
       const response = await fetch(url);
+      if (!response.ok) throw new Error('Сервис маршрутов временно недоступен.');
       const json = await response.json();
       const r = json.routes?.[0];
-      if (r) {
-        setRoute(r.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })));
-        setRouteInfo({ km: (r.distance / 1000).toFixed(1), minutes: Math.max(1, Math.round(r.duration / 60)) });
-      } else { setRoute([start, end]); setRouteInfo(null); }
-    } catch (_) { setRoute(coords && destinationCoords ? [coords, destinationCoords] : []); setRouteInfo(null); }
+      if (!r || !r.geometry?.coordinates?.length) throw new Error('Не удалось построить автомобильный маршрут по этим адресам.');
+      setCoords(start); setDestinationCoords(end);
+      setRoute(r.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })));
+      setRouteInfo({ km: (r.distance / 1000).toFixed(1), minutes: Math.max(1, Math.round(r.duration / 60)) });
+    } catch (e) {
+      setRoute([]); setRouteInfo(null);
+      Alert.alert('Не удалось построить маршрут', errorText(e));
+    } finally {
+      setLocationBusy(false);
+    }
   };
 
   const savePlace = async () => {
@@ -591,6 +607,7 @@ export default function LadyGoApp() {
       <Text style={s.section}>Мои активные поездки</Text>
       {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).map(o => <Card key={o.id}>
         <Pill>{STATUS[o.status] || o.status}</Pill><TripMap order={o} /><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
+        {o.notes ? <Text style={s.muted}>{o.notes}</Text> : null}
         {o.status === 'accepted' && <Button title="Я на месте" onPress={() => updateOrder(o, 'arrived')} />}
         {o.status === 'arrived' && <Button title="Начать поездку" onPress={() => updateOrder(o, 'in_progress')} />}
         {o.status === 'in_progress' && <Button title="Завершить поездку" onPress={() => updateOrder(o, 'completed')} />}
