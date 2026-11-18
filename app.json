@@ -27,7 +27,11 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "LadyGo использует геолокацию для определения места подачи автомобиля и организации поездки."
+          "locationWhenInUsePermission": "LadyGo использует геолокацию для определения подачи и сопровождения поездки.",
+          "locationAlwaysAndWhenInUsePermission": "Когда водитель выходит на линию, LadyGo передаёт его местоположение пассажиру и диспетчеру даже при свёрнутом приложении.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       "expo-notifications"
