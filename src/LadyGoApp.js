@@ -91,6 +91,7 @@ export default function LadyGoApp() {
   const [applications, setApplications] = useState([]);
   const [driverOnline, setDriverOnline] = useState(false);
   const [fare, setFare] = useState({});
+  const [offerTimes, setOfferTimes] = useState({});
   const [applicationName, setApplicationName] = useState('');
   const [applicationPhone, setApplicationPhone] = useState('');
   const [applicationCar, setApplicationCar] = useState('');
@@ -123,6 +124,10 @@ export default function LadyGoApp() {
     const { data, error } = await query;
     if (error) throw error;
     setOrders(data || []);
+    if (role === 'driver') {
+      const { data: offers, error: offerError } = await supabase.from('order_offers').select('order_id, created_at').eq('driver_id', user.id).eq('status', 'pending');
+      if (!offerError) setOfferTimes(Object.fromEntries((offers || []).map(x => [x.order_id, x.created_at])));
+    }
   }, [user, profile, role, isAdmin]);
 
   const loadApplications = useCallback(async () => {
@@ -132,7 +137,7 @@ export default function LadyGoApp() {
     const { data, error } = await query;
     if (error) throw error;
     setApplications(data || []);
-  }, [isAdmin]);
+  }, [user, profile, isAdmin]);
 
   const loadSavedPlaces = useCallback(async () => {
     if (!user || isDriver || isAdmin || !supabase) return;
@@ -487,7 +492,7 @@ export default function LadyGoApp() {
         <View style={s.rowBetween}><Pill color={o.status === 'completed' ? C.green : o.status === 'cancelled' ? C.red : C.pink}>{STATUS[o.status] || o.status}</Pill><Text style={s.price}>{money(o.price_rub)}</Text></View>
         <Text style={s.address}>● {o.pickup_address}</Text><Text style={s.address}>● {o.destination_address}</Text>
         {o.driver_id && <Text style={s.muted}>Водитель назначен</Text>}
-        {ACTIVE.includes(o.status) && <Button title="Отменить заказ" danger secondary onPress={() => cancelOrder(o)} />}
+        {o.status === 'new' && !o.driver_id && <Button title="Отменить заказ" danger secondary onPress={() => cancelOrder(o)} />}
       </Card>)}
     </ScrollView>}
 
@@ -499,7 +504,7 @@ export default function LadyGoApp() {
       </Card>
       <Text style={s.section}>Доступные заказы</Text>
       {orders.filter(o => o.status === 'new' && !o.driver_id).map(o => <Card key={o.id}>
-        <View style={s.rowBetween}><Pill>Новый заказ</Pill><Text style={s.price}>{Math.max(0, 30 - Math.floor((clock - new Date(o.created_at).getTime()) / 1000))} сек.</Text></View><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
+        <View style={s.rowBetween}><Pill>Новый заказ</Pill><Text style={s.price}>{Math.max(0, 30 - Math.floor((clock - new Date(offerTimes[o.id] || o.created_at).getTime()) / 1000))} сек.</Text></View><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
         <Input label="Предложить стоимость, ₽" value={String(fare[o.id] || '')} onChangeText={v => setFare(p => ({ ...p, [o.id]: v }))} keyboardType="numeric" placeholder="Например, 450" />
         <Button title="Принять заказ" disabled={busy} onPress={() => acceptOfferedOrder(o)} />
         <Button title="Пропустить" secondary onPress={() => skipOfferedOrder(o)} disabled={busy} compact />
