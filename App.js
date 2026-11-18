@@ -705,13 +705,16 @@ export default function App() {
   }, [session, profile, isAdmin, loadOrders]);
 
   // ------------------------------------------------------
-  // БЕЗОПАСНОЕ ОТСЛЕЖИВАНИЕ ВОДИТЕЛЯ ВО ВРЕМЯ АКТИВНОЙ ПОЕЗДКИ
-  // Геопозиция отправляется только пока водитель находится в приложении
-  // и у него есть активный назначенный заказ.
+  // ГЕОЛОКАЦИЯ ВОДИТЕЛЯ
+  // Пока водитель на линии — координаты нужны для подбора
+  // ближайшего водителя. Во время активной поездки они также
+  // показываются только пассажиру назначенного заказа.
+  // При закрытом/свернутом приложении сервер снимет водителя
+  // с линии после истечения heartbeat.
   // ------------------------------------------------------
 
   useEffect(() => {
-    if (!isDriver || !activeDriverOrder || !session || !supabase) return;
+    if (!isDriver || !session || !supabase || (!driverOnline && !activeDriverOrder)) return;
 
     let watcher = null;
     let cancelled = false;
@@ -735,7 +738,9 @@ export default function App() {
             updated_at: new Date().toISOString(),
           };
           setLiveDriverLocation(point);
-          const { error } = await supabase.from('driver_locations').upsert(point, { onConflict: 'driver_id' });
+          const { error } = await supabase
+            .from('driver_locations')
+            .upsert(point, { onConflict: 'driver_id' });
           if (error) console.warn('LadyGo location update:', error.message);
         });
       } catch (error) {
@@ -744,11 +749,26 @@ export default function App() {
     }
 
     startLocationSharing();
+
+    // Heartbeat подтверждает, что водитель всё ещё в приложении и на линии.
+    const heartbeat = driverOnline
+      ? setInterval(async () => {
+          if (cancelled || AppState.currentState !== 'active') return;
+          const { error } = await supabase
+            .from('driver_presence')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('driver_id', session.user.id)
+            .eq('is_online', true);
+          if (error) console.warn('LadyGo presence heartbeat:', error.message);
+        }, 30000)
+      : null;
+
     return () => {
       cancelled = true;
       if (watcher) watcher.remove();
+      if (heartbeat) clearInterval(heartbeat);
     };
-  }, [isDriver, activeDriverOrder?.id, session]);
+  }, [isDriver, driverOnline, activeDriverOrder?.id, session]);
 
   // Пассажир получает координаты только своего назначенного водителя.
   useEffect(() => {
@@ -1579,6 +1599,45 @@ export default function App() {
 
     setBusy(true);
     try {
+      let firstPoint = null;
+
+      if (nextOnline) {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (permission.status !== 'granted') {
+          Alert.alert(
+            'Нужна геолокация',
+            'Чтобы получать заказы по расстоянию, разреши LadyGo доступ к геопозиции во время использования приложения.'
+          );
+          return;
+        }
+
+        const servicesEnabled = await Location.hasServicesEnabledAsync();
+        if (!servicesEnabled) {
+          Alert.alert('Геолокация выключена', 'Включи геолокацию телефона и попробуй снова.');
+          return;
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        firstPoint = {
+          driver_id: session.user.id,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          heading: position.coords.heading,
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error: locationError } = await supabase
+          .from('driver_locations')
+          .upsert(firstPoint, { onConflict: 'driver_id' });
+        if (locationError) {
+          Alert.alert('Не удалось определить местоположение', getErrorMessage(locationError));
+          return;
+        }
+        setLiveDriverLocation(firstPoint);
+      }
+
       const { error } = await supabase
         .from('driver_presence')
         .upsert({
@@ -1592,12 +1651,21 @@ export default function App() {
         return;
       }
 
+      if (!nextOnline && !activeDriverOrder) {
+        const { error: cleanupError } = await supabase
+          .from('driver_locations')
+          .delete()
+          .eq('driver_id', session.user.id);
+        if (cleanupError) console.warn('LadyGo location cleanup:', cleanupError.message);
+        setLiveDriverLocation(null);
+      }
+
       setDriverOnline(Boolean(nextOnline));
       Alert.alert(
         nextOnline ? 'Ты на линии 💗' : 'Смена завершена',
         nextOnline
-          ? 'Теперь новые заказы будут поступать тебе по очереди.'
-          : 'Новые предложения больше не будут поступать. Текущая поездка не прерывается.'
+          ? 'Геопозиция используется, пока ты на линии, чтобы предлагать ближайшие заказы. При выходе из приложения статус автоматически отключится.'
+          : 'Новые предложения больше не поступают. Текущая поездка не прерывается.'
       );
     } catch (error) {
       Alert.alert('Ошибка статуса', getErrorMessage(error));
