@@ -1143,14 +1143,25 @@ export default function LadyGoApp() {
   };
 
   const reviewApplication = async (app, approved) => {
-    setBusy(true);
-    try {
-      const { error } = await supabase.from('driver_applications')
-        .update({ status: approved ? 'approved' : 'rejected' }).eq('id', app.id);
-      if (error) throw error;
-      await loadApplications();
-    } catch (e) { Alert.alert('Не удалось обработать заявку', errorText(e)); }
-    setBusy(false);
+    const submitReview = async () => {
+      setBusy(true);
+      try {
+        const { error } = await supabase.from('driver_applications')
+          .update({ status: approved ? 'approved' : 'rejected' }).eq('id', app.id);
+        if (error) throw error;
+        await loadApplications();
+      } catch (e) { Alert.alert('Не удалось обработать заявку', errorText(e)); }
+      finally { setBusy(false); }
+    };
+    if (!approved) return submitReview();
+    Alert.alert(
+      'Проверка водителя обязательна',
+      'Одобрять заявку можно только после личной проверки ответственным совершеннолетним владельцем сервиса: личности водителя, действительности водительского удостоверения, документов автомобиля, страхования и соответствия местным требованиям. Фотографии в заявке сами по себе не подтверждают допуск.',
+      [
+        { text: 'Назад', style: 'cancel' },
+        { text: 'Проверка проведена', onPress: submitReview },
+      ],
+    );
   };
 
   const resetPassword = async () => {
