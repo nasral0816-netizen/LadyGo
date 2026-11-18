@@ -359,28 +359,37 @@ export default function LadyGoApp() {
         if (foreground.status !== 'granted') throw new Error('Разреши LadyGo доступ к геолокации.');
         const background = await Location.getBackgroundPermissionsAsync();
         if (background.status !== 'granted') {
-          setDriverGpsError('Для работы при свёрнутом приложении разреши постоянный доступ к местоположению в настройках.');
-        } else {
-          const registered = await Location.hasStartedLocationUpdatesAsync(DRIVER_LOCATION_TASK);
-          if (!registered) {
-            await Location.startLocationUpdatesAsync(DRIVER_LOCATION_TASK, {
-              accuracy: Location.Accuracy.Balanced,
-              timeInterval: 12000,
-              distanceInterval: 20,
-              deferredUpdatesInterval: 30000,
-              deferredUpdatesDistance: 40,
-              pausesUpdatesAutomatically: false,
-              showsBackgroundLocationIndicator: true,
-              ...(Platform.OS === 'android' ? {
-                foregroundService: {
-                  notificationTitle: 'LadyGo — водитель на линии',
-                  notificationBody: 'Геолокация обновляется, пока вы принимаете заказы.',
-                  notificationColor: C.pink,
-                  killServiceOnDestroy: false,
-                },
-              } : {}),
-            });
-          }
+          const now = new Date().toISOString();
+          await supabase.from('driver_presence').update({ is_online: false, updated_at: now }).eq('driver_id', user.id);
+          setDriverOnline(false);
+          setDriverGpsError('Постоянный доступ к геолокации отключён. Смена остановлена — включи разрешение «Всегда» и выйди на линию снова.');
+          return;
+        }
+        if (!(await TaskManager.isAvailableAsync())) {
+          const now = new Date().toISOString();
+          await supabase.from('driver_presence').update({ is_online: false, updated_at: now }).eq('driver_id', user.id);
+          setDriverOnline(false);
+          throw new Error('Фоновая геолокация недоступна в этой версии приложения. Установи актуальную сборку LadyGo.');
+        }
+        const registered = await Location.hasStartedLocationUpdatesAsync(DRIVER_LOCATION_TASK);
+        if (!registered) {
+          await Location.startLocationUpdatesAsync(DRIVER_LOCATION_TASK, {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 12000,
+            distanceInterval: 20,
+            deferredUpdatesInterval: 30000,
+            deferredUpdatesDistance: 40,
+            pausesUpdatesAutomatically: false,
+            showsBackgroundLocationIndicator: true,
+            ...(Platform.OS === 'android' ? {
+              foregroundService: {
+                notificationTitle: 'LadyGo — водитель на линии',
+                notificationBody: 'Геолокация обновляется, пока вы принимаете заказы.',
+                notificationColor: C.pink,
+                killServiceOnDestroy: false,
+              },
+            } : {}),
+          });
         }
         const initial = await getPositionWithFallback();
         if (!active) return;
@@ -400,7 +409,14 @@ export default function LadyGoApp() {
           reason => { if (active) setDriverGpsError(errorText(reason)); }
         );
       } catch (e) {
-        if (active) { setDriverGpsError(errorText(e)); Alert.alert('Геолокация водителя', errorText(e)); }
+        if (active) {
+          setDriverGpsError(errorText(e));
+          await supabase.from('driver_presence').update({
+            is_online: false, updated_at: new Date().toISOString(),
+          }).eq('driver_id', user.id);
+          setDriverOnline(false);
+          Alert.alert('Геолокация водителя', errorText(e));
+        }
       }
     })();
     return () => {
