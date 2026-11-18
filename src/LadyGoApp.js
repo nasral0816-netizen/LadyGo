@@ -74,7 +74,13 @@ export default function LadyGoApp() {
   const [destination, setDestination] = useState('');
   const [phone, setPhone] = useState('');
   const [comment, setComment] = useState('');
+  const [requestedFor, setRequestedFor] = useState('Как можно скорее');
+  const [stopsText, setStopsText] = useState('');
   const [tariff, setTariff] = useState('economy');
+  const [savedPlaces, setSavedPlaces] = useState([]);
+  const [savedLabel, setSavedLabel] = useState('Дом');
+  const [savedAddress, setSavedAddress] = useState('');
+  const [clock, setClock] = useState(Date.now());
   const [coords, setCoords] = useState(null);
   const [destinationCoords, setDestinationCoords] = useState(null);
   const [driverLocation, setDriverLocation] = useState(null);
@@ -120,17 +126,25 @@ export default function LadyGoApp() {
   }, [user, profile, role, isAdmin]);
 
   const loadApplications = useCallback(async () => {
-    if (!isAdmin || !supabase) return;
-    const { data, error } = await supabase.from('driver_applications').select('*').order('created_at', { ascending: false });
+    if (!user || !profile || !supabase) return;
+    let query = supabase.from('driver_applications').select('*').order('created_at', { ascending: false });
+    if (!isAdmin) query = query.eq('user_id', user.id);
+    const { data, error } = await query;
     if (error) throw error;
     setApplications(data || []);
   }, [isAdmin]);
 
+  const loadSavedPlaces = useCallback(async () => {
+    if (!user || isDriver || isAdmin || !supabase) return;
+    const { data, error } = await supabase.from('saved_places').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+    if (!error) setSavedPlaces(data || []);
+  }, [user, isDriver, isAdmin]);
+
   const refreshAll = useCallback(async () => {
     try {
-      await Promise.all([loadOrders(), loadApplications()]);
+      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces()]);
     } catch (e) { Alert.alert('Не удалось обновить данные', errorText(e)); }
-  }, [loadOrders, loadApplications]);
+  }, [loadOrders, loadApplications, loadSavedPlaces]);
 
   useEffect(() => {
     let mounted = true;
@@ -151,6 +165,7 @@ export default function LadyGoApp() {
   }, [loadProfile]);
 
   useEffect(() => { if (user && profile) refreshAll(); }, [user, profile, refreshAll]);
+  useEffect(() => { const id = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(id); }, []);
   useEffect(() => { if (isDriver) setMode('driver'); else if (isAdmin) setMode('admin'); else setMode('passenger'); }, [isDriver, isAdmin]);
 
   const registerDriverPush = useCallback(async () => {
@@ -226,6 +241,16 @@ export default function LadyGoApp() {
   }, [mode, activeOrder?.driver_id]);
 
   useEffect(() => {
+    if (!user) return;
+    const channel = supabase.channel('ladygo-applications-' + user.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_applications', filter: 'user_id=eq.' + user.id }, async () => {
+        await loadApplications();
+        await loadProfile(user.id);
+      }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user, loadApplications, loadProfile]);
+
+  useEffect(() => {
     if (!isDriver || !user) return;
     const channel = supabase.channel('ladygo-offers-' + user.id)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_offers', filter: 'driver_id=eq.' + user.id }, () => loadOrders().catch(() => {}))
@@ -286,6 +311,13 @@ export default function LadyGoApp() {
     } catch (_) { setRoute(coords && destinationCoords ? [coords, destinationCoords] : []); setRouteInfo(null); }
   };
 
+  const savePlace = async () => {
+    if (!savedLabel.trim() || !savedAddress.trim()) return Alert.alert('Сохранённый адрес', 'Укажи название и адрес.');
+    const { error } = await supabase.from('saved_places').insert({ user_id: user.id, label: savedLabel.trim(), address: savedAddress.trim() });
+    if (error) return Alert.alert('Не удалось сохранить адрес', errorText(error));
+    setSavedAddress(''); await loadSavedPlaces();
+  };
+
   const createOrder = async () => {
     if (!pickup.trim() || !destination.trim()) return Alert.alert('Маршрут не заполнен', 'Укажи адрес подачи и назначения.');
     if (activeOrder) return Alert.alert('У тебя уже есть активный заказ', 'Заверши или отмени текущую поездку перед новым заказом.');
@@ -297,8 +329,8 @@ export default function LadyGoApp() {
       const selected = TARIFFS.find(t => t.id === tariff);
       const payload = {
         passenger_id: user.id, pickup_address: pickup.trim(), destination_address: destination.trim(),
-        requested_for: 'Как можно скорее', passenger_phone: phone.trim() || null,
-        notes: [comment.trim(), 'Тариф: ' + (selected?.name || 'Эконом'), routeInfo ? `Маршрут: ${routeInfo.km} км, около ${routeInfo.minutes} мин` : ''].filter(Boolean).join(' | '),
+        requested_for: requestedFor.trim() || 'Как можно скорее', passenger_phone: phone.trim() || null,
+        notes: [comment.trim(), stopsText.trim() ? 'Промежуточные точки: ' + stopsText.trim() : '', 'Тариф: ' + (selected?.name || 'Эконом'), routeInfo ? `Маршрут: ${routeInfo.km} км, около ${routeInfo.minutes} мин` : ''].filter(Boolean).join(' | '),
         status: 'new',
         ...(start ? { pickup_lat: start.latitude, pickup_lng: start.longitude } : {}),
         ...(end ? { destination_lat: end.latitude, destination_lng: end.longitude } : {}),
@@ -428,6 +460,9 @@ export default function LadyGoApp() {
         <Input label="Откуда" value={pickup} onChangeText={v => { setPickup(v); setCoords(null); }} placeholder="Адрес подачи" />
         <Button title="Определить моё местоположение" secondary compact onPress={getCurrentLocation} />
         <Input label="Куда" value={destination} onChangeText={v => { setDestination(v); setDestinationCoords(null); }} placeholder="Адрес назначения" />
+        <Input label="Промежуточные точки (по одной на строку)" value={stopsText} onChangeText={setStopsText} multiline placeholder="Можно оставить пустым" />
+        <Input label="Когда подать машину" value={requestedFor} onChangeText={setRequestedFor} placeholder="Как можно скорее или дата и время" />
+        {savedPlaces.length > 0 && <View style={{ gap: 6 }}><Text style={s.label}>Сохранённые адреса</Text><View style={s.row}>{savedPlaces.slice(0, 3).map(p => <TouchableOpacity key={p.id} style={s.savedChip} onPress={() => setPickup(p.address)}><Text style={s.savedChipText}>{p.label}</Text></TouchableOpacity>)}</View></View>}
         <Button title="Построить маршрут" secondary compact onPress={buildRoute} />
         {routeInfo && <Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text>}
       </Card>
@@ -464,7 +499,7 @@ export default function LadyGoApp() {
       </Card>
       <Text style={s.section}>Доступные заказы</Text>
       {orders.filter(o => o.status === 'new' && !o.driver_id).map(o => <Card key={o.id}>
-        <Pill>Новый заказ</Pill><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
+        <View style={s.rowBetween}><Pill>Новый заказ</Pill><Text style={s.price}>{Math.max(0, 30 - Math.floor((clock - new Date(o.created_at).getTime()) / 1000))} сек.</Text></View><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
         <Input label="Предложить стоимость, ₽" value={String(fare[o.id] || '')} onChangeText={v => setFare(p => ({ ...p, [o.id]: v }))} keyboardType="numeric" placeholder="Например, 450" />
         <Button title="Принять заказ" disabled={busy} onPress={() => acceptOfferedOrder(o)} />
         <Button title="Пропустить" secondary onPress={() => skipOfferedOrder(o)} disabled={busy} compact />
@@ -492,6 +527,8 @@ export default function LadyGoApp() {
 
     {mode === 'passenger' && tab === 'profile' && <ScrollView contentContainerStyle={s.content}>
       <Text style={s.title}>Профиль</Text><Card><Text style={s.tariffName}>{profile?.email}</Text><Text style={s.muted}>Роль: {role}</Text></Card>
+      {!isDriver && !isAdmin && applications[0] && <Card><Text style={s.section}>Заявка водителя</Text><Pill color={applications[0].status === 'approved' ? C.green : applications[0].status === 'rejected' ? C.red : C.pink}>{applications[0].status === 'approved' ? 'Одобрена' : applications[0].status === 'rejected' ? 'Отклонена' : 'На рассмотрении'}</Pill></Card>}
+      {!isDriver && !isAdmin && <Card><Text style={s.section}>Сохранённые адреса</Text><Input label="Название" value={savedLabel} onChangeText={setSavedLabel} placeholder="Дом, работа…" /><Input label="Адрес" value={savedAddress} onChangeText={setSavedAddress} placeholder="Введите адрес" /><Button title="Сохранить адрес" onPress={savePlace} compact />{savedPlaces.map(p => <TouchableOpacity key={p.id} onPress={() => { setPickup(p.address); setTab('ride'); }}><Text style={s.address}>{p.label}: {p.address}</Text></TouchableOpacity>)}</Card>}
       {!isDriver && !isAdmin && <Card><Text style={s.section}>Стать водителем</Text><Input label="ФИО" value={applicationName} onChangeText={setApplicationName} /><Input label="Телефон" value={applicationPhone} onChangeText={setApplicationPhone} keyboardType="phone-pad" /><Input label="Автомобиль" value={applicationCar} onChangeText={setApplicationCar} /><Input label="Опыт и комментарий" value={applicationNote} onChangeText={setApplicationNote} multiline /><Button title="Отправить заявку" onPress={submitApplication} disabled={busy} /></Card>}
       <Button title="Связаться с поддержкой" secondary onPress={() => Linking.openURL('mailto:' + SUPPORT)} />
       <Button title="Позвонить водителю" secondary onPress={() => Linking.openURL('tel:' + PHONE)} />
@@ -562,4 +599,6 @@ const s = StyleSheet.create({
   navItem: { flex: 1, alignItems: 'center', gap: 2 },
   navIcon: { color: C.muted, fontSize: 20, fontWeight: '700' },
   navLabel: { color: C.muted, fontSize: 10, fontWeight: '600' },
+  savedChip: { backgroundColor: C.pale, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
+  savedChipText: { color: C.pinkDark, fontWeight: '700', fontSize: 12 },
 });
