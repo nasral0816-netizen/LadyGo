@@ -849,7 +849,7 @@ export default function LadyGoApp() {
 
   const verifySignupOtp = async () => {
     const cleanEmail = email.trim().toLowerCase();
-    const token = otpCode.replace(/\\D/g, '').slice(0, 6);
+    const token = otpCode.replace(/\D/g, '').slice(0, 6);
     if (!cleanEmail || token.length !== 6) {
       Alert.alert('Проверь код', 'Введи шестизначный код из письма.');
       return;
@@ -1384,7 +1384,7 @@ export default function LadyGoApp() {
     <Card><Text style={s.title}>{otpSent ? 'Подтверждение почты' : authMode === 'login' ? 'С возвращением' : 'Создать аккаунт'}</Text>
       <Input label="Электронная почта" value={email} onChangeText={setEmail} keyboardType="email-address" />
       {otpSent ? <>
-        <Input label="Шестизначный код из письма" value={otpCode} onChangeText={value => setOtpCode(value.replace(/\\D/g, '').slice(0, 6))} keyboardType="number-pad" placeholder="000000" />
+        <Input label="Шестизначный код из письма" value={otpCode} onChangeText={value => setOtpCode(value.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" placeholder="000000" />
         <Button title={busy ? 'Проверяем…' : 'Подтвердить код'} onPress={verifySignupOtp} disabled={busy || otpCode.length !== 6} />
         <Button title="Отправить код ещё раз" secondary onPress={resendSignupEmail} disabled={busy} />
         <Button title="Назад ко входу" secondary onPress={() => { setOtpSent(false); setOtpCode(''); setAuthMode('login'); }} />
