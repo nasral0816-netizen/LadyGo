@@ -762,14 +762,37 @@ export default function LadyGoApp() {
   };
 
   const signIn = async () => {
-    if (!email.trim() || !password) return Alert.alert('Заполни поля', 'Укажи почту и пароль.');
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !password) {
+      Alert.alert('Заполни поля', 'Укажи почту и пароль.');
+      return;
+    }
+    if (!supabase) {
+      Alert.alert('Авторизация', 'Сервер не настроен. Попробуй обновить приложение позже.');
+      return;
+    }
+    if (busy) return;
     setBusy(true);
-    const result = authMode === 'signup'
-      ? await supabase.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: 'ladygo://auth/callback' } })
-      : await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setBusy(false);
-    if (result.error) return Alert.alert('Авторизация', errorText(result.error));
-    if (authMode === 'signup' && !result.data.session) Alert.alert('Проверь почту', 'Отправили письмо для подтверждения аккаунта.');
+    try {
+      const result = authMode === 'signup'
+        ? await supabase.auth.signUp({
+            email: cleanEmail,
+            password,
+            options: { emailRedirectTo: 'ladygo://auth/callback' },
+          })
+        : await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+      if (result.error) {
+        Alert.alert('Авторизация', errorText(result.error));
+        return;
+      }
+      if (authMode === 'signup' && !result.data.session) {
+        Alert.alert('Проверь почту', 'Отправили письмо для подтверждения аккаунта.');
+      }
+    } catch (error) {
+      Alert.alert('Не удалось войти', errorText(error));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const getCurrentLocation = async () => {
