@@ -16,7 +16,7 @@ jobs:
   build:
     name: Build LadyGo APK
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -26,11 +26,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: package.json
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -39,11 +37,25 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Generate Android project
-        run: npx expo prebuild --platform android --non-interactive
+        run: CI=1 npx expo prebuild --platform android
+
+      - name: Add Maven Central mirror
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("android/settings.gradle")
+          text = path.read_text()
+          marker = "repositories {"
+          if marker not in text:
+              raise SystemExit("Could not find repositories block in android/settings.gradle")
+          mirror = 'repositories {\n        maven { url "https://maven-central.storage-download.googleapis.com/maven2/" }'
+          text = text.replace(marker, mirror)
+          path.write_text(text)
+          PY
 
       - name: Build release APK
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
