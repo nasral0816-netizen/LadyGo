@@ -795,6 +795,32 @@ export default function LadyGoApp() {
     }
   };
 
+  const resendSignupEmail = async () => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      Alert.alert('Укажи почту', 'Введи адрес электронной почты, на который регистрировался.');
+      return;
+    }
+    if (!supabase || busy) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: cleanEmail,
+        options: { emailRedirectTo: 'ladygo://auth/callback' },
+      });
+      if (error) {
+        Alert.alert('Не удалось отправить письмо', errorText(error));
+      } else {
+        Alert.alert('Запрос отправлен', 'Если аккаунт ещё не подтверждён, письмо отправлено. Проверь также папку «Спам».');
+      }
+    } catch (error) {
+      Alert.alert('Ошибка отправки', errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const getCurrentLocation = async () => {
     if (locationBusy) return;
     setLocationBusy(true);
@@ -1280,6 +1306,7 @@ export default function LadyGoApp() {
       {authMode === 'login' && <TouchableOpacity onPress={resetPassword} disabled={busy}><Text style={{ color: C.pinkDark, fontWeight: '700', textAlign: 'right', paddingVertical: 8 }}>Забыли пароль?</Text></TouchableOpacity>}
       <Button title={busy ? 'Подождите…' : authMode === 'login' ? 'Войти' : 'Зарегистрироваться'} onPress={signIn} disabled={busy} />
       <Button title={authMode === 'login' ? 'Создать аккаунт' : 'У меня уже есть аккаунт'} secondary onPress={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} />
+      {authMode === 'signup' && <TouchableOpacity onPress={resendSignupEmail} disabled={busy}><Text style={{ color: C.pinkDark, fontWeight: '700', textAlign: 'center', paddingVertical: 10 }}>{busy ? 'Подождите…' : 'Не пришло письмо? Отправить ещё раз'}</Text></TouchableOpacity>}
     </Card><Text style={s.muted}>LadyGo • Комфортные поездки</Text>
   </KeyboardAvoidingView></SafeAreaView>;
 
