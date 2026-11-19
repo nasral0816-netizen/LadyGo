@@ -47,11 +47,11 @@ jobs:
 
           path = Path("android/settings.gradle")
           text = path.read_text()
-          pattern = r"(pluginManagement\\s*\\{[\\s\\S]*?repositories\\s*\\{)"
+          pattern = r"(pluginManagement\s*\{[\s\S]*?repositories\s*\{)"
           match = re.search(pattern, text)
           if not match:
               raise SystemExit("Could not locate pluginManagement.repositories in generated settings.gradle")
-          insertion = match.group(1) + '\\n        maven { url "https://maven-central.storage-download.googleapis.com/maven2/" }'
+          insertion = match.group(1) + '\n        maven { url "https://maven-central.storage-download.googleapis.com/maven2/" }'
           text = text[:match.start()] + insertion + text[match.end():]
           path.write_text(text)
           print("Maven Central mirror added to pluginManagement.repositories")
