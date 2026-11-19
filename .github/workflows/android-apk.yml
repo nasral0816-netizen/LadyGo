@@ -39,18 +39,22 @@ jobs:
       - name: Generate Android project
         run: CI=1 npx expo prebuild --platform android
 
-      - name: Add Maven Central mirror
+      - name: Add Maven Central mirror to plugin repositories
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
           path = Path("android/settings.gradle")
           text = path.read_text()
-          marker = "repositories {"
-          if marker not in text:
-              raise SystemExit("Could not find repositories block in android/settings.gradle")
-          mirror = 'repositories {\n        maven { url "https://maven-central.storage-download.googleapis.com/maven2/" }'
-          text = text.replace(marker, mirror)
+          pattern = r"(pluginManagement\\s*\\{[\\s\\S]*?repositories\\s*\\{)"
+          match = re.search(pattern, text)
+          if not match:
+              raise SystemExit("Could not locate pluginManagement.repositories in generated settings.gradle")
+          insertion = match.group(1) + '\\n        maven { url "https://maven-central.storage-download.googleapis.com/maven2/" }'
+          text = text[:match.start()] + insertion + text[match.end():]
           path.write_text(text)
+          print("Maven Central mirror added to pluginManagement.repositories")
           PY
 
       - name: Build release APK
