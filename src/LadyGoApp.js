@@ -282,6 +282,8 @@ export default function LadyGoApp() {
   const [mode, setMode] = useState('passenger');
   const [tab, setTab] = useState('ride');
   const [authMode, setAuthMode] = useState('login');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pickup, setPickup] = useState('');
@@ -833,10 +835,41 @@ export default function LadyGoApp() {
         return;
       }
       if (authMode === 'signup' && !result.data.session) {
-        Alert.alert('Проверь почту', 'Отправили письмо для подтверждения аккаунта.');
+        setOtpSent(true);
+        setOtpCode('');
+        Alert.alert('Проверь почту', 'Введи шестизначный код из письма, чтобы подтвердить аккаунт.');
       }
     } catch (error) {
       Alert.alert('Не удалось войти', errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+
+  const verifySignupOtp = async () => {
+    const cleanEmail = email.trim().toLowerCase();
+    const token = otpCode.replace(/\\D/g, '').slice(0, 6);
+    if (!cleanEmail || token.length !== 6) {
+      Alert.alert('Проверь код', 'Введи шестизначный код из письма.');
+      return;
+    }
+    if (!supabase || busy) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email: cleanEmail,
+        token,
+        type: 'signup',
+      });
+      if (error) {
+        Alert.alert('Код не подошёл', errorText(error));
+        return;
+      }
+      setOtpSent(false);
+      setOtpCode('');
+    } catch (error) {
+      Alert.alert('Не удалось подтвердить почту', errorText(error));
     } finally {
       setBusy(false);
     }
@@ -859,7 +892,8 @@ export default function LadyGoApp() {
       if (error) {
         Alert.alert('Не удалось отправить письмо', errorText(error));
       } else {
-        Alert.alert('Запрос отправлен', 'Если аккаунт ещё не подтверждён, письмо отправлено. Проверь также папку «Спам».');
+        setOtpSent(true);
+        Alert.alert('Запрос отправлен', 'Если аккаунт ещё не подтверждён, проверь письмо с шестизначным кодом.');
       }
     } catch (error) {
       Alert.alert('Ошибка отправки', errorText(error));
@@ -1347,13 +1381,20 @@ export default function LadyGoApp() {
   if (!isConfigured) return <View style={s.center}><Text style={s.brand}>LadyGo</Text><Text style={s.heading}>Нужно подключить сервер</Text><Text style={s.muted}>Добавь EXPO_PUBLIC_SUPABASE_URL и EXPO_PUBLIC_SUPABASE_ANON_KEY в переменные окружения Expo.</Text></View>;
   if (!session) return <SafeAreaView style={s.safe}><StatusBar barStyle="dark-content" backgroundColor={C.pale} /><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.auth}>
     <Text style={s.brand}>LadyGo</Text><Text style={s.tagline}>Поездки с заботой</Text>
-    <Card><Text style={s.title}>{authMode === 'login' ? 'С возвращением' : 'Создать аккаунт'}</Text>
+    <Card><Text style={s.title}>{otpSent ? 'Подтверждение почты' : authMode === 'login' ? 'С возвращением' : 'Создать аккаунт'}</Text>
       <Input label="Электронная почта" value={email} onChangeText={setEmail} keyboardType="email-address" />
-      <Input label="Пароль" value={password} onChangeText={setPassword} secureTextEntry />
-      {authMode === 'login' && <TouchableOpacity onPress={resetPassword} disabled={busy}><Text style={{ color: C.pinkDark, fontWeight: '700', textAlign: 'right', paddingVertical: 8 }}>Забыли пароль?</Text></TouchableOpacity>}
-      <Button title={busy ? 'Подождите…' : authMode === 'login' ? 'Войти' : 'Зарегистрироваться'} onPress={signIn} disabled={busy} />
-      <Button title={authMode === 'login' ? 'Создать аккаунт' : 'У меня уже есть аккаунт'} secondary onPress={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} />
-      {authMode === 'signup' && <TouchableOpacity onPress={resendSignupEmail} disabled={busy}><Text style={{ color: C.pinkDark, fontWeight: '700', textAlign: 'center', paddingVertical: 10 }}>{busy ? 'Подождите…' : 'Не пришло письмо? Отправить ещё раз'}</Text></TouchableOpacity>}
+      {otpSent ? <>
+        <Input label="Шестизначный код из письма" value={otpCode} onChangeText={value => setOtpCode(value.replace(/\\D/g, '').slice(0, 6))} keyboardType="number-pad" placeholder="000000" />
+        <Button title={busy ? 'Проверяем…' : 'Подтвердить код'} onPress={verifySignupOtp} disabled={busy || otpCode.length !== 6} />
+        <Button title="Отправить код ещё раз" secondary onPress={resendSignupEmail} disabled={busy} />
+        <Button title="Назад ко входу" secondary onPress={() => { setOtpSent(false); setOtpCode(''); setAuthMode('login'); }} />
+      </> : <>
+        <Input label="Пароль" value={password} onChangeText={setPassword} secureTextEntry />
+        {authMode === 'login' && <TouchableOpacity onPress={resetPassword} disabled={busy}><Text style={{ color: C.pinkDark, fontWeight: '700', textAlign: 'right', paddingVertical: 8 }}>Забыли пароль?</Text></TouchableOpacity>}
+        <Button title={busy ? 'Подождите…' : authMode === 'login' ? 'Войти' : 'Зарегистрироваться'} onPress={signIn} disabled={busy} />
+        <Button title={authMode === 'login' ? 'Создать аккаунт' : 'У меня уже есть аккаунт'} secondary onPress={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setOtpCode(''); }} />
+        {authMode === 'signup' && <TouchableOpacity onPress={resendSignupEmail} disabled={busy}><Text style={{ color: C.pinkDark, fontWeight: '700', textAlign: 'center', paddingVertical: 10 }}>{busy ? 'Подождите…' : 'Не пришло письмо? Отправить ещё раз'}</Text></TouchableOpacity>}
+      </>}
     </Card><Text style={s.muted}>LadyGo • Комфортные поездки</Text>
   </KeyboardAvoidingView></SafeAreaView>;
 
