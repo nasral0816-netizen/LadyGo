@@ -94,6 +94,33 @@ function Input({ label, value, onChangeText, placeholder, keyboardType, secureTe
 function Pill({ children, color = C.pink }) {
   return <View style={[s.pill, { borderColor: color }]}><Text style={{ color, fontWeight: '700', fontSize: 12 }}>{children}</Text></View>;
 }
+function TripProgress({ status }) {
+  const steps = [
+    { id: 'new', label: 'Ищем водителя' },
+    { id: 'accepted', label: 'Водитель назначен' },
+    { id: 'arrived', label: 'Водитель на месте' },
+    { id: 'in_progress', label: 'Поездка началась' },
+    { id: 'completed', label: 'Поездка завершена' },
+  ];
+  const activeIndex = steps.findIndex(step => step.id === status);
+  if (status === 'cancelled' || status === 'declined') {
+    return <View style={{ backgroundColor: '#FFF5F6', borderRadius: 12, padding: 11 }}>
+      <Text style={{ color: C.red, fontWeight: '800', fontSize: 13 }}>{status === 'cancelled' ? 'Поездка отменена' : 'Заказ отклонён'}</Text>
+    </View>;
+  }
+  return <View style={{ gap: 8, paddingVertical: 5 }}>
+    {steps.map((step, index) => {
+      const done = activeIndex >= index;
+      const current = activeIndex === index;
+      return <View key={step.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{ width: 19, height: 19, borderRadius: 10, borderWidth: 2, borderColor: done ? C.pink : C.line, backgroundColor: done ? C.pink : C.white, alignItems: 'center', justifyContent: 'center' }}>
+          {done ? <Text style={{ color: C.white, fontSize: 10, fontWeight: '900' }}>✓</Text> : null}
+        </View>
+        <Text style={{ color: current ? C.pinkDark : done ? C.ink : C.muted, fontSize: 12, fontWeight: current ? '800' : '600' }}>{step.label}</Text>
+      </View>;
+    })}
+  </View>;
+}
 function Card({ children, style }) { return <View style={[s.card, style]}>{children}</View>; }
 
 function TripMap({ order }) {
@@ -313,6 +340,7 @@ export default function LadyGoApp() {
   const [driverAvatarUri, setDriverAvatarUri] = useState(null);
   const [driverVehiclePhotoUri, setDriverVehiclePhotoUri] = useState(null);
   const locationWatch = useRef(null);
+  const authProfileTimer = useRef(null);
   const mapRef = useRef(null);
 
   const user = session?.user;
@@ -320,6 +348,8 @@ export default function LadyGoApp() {
   const isAdmin = role === 'admin';
   const isDriver = role === 'driver';
   const activeOrder = useMemo(() => orders.find(o => ACTIVE.includes(o.status)), [orders]);
+  const driverCompletedOrders = useMemo(() => orders.filter(order => order.status === 'completed'), [orders]);
+  const driverRecentEarnings = useMemo(() => driverCompletedOrders.reduce((sum, order) => sum + Number(order.price_rub || 0), 0), [driverCompletedOrders]);
   const unreadCount = notifications.filter(item => !item.read_at).length;
   const selectedTariffRate = tariffRates.find(rate => rate.tariff_id === tariff && rate.is_active);
   const estimatedPrice = routeInfo && selectedTariffRate
@@ -502,10 +532,27 @@ export default function LadyGoApp() {
     }).catch(e => { if (mounted) { setBooting(false); Alert.alert('Ошибка запуска', errorText(e)); } });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
-      if (!nextSession) { setProfile(null); setOrders([]); setHistoryOrders([]); }
-      else loadProfile(nextSession.user).catch(e => Alert.alert('Профиль', errorText(e)));
+      if (!nextSession) {
+        if (authProfileTimer.current) clearTimeout(authProfileTimer.current);
+        authProfileTimer.current = null;
+        setProfile(null);
+        setOrders([]);
+        setHistoryOrders([]);
+      } else {
+        // Defer profile queries until the auth callback releases Supabase's internal auth lock.
+        if (authProfileTimer.current) clearTimeout(authProfileTimer.current);
+        authProfileTimer.current = setTimeout(() => {
+          authProfileTimer.current = null;
+          loadProfile(nextSession.user).catch(e => Alert.alert('Профиль', errorText(e)));
+        }, 0);
+      }
     });
-    return () => { mounted = false; listener.subscription.unsubscribe(); };
+    return () => {
+      mounted = false;
+      if (authProfileTimer.current) clearTimeout(authProfileTimer.current);
+      authProfileTimer.current = null;
+      listener.subscription.unsubscribe();
+    };
   }, [loadProfile]);
 
   useEffect(() => { if (user && profile) refreshAll(); }, [user, profile, refreshAll]);
@@ -1327,7 +1374,7 @@ export default function LadyGoApp() {
     </View>
 
     {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
-      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripMap order={activeOrder} />{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}
+      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripProgress status={activeOrder.status} /><TripMap order={activeOrder} />{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}
         {['new','accepted','arrived'].includes(activeOrder.status) && <Button title={busy ? 'Отменяем…' : 'Отменить поездку'} danger secondary compact disabled={busy} onPress={() => cancelOrder(activeOrder)} />}
         <View style={s.row}>
           <View style={{ flex: 1 }}><Button title="Поделиться поездкой" secondary compact onPress={() => shareTripDetails(activeOrder)} /></View>
@@ -1417,6 +1464,11 @@ export default function LadyGoApp() {
 
     {mode === 'driver' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
       <Text style={s.title}>Рабочий экран</Text>
+      <View style={s.stats}>
+        <Card style={s.stat}><Text style={s.statNum}>{driverCompletedOrders.length}</Text><Text style={s.muted}>Завершено</Text></Card>
+        <Card style={s.stat}><Text style={s.statNum}>{Math.round(driverRecentEarnings).toLocaleString('ru-RU')} ₽</Text><Text style={s.muted}>Получено по завершённым</Text></Card>
+      </View>
+      <Text style={s.muted}>Показатели рассчитаны по последним 40 заказам, загруженным в рабочий экран.</Text>
       <Card><Text style={s.muted}>Рейтинг водителя</Text><Text style={s.heading}>{ratings.length ? (ratings.reduce((sum, item) => sum + Number(item.rating), 0) / ratings.length).toFixed(1) + ' ★' : 'Пока нет оценок'}</Text><Text style={s.muted}>{ratings.length} оценок пассажиров</Text></Card>
       <Card><Text style={s.muted}>Статус водителя</Text><Text style={s.heading}>{driverOnline ? 'На линии' : 'Не на линии'}</Text>
         <Button title={busy ? 'Сохраняем…' : driverOnline ? 'Завершить смену' : 'Выйти на линию'} onPress={() => driverOnline ? setDriverAvailability(false) : Alert.alert('Фоновая геолокация', 'Во время смены LadyGo будет передавать местоположение, даже когда приложение свёрнуто. На Android появится постоянное системное уведомление. Разрешение нужно только водителю на линии.', [{ text: 'Отмена', style: 'cancel' }, { text: 'Продолжить', onPress: () => setDriverAvailability(true) }])} disabled={busy} secondary={!driverOnline} />
@@ -1445,6 +1497,13 @@ export default function LadyGoApp() {
         {['accepted','arrived'].includes(o.status) && <Button title={busy ? 'Отменяем…' : 'Отменить поездку'} danger secondary compact disabled={busy} onPress={() => cancelOrder(o)} />}
       </Card>)}
       {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).length === 0 && <Card><Text style={s.muted}>Активных назначенных заказов пока нет.</Text></Card>}
+      <Text style={s.section}>История поездок</Text>
+      {orders.filter(order => ['completed', 'cancelled', 'declined'].includes(order.status)).slice(0, 10).map(order => <Card key={'driver-history-' + order.id}>
+        <View style={s.rowBetween}><Pill color={order.status === 'completed' ? C.green : C.muted}>{STATUS[order.status] || order.status}</Pill><Text style={s.muted}>{new Date(order.completed_at || order.created_at).toLocaleDateString()}</Text></View>
+        <Text style={s.address}>{order.pickup_address} → {order.destination_address}</Text>
+        <Text style={s.muted}>{order.status === 'completed' ? money(order.price_rub) : 'Без оплаты'}</Text>
+      </Card>)}
+      {orders.filter(order => ['completed', 'cancelled', 'declined'].includes(order.status)).length === 0 && <Card><Text style={s.muted}>Завершённые поездки появятся здесь.</Text></Card>}
     </ScrollView>}
 
     {tab === 'notifications' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
