@@ -15,3 +15,6 @@ Repository Settings -> Secrets and variables -> Actions:
 Keys are injected at build time and must not be committed to source code.
 
 Public Photon, Nominatim, and OSRM endpoints have usage policies, rate limits, and no uptime guarantee. For production traffic, use an appropriate provider plan or self-hosted infrastructure.
+
+
+Build note: Geoapify is enabled when the repository secret is present. Protomaps remains optional and is not enabled until a hosted style URL is supplied.
