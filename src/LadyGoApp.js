@@ -1590,7 +1590,7 @@ export default function LadyGoApp() {
           <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: doorToDoor ? C.pink : C.muted, backgroundColor: doorToDoor ? C.pink : C.white, alignItems: 'center', justifyContent: 'center' }}>
             {doorToDoor ? <Text style={{ color: C.white, fontWeight: '900' }}>✓</Text> : null}
           </View>
-          <Text style={[s.address, { flex: 1 }]}>От двери до двери (+100 ₽)</Text>
+          <Text style={[s.address, { flex: 1 }]}>От двери до двери (+' + configuredDoorToDoorPrice + ' ₽)</Text>
         </TouchableOpacity>}
         <Input label="Когда подать машину" value={requestedFor} onChangeText={setRequestedFor} placeholder="Как можно скорее или ДД.ММ.ГГГГ ЧЧ:ММ" />
         <Text style={s.muted}>Для предварительного заказа введи дату и время, например 25.12.2026 14:30. Такие заказы автоматически отправляются водителям в назначенное время.</Text>
@@ -1599,7 +1599,7 @@ export default function LadyGoApp() {
         {routeInfo && <Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text>}
         <View style={{ gap: 4, paddingTop: 7 }}>
           <Text style={s.routeInfo}>{estimatedPrice == null ? 'Маршрут вне фиксированного списка — стоимость рассчитаем отдельно' : (fixedFare != null ? 'Фиксированная стоимость: ' : 'Расчётная стоимость: ') + money(Math.round(estimatedPrice))}</Text>
-          {serviceType === 'courier' && <Text style={s.muted}>Курьерская доставка — 300 ₽. Алкоголь и табачные изделия не принимаются.</Text>}
+          {serviceType === 'courier' && <Text style={s.muted}>Курьерская доставка — ' + configuredCourierPrice + ' ₽. Алкоголь и табачные изделия не принимаются.</Text>}
         </View>
       </Card>
       <Text style={s.section}>Выберите тариф</Text>
