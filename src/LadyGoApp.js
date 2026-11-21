@@ -518,6 +518,7 @@ export default function LadyGoApp() {
   const [driverAvatarUri, setDriverAvatarUri] = useState(null);
   const [driverVehiclePhotoUri, setDriverVehiclePhotoUri] = useState(null);
   const locationWatch = useRef(null);
+  const driverSoundPrompted = useRef(false);
   const authProfileTimer = useRef(null);
   const mapRef = useRef(null);
 
@@ -792,6 +793,32 @@ export default function LadyGoApp() {
       }
       const permission = await Notifications.getPermissionsAsync();
       let status = permission.status;
+      if (status !== 'granted' && isDriver && !driverSoundPrompted.current) {
+        driverSoundPrompted.current = true;
+        Alert.alert(
+          'Звук заказов LadyGo 🔔',
+          'Разрешить звуковые уведомления? Так ты сможешь услышать новый заказ, даже когда приложение не открыто.',
+          [
+            { text: 'Позже', style: 'cancel' },
+            {
+              text: 'Разрешить',
+              onPress: async () => {
+                try {
+                  const requested = await Notifications.requestPermissionsAsync();
+                  if (requested.status === 'granted') {
+                    registerDriverPush();
+                  } else {
+                    Alert.alert('Уведомления выключены', 'Чтобы слышать заказы, разреши уведомления LadyGo в настройках телефона.');
+                  }
+                } catch (error) {
+                  Alert.alert('Не удалось включить звук', errorText(error));
+                }
+              },
+            },
+          ]
+        );
+        return;
+      }
       if (status !== 'granted') status = (await Notifications.requestPermissionsAsync()).status;
       if (status !== 'granted') return;
       const projectId = '95ac82ec-010d-4770-9aba-9f52878e1b3b';
