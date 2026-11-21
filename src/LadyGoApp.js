@@ -75,7 +75,6 @@ async function searchAddressSuggestions(query, signal) {
   const raw = String(query || '').replace(/\s+/g, ' ').trim();
   if (raw.length < 2) return [];
 
-  // Normalize unpunctuated Russian addresses such as "Кутузова 44 Кисловодск".
   const knownCities = [
     'Кисловодск', 'Пятигорск', 'Ессентуки', 'Минеральные Воды',
     'Железноводск', 'Черкесск', 'Ставрополь', 'Невинномысск',
@@ -87,10 +86,17 @@ async function searchAddressSuggestions(query, signal) {
   const streetPart = (cityIndex >= 0 ? raw.slice(0, cityIndex) : raw)
     .replace(/[;,]+/g, ' ').replace(/\s+/g, ' ').trim();
   const houseMatch = streetPart.match(/^(.+?)\s+(\d+[\wА-Яа-я/-]*)$/u);
-  const canonical = houseMatch
-    ? houseMatch[1] + ', ' + houseMatch[2] + ', ' + city + ', Россия'
-    : (streetPart || raw) + ', ' + city + ', Россия';
-  const queries = [...new Set([canonical, raw, streetPart + ', ' + city + ', Россия'].filter(Boolean))];
+  const street = houseMatch ? houseMatch[1].replace(/^(улица|ул\.?)\s*/iu, '').trim() : streetPart;
+  const house = houseMatch?.[2] || '';
+  const canonical = house
+    ? street + ', ' + house + ', ' + city + ', Ставропольский край, Россия'
+    : street + ', ' + city + ', Ставропольский край, Россия';
+  const queries = [...new Set([
+    canonical,
+    house ? 'улица ' + street + ', ' + house + ', ' + city + ', Россия' : 'улица ' + street + ', ' + city + ', Россия',
+    house ? street + ' ' + house + ', ' + city : raw,
+    raw
+  ].filter(Boolean))];
 
   const collected = [];
   const add = items => {
@@ -105,7 +111,6 @@ async function searchAddressSuggestions(query, signal) {
     }
   };
 
-  // First provider: Nominatim with a normalized street/house/city query.
   try {
     const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&namedetails=1&limit=8&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(queries[0]);
     const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
@@ -114,8 +119,8 @@ async function searchAddressSuggestions(query, signal) {
     if (signal?.aborted) throw error;
   }
 
-  // Backup provider: Photon. Retry the exact user text if normalized search is empty.
-  for (const photonQuery of (collected.length ? [] : [queries[0], raw])) {
+  // Photon is tried with several common Russian address spellings.
+  for (const photonQuery of (collected.length ? [] : queries)) {
     try {
       const url = 'https://photon.komoot.io/api/?lang=ru&limit=8&q=' + encodeURIComponent(photonQuery);
       const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
@@ -128,19 +133,19 @@ async function searchAddressSuggestions(query, signal) {
         const latitude = Number(coordinates[1]);
         if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
         const resultCity = p.city || p.town || p.village || p.county || p.state || '';
-        const street = p.street || p.name || '';
-        const house = p.housenumber ? ', ' + p.housenumber : '';
-        const primary = [street + house, resultCity].filter(Boolean).join(', ') || p.name || 'Адрес';
-        const display = [p.name && p.name !== street ? p.name : '', street + house, resultCity, p.state, p.country]
+        const resultStreet = p.street || p.name || '';
+        const resultHouse = p.housenumber ? ', ' + p.housenumber : '';
+        const primary = [resultStreet + resultHouse, resultCity].filter(Boolean).join(', ') || p.name || 'Адрес';
+        const display = [p.name && p.name !== resultStreet ? p.name : '', resultStreet + resultHouse, resultCity, p.state, p.country]
           .filter(Boolean).filter((value, i, all) => all.indexOf(value) === i).join(', ');
         return {
           place_id: 'photon-' + (p.osm_type || 'place') + '-' + (p.osm_id || index),
           lat: String(latitude),
           lon: String(longitude),
-          name: p.name || street || primary,
+          name: p.name || resultStreet || primary,
           display_name: display || primary,
           address: {
-            road: street,
+            road: resultStreet,
             pedestrian: p.street,
             house_number: p.housenumber,
             city: p.city || p.town || p.village || '',
@@ -157,8 +162,8 @@ async function searchAddressSuggestions(query, signal) {
     }
   }
 
-  const requestedHouse = raw.match(/(?:^|\\s)(\\d+[\\wА-Яа-я/-]*)\\s*(?:$|,)/u)?.[1]
-    || raw.match(/\\s(\\d+[\\wА-Яа-я/-]*)\\s+/u)?.[1];
+  const requestedHouse = house || raw.match(/(?:^|\s)(\d+[\wА-Яа-я/-]*)\s*(?:$|,)/u)?.[1]
+    || raw.match(/\s(\d+[\wА-Яа-я/-]*)\s+/u)?.[1];
   if (requestedHouse) {
     collected.sort((a, b) => {
       const ah = String(a.address?.house_number || '').toLocaleLowerCase('ru-RU');
@@ -173,7 +178,6 @@ async function searchAddressSuggestions(query, signal) {
   }
   return collected.slice(0, 8);
 }
-
 async function geocodeAddress(address) {
   const query = String(address || '').trim();
   if (!query) return null;
