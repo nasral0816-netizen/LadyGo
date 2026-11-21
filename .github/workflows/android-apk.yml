@@ -1,4 +1,5 @@
 name: Android APK Build
+# Native map renderer: MapLibre
 
 on:
   workflow_dispatch:
