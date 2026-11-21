@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.7.2';
+const APP_VERSION = '6.7.8.0';
 const PHONE = '+79911121227';
 const SUPPORT = 'ladygosupport@gmail.com';
 
@@ -204,28 +204,64 @@ async function searchAddressSuggestions(query, signal) {
     exact_street_match: fold(item.address?.road || item.address?.pedestrian || item.name).includes(targetStreet)
   }));
 }
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try { return await fetch(url, { ...options, signal: options.signal || controller.signal }); }
+  finally { clearTimeout(timer); }
+}
+
+async function fetchDrivingRoute(points, signal) {
+  const coordinates = points.map(point => Number(point.longitude) + ',' + Number(point.latitude)).join(';');
+  const urls = [
+    'https://router.project-osrm.org/route/v1/driving/' + coordinates + '?overview=full&geometries=geojson&steps=true',
+    'https://routing.openstreetmap.de/routed-car/route/v1/driving/' + coordinates + '?overview=full&geometries=geojson&steps=true'
+  ];
+  let lastError = null;
+  for (const url of urls) {
+    if (signal?.aborted) throw new Error('Построение маршрута отменено.');
+    try {
+      const response = await fetchWithTimeout(url, { signal, headers: { Accept: 'application/json' } }, 12000);
+      if (!response.ok) throw new Error('Сервис маршрутов временно недоступен.');
+      const json = await response.json();
+      const route = json.routes?.[0];
+      if (!route?.geometry?.coordinates?.length) throw new Error('Маршрут не найден.');
+      return route;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Не удалось построить маршрут.');
+}
+
 async function geocodeAddress(address) {
-  const query = String(address || '').trim();
-  if (!query) return null;
-  // Use OpenStreetMap geocoding first: Android's native geocoder may return
-  // an empty result on some devices even for valid Russian addresses.
+  const raw = String(address || '').trim();
+  if (!raw) return null;
+  const cities = ['Кисловодск', 'Пятигорск', 'Ессентуки', 'Минеральные Воды', 'Железноводск', 'Черкесск', 'Ставрополь', 'Невинномысск'];
+  const hasCity = cities.some(city => raw.toLocaleLowerCase('ru-RU').includes(city.toLocaleLowerCase('ru-RU')));
+  const query = hasCity ? raw : raw + ', Кисловодск, Ставропольский край, Россия';
   try {
-    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(query);
-    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    const response = await fetchWithTimeout('https://photon.komoot.io/api/?lang=ru&limit=5&q=' + encodeURIComponent(query), { headers: { Accept: 'application/json' } }, 9000);
     if (response.ok) {
-      const results = await response.json();
-      const first = results?.[0];
-      const latitude = Number(first?.lat);
-      const longitude = Number(first?.lon);
+      const feature = (await response.json()).features?.[0];
+      const coordinates = feature?.geometry?.coordinates || [];
+      const longitude = Number(coordinates[0]), latitude = Number(coordinates[1]);
       if (Number.isFinite(latitude) && Number.isFinite(longitude)) return { latitude, longitude };
     }
   } catch (_) {}
-  // Keep the device geocoder as a fallback if the online service is unavailable.
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(query);
+    const response = await fetchWithTimeout(url, { headers: { Accept: 'application/json' } }, 10000);
+    if (response.ok) {
+      const first = (await response.json())?.[0];
+      const latitude = Number(first?.lat), longitude = Number(first?.lon);
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) return { latitude, longitude };
+    }
+  } catch (_) {}
   try {
     const result = (await Location.geocodeAsync(query))[0];
-    if (result && Number.isFinite(result.latitude) && Number.isFinite(result.longitude)) {
-      return { latitude: result.latitude, longitude: result.longitude };
-    }
+    if (result && Number.isFinite(result.latitude) && Number.isFinite(result.longitude)) return { latitude: result.latitude, longitude: result.longitude };
   } catch (_) {}
   return null;
 }
@@ -325,7 +361,7 @@ function MapLibreMap({ points = [], route = [], height = 245 }) {
         0.008
       )
     : 0.04;
-  const zoom = Math.max(8, Math.min(15, Math.log2(360 / spread) - 1));
+  const zoom = Math.max(10, Math.min(16, Math.log2(360 / spread) - 1));
   return <View style={{ height, borderRadius: 15, overflow: 'hidden', backgroundColor: C.map }}>
     <MapLibreView
       style={{ flex: 1 }}
@@ -410,14 +446,7 @@ function TripMap({ order, driverLocation, assignedDriver }) {
     }
     setRoadRoute([]);
     setRouteSummary(null);
-    fetch(`https://router.project-osrm.org/route/v1/driving/${routeKey}?overview=full&geometries=geojson`)
-      .then(response => {
-        if (!response.ok) throw new Error('Route service unavailable');
-        return response.json();
-      })
-      .then(json => {
-        const route = json.routes?.[0];
-        if (!route?.geometry?.coordinates?.length) throw new Error('Route not found');
+    fetchDrivingRoute(routePoints).then(route => {
         if (!active) return;
         setRoadRoute(route.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })));
         setRouteSummary({ km: (route.distance / 1000).toFixed(1), minutes: Math.max(1, Math.round(route.duration / 60)) });
@@ -430,16 +459,16 @@ function TripMap({ order, driverLocation, assignedDriver }) {
     let active = true;
     setDriverEtaMinutes(null);
     if (!driverLocation?.latitude || !driverLocation?.longitude || !hasCoords || !['accepted', 'arrived'].includes(order.status)) return () => { active = false; };
-    fetch(`https://router.project-osrm.org/route/v1/driving/${driverLocation.longitude},${driverLocation.latitude};${start.longitude},${start.latitude}?overview=false`)
-      .then(response => { if (!response.ok) throw new Error('ETA unavailable'); return response.json(); })
-      .then(json => { const seconds = json.routes?.[0]?.duration; if (active && Number.isFinite(seconds)) setDriverEtaMinutes(Math.max(1, Math.round(seconds / 60))); })
+    fetchDrivingRoute([{ latitude: driverLocation.latitude, longitude: driverLocation.longitude }, start]).then(route => {
+        if (active && Number.isFinite(route.duration)) setDriverEtaMinutes(Math.max(1, Math.round(route.duration / 60)));
+      })
       .catch(() => { if (active) setDriverEtaMinutes(null); });
     return () => { active = false; };
   }, [driverLocation?.latitude, driverLocation?.longitude, hasCoords, order.status, start.latitude, start.longitude]);
 
   if (!hasCoords) return null;
   return <View style={{ gap: 7 }}>
-    {Platform.OS === 'android' ? <MapLibreMap height={190} points={[
+    {Platform.OS === 'android' ? <MapLibreMap key={'trip-map-' + order.id} height={190} points={[
       { latitude: start.latitude, longitude: start.longitude, label: 'Подача', color: C.pink },
       ...stops.map((point, index) => ({ ...point, label: point.address || ('Остановка ' + (index + 1)), color: '#D69A35' })),
       { latitude: end.latitude, longitude: end.longitude, label: 'Назначение', color: C.blue },
@@ -589,7 +618,7 @@ async function getPositionWithFallback() {
   }
 }
 
-export default function LadyGoApp() {
+function LadyGoAppContent() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [booting, setBooting] = useState(true);
@@ -1432,13 +1461,7 @@ export default function LadyGoApp() {
         points.push({ latitude: result.latitude, longitude: result.longitude });
       }
       const start = points[0], end = points[points.length - 1];
-      const coordinates = points.map(p => p.longitude + ',' + p.latitude).join(';');
-      const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=true`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Сервис маршрутов временно недоступен.');
-      const json = await response.json();
-      const r = json.routes?.[0];
-      if (!r || !r.geometry?.coordinates?.length) throw new Error('Не удалось построить автомобильный маршрут по этим адресам.');
+      const r = await fetchDrivingRoute(points);
       setCoords(start); setDestinationCoords(end); setStopCoords(points.slice(1, -1));
       setRoute(r.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })));
       setRouteInfo({ km: (r.distance / 1000).toFixed(1), minutes: Math.max(1, Math.round(r.duration / 60)) });
@@ -1967,7 +1990,7 @@ export default function LadyGoApp() {
           onPress={() => submitRating(order)} />
       </Card>)}
       <View style={s.mapWrap}>
-        {Platform.OS === 'android' ? <MapLibreMap height={245} points={[
+        {Platform.OS === 'android' ? <MapLibreMap key={'booking-map-' + [coords?.latitude, coords?.longitude, destinationCoords?.latitude, destinationCoords?.longitude, route.length].join('-')} height={245} points={[
           ...(coords ? [{ ...coords, label: 'Подача', color: C.pink }] : []),
           ...stopCoords.map((point, index) => ({ ...point, label: 'Остановка ' + (index + 1), color: '#D69A35' })),
           ...(destinationCoords ? [{ ...destinationCoords, label: 'Назначение', color: C.blue }] : []),
@@ -2006,6 +2029,14 @@ export default function LadyGoApp() {
             </Text>
           </TouchableOpacity>
           <Text style={s.muted}>Откроется поиск адреса с выбором города</Text>
+          {savedPlaces.length > 0 && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 5 }}>
+            {savedPlaces.slice(0, 4).map(place => <TouchableOpacity key={place.id} onPress={async () => {
+              setPickup(place.address);
+              const point = await geocodeAddress(place.address);
+              if (point) setCoords(point);
+              else Alert.alert('Адрес сохранён', 'Координаты пока не найдены. Уточни точку перед заказом.');
+            }} style={s.savedChip}><Text style={s.savedChipText}>{place.label || 'Избранное'}</Text></TouchableOpacity>)}
+          </View>}
         </View>
         <Modal visible={pickupSearchOpen} animationType="slide" presentationStyle="fullScreen"
           onRequestClose={() => { setPickupSearchOpen(false); setPickupSuggestions([]); }}>
@@ -2422,6 +2453,24 @@ export default function LadyGoApp() {
     </View>
   </SafeAreaView>;
 }
+
+
+class LadyGoErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, resetKey: 0 }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error) { console.warn('LadyGo UI error:', error?.message || error); }
+  render() {
+    if (this.state.hasError) return <SafeAreaView style={{ flex: 1, backgroundColor: '#FCFAFB', justifyContent: 'center', padding: 24, gap: 14 }}>
+      <Text style={{ color: C.ink, fontSize: 24, fontWeight: '900', textAlign: 'center' }}>LadyGo временно остановился</Text>
+      <Text style={{ color: C.muted, textAlign: 'center', lineHeight: 21 }}>Не удалось отобразить экран. Данные аккаунта не удалены.</Text>
+      <TouchableOpacity onPress={() => this.setState(state => ({ hasError: false, resetKey: state.resetKey + 1 }))} style={{ backgroundColor: C.pink, padding: 15, borderRadius: 14 }}>
+        <Text style={{ color: '#FFFFFF', textAlign: 'center', fontWeight: '800' }}>Перезагрузить экран</Text>
+      </TouchableOpacity>
+    </SafeAreaView>;
+    return <React.Fragment key={this.state.resetKey}>{this.props.children}</React.Fragment>;
+  }
+}
+export default function LadyGoApp() { return <LadyGoErrorBoundary><LadyGoAppContent /></LadyGoErrorBoundary>; }
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FCFAFB' },
