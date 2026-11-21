@@ -115,6 +115,32 @@ const STATUS = {
   cancelled: 'Заказ отменён', declined: 'Заказ отклонён',
 };
 const money = value => value == null ? 'Стоимость согласует водитель' : `${value} ₽`;
+async function geocodeAddress(address) {
+  const query = String(address || '').trim();
+  if (!query) return null;
+  // Use OpenStreetMap geocoding first: Android's native geocoder may return
+  // an empty result on some devices even for valid Russian addresses.
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(query);
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (response.ok) {
+      const results = await response.json();
+      const first = results?.[0];
+      const latitude = Number(first?.lat);
+      const longitude = Number(first?.lon);
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) return { latitude, longitude };
+    }
+  } catch (_) {}
+  // Keep the device geocoder as a fallback if the online service is unavailable.
+  try {
+    const result = (await Location.geocodeAsync(query))[0];
+    if (result && Number.isFinite(result.latitude) && Number.isFinite(result.longitude)) {
+      return { latitude: result.latitude, longitude: result.longitude };
+    }
+  } catch (_) {}
+  return null;
+}
+
 const errorText = error => {
   const m = String(error?.message || '');
   if (/invalid login credentials/i.test(m)) return 'Неверная почта или пароль.';
@@ -1117,7 +1143,7 @@ export default function LadyGoApp() {
         if (i === 0 && coords) result = coords;
         else if (i === addresses.length - 1 && destinationPoint) result = destinationPoint;
         else if (i === addresses.length - 1 && destinationCoords) result = destinationCoords;
-        else result = (await Location.geocodeAsync(addresses[i]))[0];
+        else result = await geocodeAddress(addresses[i]);
         if (!result || !Number.isFinite(result.latitude) || !Number.isFinite(result.longitude)) {
           throw new Error('Не удалось найти адрес: ' + addresses[i]);
         }
@@ -1198,17 +1224,17 @@ export default function LadyGoApp() {
     setBusy(true);
     try {
       let start = coords, end = destinationCoords;
-      if (!start) { const x = (await Location.geocodeAsync(pickup))[0]; if (x) start = { latitude: x.latitude, longitude: x.longitude }; }
-      if (!end) { const x = (await Location.geocodeAsync(destination))[0]; if (x) end = { latitude: x.latitude, longitude: x.longitude }; }
+      if (!start) start = await geocodeAddress(pickup);
+      if (!end) end = await geocodeAddress(destination);
       const stopAddresses = stopsText.split(/\n+/).map(x => x.trim()).filter(Boolean);
       if (stopAddresses.length > 20) throw new Error('Можно добавить не больше 20 промежуточных точек.');
       const structuredStops = [];
       for (let i = 0; i < stopAddresses.length; i++) {
         let point = stopCoords.length === stopAddresses.length ? stopCoords[i] : null;
         if (!point) {
-          const found = (await Location.geocodeAsync(stopAddresses[i]))[0];
+          const found = await geocodeAddress(stopAddresses[i]);
           if (!found) throw new Error('Не удалось найти промежуточную точку: ' + stopAddresses[i]);
-          point = { latitude: found.latitude, longitude: found.longitude };
+          point = found;
         }
         structuredStops.push({ sequence: i + 1, address: stopAddresses[i], latitude: point.latitude, longitude: point.longitude });
       }
