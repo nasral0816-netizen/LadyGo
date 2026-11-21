@@ -215,6 +215,13 @@ async function searchAddressSuggestions(query, signal) {
     countrycodes: 'ru', 'accept-language': 'ru', q: fullAddress
   });
   nominatimQueries.push('https://nominatim.openstreetmap.org/search?' + freeText.toString());
+  if (fold(raw) !== fold(fullAddress)) {
+    const globalText = new URLSearchParams({
+      format: 'jsonv2', addressdetails: '1', limit: '15',
+      countrycodes: 'ru', 'accept-language': 'ru', q: raw
+    });
+    nominatimQueries.push('https://nominatim.openstreetmap.org/search?' + globalText.toString());
+  }
   for (const url of nominatimQueries) {
     if (signal?.aborted) throw new Error('Поиск отменён');
     try {
@@ -241,8 +248,10 @@ async function searchAddressSuggestions(query, signal) {
     if (targetHouse && resultHouse === targetHouse) value += 150;
     else if (targetHouse && resultHouse) value -= 50;
     if (targetStreet && resultStreet && (resultStreet === targetStreet || resultStreet.includes(targetStreet) || targetStreet.includes(resultStreet))) value += 60;
-    if (resultCity === targetCity || display.includes(targetCity)) value += 30;
-    else if (resultCity) value -= 25;
+    if (explicitCity) {
+      if (resultCity === targetCity || display.includes(targetCity)) value += 30;
+      else if (resultCity) value -= 25;
+    }
     if (fold(address.country) === 'россия' || display.includes('россия')) value += 5;
     return value;
   };
