@@ -5,6 +5,7 @@ import {
   TouchableOpacity, View,
 } from 'react-native';
 import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
+import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -168,6 +169,40 @@ function TripProgress({ status }) {
 }
 function Card({ children, style }) { return <View style={[s.card, style]}>{children}</View>; }
 
+
+function LeafletMap({ points = [], route = [], height = 245 }) {
+  const validPoints = points.filter(point =>
+    Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude))
+  ).map(point => ({
+    latitude: Number(point.latitude), longitude: Number(point.longitude),
+    label: String(point.label || ''), color: String(point.color || '#E85D91'),
+  }));
+  const validRoute = route.filter(point =>
+    Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude))
+  ).map(point => [Number(point.latitude), Number(point.longitude)]);
+  const mapData = JSON.stringify({ points: validPoints, route: validRoute }).replace(/</g, '\\u003c');
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <style>html,body,#map{height:100%;width:100%;margin:0;background:#F6F1ED} .leaflet-control-attribution{font-size:9px}</style>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script></head>
+    <body><div id="map"></div><script>
+      const data = ${mapData};
+      const map = L.map('map',{zoomControl:true,attributionControl:true}).setView([43.9,42.7],10);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
+      const bounds=[];
+      data.points.forEach(p=>{const ll=[p.latitude,p.longitude];bounds.push(ll);L.circleMarker(ll,{radius:8,color:p.color,fillColor:p.color,fillOpacity:0.95,weight:2}).addTo(map).bindPopup(p.label);});
+      if(data.route.length>1){data.route.forEach(p=>bounds.push(p));L.polyline(data.route,{color:'#E85D91',weight:5,opacity:.9}).addTo(map);}
+      if(bounds.length===1)map.setView(bounds[0],14);else if(bounds.length>1)map.fitBounds(bounds,{padding:[24,24],maxZoom:15});
+      setTimeout(()=>map.invalidateSize(),250);
+    <\/script></body></html>`;
+  return <View style={{ height, borderRadius: 15, overflow: 'hidden', backgroundColor: C.map }}>
+    <WebView source={{ html }} originWhitelist={['*']} javaScriptEnabled domStorageEnabled
+      setSupportMultipleWindows={false} mixedContentMode="never" style={{ flex: 1, backgroundColor: C.map }}
+      renderError={() => <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 14, backgroundColor: C.pale }}><Text style={s.tariffName}>Карта недоступна</Text><Text style={s.muted}>Проверь подключение к интернету. Заказ можно оформить по адресу.</Text></View>}
+      onError={() => {}} />
+  </View>;
+}
+
 function TripMap({ order, driverLocation }) {
   const [roadRoute, setRoadRoute] = useState([]);
   const [routeSummary, setRouteSummary] = useState(null);
@@ -219,10 +254,12 @@ function TripMap({ order, driverLocation }) {
 
   if (!hasCoords) return null;
   return <View style={{ gap: 7 }}>
-    {Platform.OS === 'android' ? <View style={{ height: 190, borderRadius: 15, backgroundColor: C.pale, alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <Text style={s.tariffName}>Карта временно отключена</Text>
-      <Text style={s.muted}>Маршрут и примерное время рассчитываются отдельно.</Text>
-    </View> : <MapView mapType="none" style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: driverLocation?.latitude ?? (start.latitude + end.latitude) / 2, longitude: driverLocation?.longitude ?? (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
+    {Platform.OS === 'android' ? <LeafletMap height={190} points={[
+      { latitude: start.latitude, longitude: start.longitude, label: 'Подача', color: C.pink },
+      ...stops.map((point, index) => ({ ...point, label: point.address || ('Остановка ' + (index + 1)), color: '#D69A35' })),
+      { latitude: end.latitude, longitude: end.longitude, label: 'Назначение', color: C.blue },
+      ...(driverLocation?.latitude != null && driverLocation?.longitude != null ? [{ latitude: driverLocation.latitude, longitude: driverLocation.longitude, label: 'Водитель LadyGo', color: '#26865A' }] : []),
+    ]} route={roadRoute.length > 1 ? roadRoute : routePoints} /> : <MapView mapType="none" style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: driverLocation?.latitude ?? (start.latitude + end.latitude) / 2, longitude: driverLocation?.longitude ?? (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
       <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
       <Marker coordinate={start} title="Подача" pinColor={C.pink} />
       {driverLocation?.latitude != null && driverLocation?.longitude != null && <Marker coordinate={{ latitude: driverLocation.latitude, longitude: driverLocation.longitude }} title="Водитель LadyGo" description="Текущее местоположение" pinColor="#26865A" />}
@@ -1563,10 +1600,12 @@ export default function LadyGoApp() {
           onPress={() => submitRating(order)} />
       </Card>)}
       <View style={s.mapWrap}>
-        {Platform.OS === 'android' ? <View style={[s.map, { alignItems: 'center', justifyContent: 'center', padding: 18, backgroundColor: C.pale }]}>
-          <Text style={s.tariffName}>Карта временно отключена</Text>
-          <Text style={[s.muted, { textAlign: 'center' }]}>Адрес подачи можно определить кнопкой ниже. Заказ доступен без карты.</Text>
-        </View> : <MapView ref={mapRef} mapType="none" style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
+        {Platform.OS === 'android' ? <LeafletMap height={245} points={[
+          ...(coords ? [{ ...coords, label: 'Подача', color: C.pink }] : []),
+          ...stopCoords.map((point, index) => ({ ...point, label: 'Остановка ' + (index + 1), color: '#D69A35' })),
+          ...(destinationCoords ? [{ ...destinationCoords, label: 'Назначение', color: C.blue }] : []),
+          ...(driverLocation ? [{ ...driverLocation, label: 'Автомобиль LadyGo', color: '#26865A' }] : []),
+        ]} route={route} /> : <MapView ref={mapRef} mapType="none" style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
           <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
           {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
           {stopCoords.map((point, index) => <Marker key={'stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} pinColor="#D69A35" />)}
