@@ -78,24 +78,39 @@ async function searchAddressSuggestions(query, signal) {
   const raw = String(query || '').replace(/\s+/g, ' ').trim();
   if (raw.length < 2) return [];
   const knownCities = [
-    'Кисловодск', 'Пятигорск', 'Ессентуки', 'Минеральные Воды',
-    'Железноводск', 'Черкесск', 'Ставрополь', 'Невинномысск',
-    'Лермонтов', 'Георгиевск', 'Зеленокумск'
+    { name: 'Кисловодск', aliases: ['кисловодск', 'кисловодске'] },
+    { name: 'Пятигорск', aliases: ['пятигорск', 'пятигорске'] },
+    { name: 'Ессентуки', aliases: ['ессентуки', 'есентуки', 'ессентуках', 'есентуках'] },
+    { name: 'Минеральные Воды', aliases: ['минеральные воды', 'минводы'] },
+    { name: 'Железноводск', aliases: ['железноводск', 'железноводске'] },
+    { name: 'Черкесск', aliases: ['черкесск', 'черкесске'] },
+    { name: 'Ставрополь', aliases: ['ставрополь', 'ставрополе'] },
+    { name: 'Невинномысск', aliases: ['невинномысск', 'невинномысске'] },
+    { name: 'Лермонтов', aliases: ['лермонтов', 'лермонтове'] },
+    { name: 'Георгиевск', aliases: ['георгиевск', 'георгиевске'] },
+    { name: 'Зеленокумск', aliases: ['зеленокумск', 'зеленокумске'] }
   ];
   const fold = value => String(value || '').toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').trim();
   const lower = fold(raw);
-  const explicitCity = knownCities.find(name => lower.includes(fold(name)));
+  const cityMatch = knownCities
+    .flatMap(item => item.aliases.map(alias => ({ name: item.name, alias })))
+    .sort((a, b) => b.alias.length - a.alias.length)
+    .find(item => lower.includes(item.alias));
+  const explicitCity = cityMatch?.name || '';
   const city = explicitCity || 'Кисловодск';
-  const cityIndex = explicitCity ? lower.lastIndexOf(fold(explicitCity)) : -1;
+  const cityAlias = cityMatch?.alias || '';
+  const cityIndex = cityAlias ? lower.lastIndexOf(cityAlias) : -1;
   const streetPart = (cityIndex >= 0 ? raw.slice(0, cityIndex) : raw)
+    .replace(/^(г\.?|город)\s*/iu, '')
     .replace(/[;,]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const cityOnly = !!explicitCity && !streetPart;
   const houseMatch = streetPart.match(/^(.+?)\s+(\d+[А-Яа-яA-Za-z/-]*)$/u);
-  const normalizedStreet = (houseMatch ? houseMatch[1] : streetPart)
+  const normalizedStreet = cityOnly ? '' : (houseMatch ? houseMatch[1] : streetPart)
     .replace(/^(улица|ул\.?)\s*/iu, '')
     .replace(/\s+(улица|ул\.?)$/iu, '')
     .trim();
   const house = houseMatch?.[2] || '';
-  if (!normalizedStreet) return [];
+  if (!normalizedStreet && !cityOnly) return [];
 
 
   if (GEOAPIFY_API_KEY) {
@@ -116,7 +131,7 @@ async function searchAddressSuggestions(query, signal) {
           provider: 'Geoapify'
         })).filter(item => Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon)));
         if (geoItems.length) {
-          const exact = geoItems.filter(item => (!house || fold(item.address.house_number) === fold(house)) &&
+          const exact = cityOnly ? [] : geoItems.filter(item => (!house || fold(item.address.house_number) === fold(house)) &&
             fold(item.address.road).includes(fold(normalizedStreet)));
           const selected = exact.length ? exact : geoItems;
           return selected.slice(0, 20).map(item => ({ ...item,
@@ -128,13 +143,17 @@ async function searchAddressSuggestions(query, signal) {
     } catch (error) { if (signal?.aborted) throw error; }
   }
 
-  const fullAddress = [normalizedStreet, house, city, 'Ставропольский край', 'Россия'].filter(Boolean).join(', ');
-  const queries = [...new Set([
-    fullAddress,
-    [normalizedStreet, house, city].filter(Boolean).join(' '),
-    [house, normalizedStreet, city].filter(Boolean).join(', '),
-    raw
-  ].filter(Boolean))];
+  const fullAddress = cityOnly
+    ? [city, 'Россия'].join(', ')
+    : [normalizedStreet, house, city, explicitCity ? '' : 'Ставропольский край', 'Россия'].filter(Boolean).join(', ');
+  const queries = [...new Set((cityOnly
+    ? [city, city + ', Россия', raw]
+    : [
+      fullAddress,
+      [normalizedStreet, house, explicitCity ? city : ''].filter(Boolean).join(' '),
+      [house, normalizedStreet, explicitCity ? city : ''].filter(Boolean).join(', '),
+      raw
+    ]).filter(Boolean))];
   const collected = [];
   const add = items => {
     for (const item of items || []) {
@@ -183,7 +202,7 @@ async function searchAddressSuggestions(query, signal) {
   // Nominatim structured search handles "street + house" better than a single
   // free-text query. If it returns nothing, try the complete address as fallback.
   const nominatimQueries = [];
-  if (house) {
+  if (house && !cityOnly) {
     const structured = new URLSearchParams({
       format: 'jsonv2', addressdetails: '1', limit: '15', countrycodes: 'ru',
       'accept-language': 'ru', street: house + ' ' + normalizedStreet,
@@ -221,7 +240,7 @@ async function searchAddressSuggestions(query, signal) {
     let value = 0;
     if (targetHouse && resultHouse === targetHouse) value += 150;
     else if (targetHouse && resultHouse) value -= 50;
-    if (resultStreet && (resultStreet === targetStreet || resultStreet.includes(targetStreet) || targetStreet.includes(resultStreet))) value += 60;
+    if (targetStreet && resultStreet && (resultStreet === targetStreet || resultStreet.includes(targetStreet) || targetStreet.includes(resultStreet))) value += 60;
     if (resultCity === targetCity || display.includes(targetCity)) value += 30;
     else if (resultCity) value -= 25;
     if (fold(address.country) === 'россия' || display.includes('россия')) value += 5;
@@ -231,7 +250,7 @@ async function searchAddressSuggestions(query, signal) {
   const suggestions = collected.slice(0, 20).map(item => ({
     ...item,
     exact_house_match: !house || fold(item.address?.house_number) === targetHouse,
-    exact_street_match: fold(item.address?.road || item.address?.pedestrian || item.name).includes(targetStreet),
+    exact_street_match: !targetStreet || fold(item.address?.road || item.address?.pedestrian || item.name).includes(targetStreet),
     provider: String(item.place_id || '').startsWith('photon-') ? 'Photon' : 'OpenStreetMap'
   }));
 
