@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.8.0';
+const APP_VERSION = '6.7.8.2';
 const PHONE = '+79911121227';
 const SUPPORT = 'ladygosupport@gmail.com';
 
@@ -193,18 +193,64 @@ async function searchAddressSuggestions(query, signal) {
     return value;
   };
   collected.sort((a, b) => score(b) - score(a));
-  return collected.slice(0, 20).map(item => ({
+  const suggestions = collected.slice(0, 20).map(item => ({
     ...item,
     exact_house_match: !house || fold(item.address?.house_number) === targetHouse,
-    exact_street_match: fold(item.address?.road || item.address?.pedestrian || item.name).includes(targetStreet)
+    exact_street_match: fold(item.address?.road || item.address?.pedestrian || item.name).includes(targetStreet),
+    provider: String(item.place_id || '').startsWith('photon-') ? 'Photon' : 'OpenStreetMap'
   }));
+
+  // Android's native geocoder is a last-resort fallback. Its result may be
+  // approximate, so never mark the house number as verified.
+  if (!suggestions.some(item => item.exact_house_match && item.exact_street_match)) {
+    for (const nativeQuery of queries.slice(0, 3)) {
+      if (signal?.aborted) throw new Error('Поиск отменён');
+      try {
+        const nativeResults = await Promise.race([
+          Location.geocodeAsync(nativeQuery),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Native geocoder timeout')), 7000))
+        ]);
+        const point = nativeResults?.find(item =>
+          Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude))
+        );
+        if (point) {
+          const lat = Number(point.latitude), lon = Number(point.longitude);
+          const key = lat.toFixed(5) + ',' + lon.toFixed(5);
+          if (!suggestions.some(item => Number(item.lat).toFixed(5) + ',' + Number(item.lon).toFixed(5) === key)) {
+            suggestions.push({
+              place_id: 'android-geocoder-' + key,
+              lat: String(lat), lon: String(lon),
+              name: normalizedStreet,
+              display_name: fullAddress + ' · точка определена телефоном, проверь её на карте',
+              address: { road: normalizedStreet, house_number: '', city, state: 'Ставропольский край', country: 'Россия' },
+              exact_house_match: false,
+              exact_street_match: false,
+              provider: 'Геокодер Android'
+            });
+          }
+          break;
+        }
+      } catch (_) {
+        if (signal?.aborted) throw new Error('Поиск отменён');
+      }
+    }
+  }
+  return suggestions.slice(0, 20);
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController();
+  const externalSignal = options.signal;
+  const abortFromOutside = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener?.('abort', abortFromOutside, { once: true });
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try { return await fetch(url, { ...options, signal: options.signal || controller.signal }); }
-  finally { clearTimeout(timer); }
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    externalSignal?.removeEventListener?.('abort', abortFromOutside);
+  }
 }
 
 async function fetchDrivingRoute(points, signal) {
@@ -551,25 +597,27 @@ const shareTripDetails = async order => {
   }
 };
 
+const openYandexMapsSearch = async address => {
+  const query = String(address || '').trim();
+  if (!query) {
+    Alert.alert('Яндекс Карты', 'Сначала введи адрес.');
+    return;
+  }
+  const url = 'https://yandex.ru/maps/?text=' + encodeURIComponent(query);
+  try {
+    await Linking.openURL(url);
+  } catch (_) {
+    Alert.alert('Яндекс Карты', 'Не удалось открыть Яндекс Карты. Проверь подключение к интернету.');
+  }
+};
+
 const openDriverNavigation = async order => {
   // До посадки ведём водителя к пассажиру; после начала поездки — к месту назначения.
   const goingToPickup = ['accepted', 'arrived'].includes(order.status);
   const targetAddress = goingToPickup ? order.pickup_address : order.destination_address;
   const stops = !goingToPickup && Array.isArray(order.stops) ? order.stops : [];
-  const waypoints = stops.slice(0, 3).map(stop => stop.address).filter(Boolean).join('|');
-  const query = [
-    'api=1',
-    'destination=' + encodeURIComponent(targetAddress || ''),
-    'travelmode=driving',
-    'dir_action=navigate',
-    waypoints ? 'waypoints=' + encodeURIComponent(waypoints) : '',
-  ].filter(Boolean).join('&');
-  const url = 'https://www.google.com/maps/dir/?' + query;
-  try {
-    await Linking.openURL(url);
-  } catch (_) {
-    Alert.alert('Навигация', 'Не удалось открыть карты на этом устройстве.');
-  }
+  const destinationWithStops = [targetAddress, ...stops.slice(0, 3).map(stop => stop.address).filter(Boolean)].filter(Boolean).join(', ');
+  await openYandexMapsSearch(destinationWithStops);
 };
 
 const startExternalDriverNavigation = async () => {
@@ -578,21 +626,8 @@ const startExternalDriverNavigation = async () => {
     Alert.alert('Навигатор', 'Введи адрес, куда нужно приехать.');
     return;
   }
-  const point = externalNavSelected;
-  const destination = point
-    ? point.latitude + ',' + point.longitude
-    : address;
-  const query = [
-    'api=1',
-    'destination=' + encodeURIComponent(destination),
-    'travelmode=driving',
-    'dir_action=navigate',
-  ].join('&');
-  try {
-    await Linking.openURL('https://www.google.com/maps/dir/?' + query);
-  } catch (_) {
-    Alert.alert('Навигатор', 'Не удалось открыть приложение карт. Проверь, установлены ли карты на телефоне.');
-  }
+  const selectedLabel = externalNavSelected?.address || address;
+  await openYandexMapsSearch(selectedLabel);
 };
 
 async function getPositionWithFallback() {
@@ -2053,7 +2088,10 @@ function LadyGoAppContent() {
               </View>}
               {!pickupSuggestionsLoading && pickupSearchQuery.trim().length >= 2 && pickupSuggestions.length === 0 &&
                 <View style={{ gap: 8, paddingVertical: 10 }}>
-                  <Text style={s.muted}>Ничего не найдено. Проверь написание или попробуй поиск ещё раз.</Text>
+                  <Text style={s.muted}>В базе адрес не найден. Попробуй поиск через Яндекс Карты или повтори запрос.</Text>
+                  <TouchableOpacity onPress={() => openYandexMapsSearch(pickupSearchQuery + ', Кисловодск')} style={[s.savedChip, { alignSelf: 'flex-start' }]}>
+                    <Text style={s.savedChipText}>Открыть поиск в Яндекс Картах</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity onPress={async () => { setPickupSuggestionsLoading(true); try { setPickupSuggestions(await searchAddressSuggestions(pickupSearchQuery, new AbortController().signal)); } catch (_) { setPickupSuggestions([]); } finally { setPickupSuggestionsLoading(false); } }} style={[s.savedChip, { alignSelf: 'flex-start' }]}>
                     <Text style={s.savedChipText}>↻ Повторить поиск</Text>
                   </TouchableOpacity>
@@ -2120,7 +2158,10 @@ function LadyGoAppContent() {
               </View>}
               {!suggestionsLoading && destinationSearchQuery.trim().length >= 2 && destinationSuggestions.length === 0 &&
                 <View style={{ gap: 8, paddingVertical: 10 }}>
-                  <Text style={s.muted}>Ничего не найдено. Проверь написание или попробуй поиск ещё раз.</Text>
+                  <Text style={s.muted}>В базе адрес не найден. Попробуй поиск через Яндекс Карты или повтори запрос.</Text>
+                  <TouchableOpacity onPress={() => openYandexMapsSearch(destinationSearchQuery + ', Кисловодск')} style={[s.savedChip, { alignSelf: 'flex-start' }]}>
+                    <Text style={s.savedChipText}>Открыть поиск в Яндекс Картах</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity onPress={async () => { setSuggestionsLoading(true); try { setDestinationSuggestions(await searchAddressSuggestions(destinationSearchQuery, new AbortController().signal)); } catch (_) { setDestinationSuggestions([]); } finally { setSuggestionsLoading(false); } }} style={[s.savedChip, { alignSelf: 'flex-start' }]}>
                     <Text style={s.savedChipText}>↻ Повторить поиск</Text>
                   </TouchableOpacity>
