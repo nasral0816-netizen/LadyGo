@@ -88,7 +88,8 @@ const fixedRoutePrice = (destination, hasStops = false) => {
   if (suburb && place.includes('ессентук')) return 1100;
   if (suburb && place.includes('пятигор')) return 1600;
   const match = FIXED_ROUTE_PRICES.find(item => item.aliases.some(alias => place.includes(normalizePlace(alias))));
-  return match ? match.price : null;
+  if (match) return match.price;
+  return suburb ? 350 : null;
 };
 const TARIFFS = [
   { id: 'economy', name: 'Эконом', detail: 'Для повседневных поездок', factor: 1 },
@@ -1064,7 +1065,7 @@ export default function LadyGoApp() {
   const createOrder = async () => {
     if (!pickup.trim() || !destination.trim()) return Alert.alert('Маршрут не заполнен', 'Укажи адрес подачи и назначения.');
     if (activeOrder) return Alert.alert('У тебя уже есть активный заказ', 'Заверши или отмени текущую поездку перед новым заказом.');
-    if (tariff === 'child' && !childAccompanied) {
+    if (serviceType === 'ride' && tariff === 'child' && !childAccompanied) {
       return Alert.alert('Поездка с ребёнком', 'Ребёнок должен ехать только в сопровождении совершеннолетнего родителя или законного представителя. Самостоятельная перевозка детей в LadyGo не поддерживается.');
     }
     setBusy(true);
@@ -1516,7 +1517,7 @@ export default function LadyGoApp() {
           <TouchableOpacity onPress={() => setServiceType('ride')} style={[s.savedChip, serviceType === 'ride' && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
             <Text style={s.savedChipText}>🚕 Поездка</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setServiceType('courier')} style={[s.savedChip, serviceType === 'courier' && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
+          <TouchableOpacity onPress={() => { setServiceType('courier'); setTariff('economy'); setChildAccompanied(false); }} style={[s.savedChip, serviceType === 'courier' && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
             <Text style={s.savedChipText}>📦 Курьер — 300 ₽</Text>
           </TouchableOpacity>
         </View>
