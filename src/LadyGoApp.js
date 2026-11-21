@@ -1115,7 +1115,8 @@ export default function LadyGoApp() {
       for (let i = 0; i < addresses.length; i++) {
         let result;
         if (i === 0 && coords) result = coords;
-        else if (i === addresses.length - 1 && destinationPoint) result = destinationPoint;\n        else if (i === addresses.length - 1 && destinationCoords) result = destinationCoords;
+        else if (i === addresses.length - 1 && destinationPoint) result = destinationPoint;
+        else if (i === addresses.length - 1 && destinationCoords) result = destinationCoords;
         else result = (await Location.geocodeAsync(addresses[i]))[0];
         if (!result || !Number.isFinite(result.latitude) || !Number.isFinite(result.longitude)) {
           throw new Error('Не удалось найти адрес: ' + addresses[i]);
