@@ -1874,7 +1874,7 @@ export default function LadyGoApp() {
               <TextInput value={destinationSearchQuery} onChangeText={setDestinationSearchQuery}
                 placeholder="Улица, дом или место" placeholderTextColor="#B6AAB0"
                 autoFocus returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
-              <Text style={s.muted}>Введи, например, «Зеленогорская 28». Выбери нужный город в полном адресе.</Text>
+              <Text style={s.muted}>Начни вводить улицу и номер дома. Если адрес встречается в нескольких городах, выбери нужный вариант.</Text>
               {suggestionsLoading && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 12 }}>
                 <ActivityIndicator color={C.pink} /><Text style={s.muted}>Ищем адреса…</Text>
               </View>}
