@@ -85,11 +85,21 @@ const fixedRoutePrice = (destination, hasStops = false, priceList = FIXED_ROUTE_
   const place = normalizePlace(destination);
   if (!place) return null;
   const suburb = /пригород|посел|село|станиц|окраин/.test(place);
-  if (suburb && place.includes('ессентук')) return 1100;
-  if (suburb && place.includes('пятигор')) return 1600;
+  if (suburb && place.includes('ессентук')) {
+    const item = priceList.find(row => row.route_key === 'essentuki_suburbs' && row.is_active !== false);
+    return Number(item?.price_rub ?? 1100);
+  }
+  if (suburb && place.includes('пятигор')) {
+    const item = priceList.find(row => row.route_key === 'pyatigorsk_suburbs' && row.is_active !== false);
+    return Number(item?.price_rub ?? 1600);
+  }
   const match = priceList.find(item => item.is_active !== false && (item.aliases || []).some(alias => place.includes(normalizePlace(alias))));
   if (match) return Number(match.price_rub ?? match.price);
-  return suburb ? 350 : null;
+  if (suburb) {
+    const item = priceList.find(row => row.route_key === 'suburbs' && row.is_active !== false);
+    return Number(item?.price_rub ?? 350);
+  }
+  return null;
 };
 const TARIFFS = [
   { id: 'economy', name: 'Эконом', detail: 'Для повседневных поездок', factor: 1 },
@@ -218,6 +228,7 @@ function TripMap({ order, driverLocation }) {
       <Polyline coordinates={roadRoute.length > 1 ? roadRoute : routePoints} strokeColor={C.pink} strokeWidth={4} />
     </MapView>
     {routeSummary && <Text style={s.routeInfo}>{routeSummary.km} км · около {routeSummary.minutes} мин по дороге</Text>}
+    <Text style={s.muted}>© OpenStreetMap contributors</Text>
     {driverEtaMinutes != null && <Text style={[s.routeInfo, { color: C.green }]}>Водитель примерно через {driverEtaMinutes} мин</Text>}
     {driverLocation?.updated_at && <Text style={s.muted}>Геопозиция обновлена: {new Date(driverLocation.updated_at).toLocaleTimeString()}</Text>}
   </View>;
@@ -277,7 +288,7 @@ const shareTripDetails = async order => {
     stops ? 'Остановки:\n' + stops : '',
     'Куда: ' + order.destination_address,
     'Услуга: ' + (order.service_type === 'courier' ? 'Курьерская доставка' : 'Поездка'),
-    order.door_to_door ? 'От двери до двери (+100 ₽)' : '',
+    order.door_to_door ? 'От двери до двери (+{configuredDoorToDoorPrice} ₽)' : '',
     'Тариф: ' + tariffName,
     'Стоимость: ' + money(order.price_rub),
     'Оплата: ' + (order.payment_method === 'transfer_to_driver' ? 'Перевод водителю' : 'Наличными'),
@@ -411,16 +422,18 @@ export default function LadyGoApp() {
   const driverRecentEarnings = useMemo(() => driverCompletedOrders.reduce((sum, order) => sum + Number(order.price_rub || 0), 0), [driverCompletedOrders]);
   const unreadCount = notifications.filter(item => !item.read_at).length;
   const selectedTariffRate = tariffRates.find(rate => rate.tariff_id === tariff && rate.is_active);
-  const fixedFare = serviceType === 'courier' ? 300 : fixedRoutePrice(destination, Boolean(stopsText.trim()), fixedPrices.length ? fixedPrices : FIXED_ROUTE_PRICES);
+  const configuredCourierPrice = Number(fixedPrices.find(item => item.route_key === 'courier_delivery')?.price_rub ?? 300);
+  const configuredDoorToDoorPrice = Number(fixedPrices.find(item => item.route_key === 'door_to_door')?.price_rub ?? 100);
+  const fixedFare = serviceType === 'courier' ? configuredCourierPrice : fixedRoutePrice(destination, Boolean(stopsText.trim()), fixedPrices.length ? fixedPrices : FIXED_ROUTE_PRICES);
   const hasCustomRate = selectedTariffRate && (
     Number(selectedTariffRate.minimum_fare_rub) > 0 ||
     Number(selectedTariffRate.base_fare_rub) > 0 ||
     Number(selectedTariffRate.per_km_rub) > 0
   );
   const estimatedPrice = fixedFare != null
-    ? fixedFare + (doorToDoor && serviceType === 'ride' ? 100 : 0)
+    ? fixedFare + (doorToDoor && serviceType === 'ride' ? configuredDoorToDoorPrice : 0)
     : routeInfo && hasCustomRate
-      ? Math.round(Math.max(Number(selectedTariffRate.minimum_fare_rub), Number(selectedTariffRate.base_fare_rub) + Number(routeInfo.km) * Number(selectedTariffRate.per_km_rub)) + (doorToDoor ? 100 : 0))
+      ? Math.round(Math.max(Number(selectedTariffRate.minimum_fare_rub), Number(selectedTariffRate.base_fare_rub) + Number(routeInfo.km) * Number(selectedTariffRate.per_km_rub)) + (doorToDoor ? configuredDoorToDoorPrice : 0))
       : null;
 
   const loadProfile = useCallback(async currentUser => {
@@ -1555,6 +1568,7 @@ export default function LadyGoApp() {
           {driverLocation && <Marker coordinate={driverLocation} title="Автомобиль LadyGo" pinColor="#26865A" />}
           {route.length > 1 && <Polyline coordinates={route} strokeColor={C.pink} strokeWidth={5} />}
         </MapView>
+        <Text style={[s.muted, { textAlign: 'center' }]}>© OpenStreetMap contributors</Text>
         <TouchableOpacity style={s.locButton} onPress={getCurrentLocation}><Text style={s.locText}>{locationBusy ? 'Определяем…' : '◎ Моё местоположение'}</Text></TouchableOpacity>
       </View>
       <Card>
@@ -1565,7 +1579,7 @@ export default function LadyGoApp() {
             <Text style={s.savedChipText}>🚕 Поездка</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => { setServiceType('courier'); setTariff('economy'); setChildAccompanied(false); }} style={[s.savedChip, serviceType === 'courier' && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
-            <Text style={s.savedChipText}>📦 Курьер — 300 ₽</Text>
+            <Text style={s.savedChipText}>📦 Курьер — {configuredCourierPrice} ₽</Text>
           </TouchableOpacity>
         </View>
         <Input label="Откуда" value={pickup} onChangeText={v => { setPickup(v); setCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }} placeholder="Адрес подачи" />
