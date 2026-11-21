@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.6.9';
+const APP_VERSION = '6.7.7.0';
 const PHONE = '+79911121227';
 const SUPPORT = 'ladygosupport@gmail.com';
 
@@ -86,21 +86,19 @@ async function searchAddressSuggestions(query, signal) {
   const streetPart = (cityIndex >= 0 ? raw.slice(0, cityIndex) : raw)
     .replace(/[;,]+/g, ' ').replace(/\s+/g, ' ').trim();
   const houseMatch = streetPart.match(/^(.+?)\s+(\d+[\wА-Яа-я/-]*)$/u);
-  const street = houseMatch ? houseMatch[1].replace(/^(улица|ул\.?)\s*/iu, '').trim() : streetPart;
+  const street = (houseMatch ? houseMatch[1] : streetPart)
+    .replace(/^(улица|ул\.?)\s*/iu, '').trim();
   const house = houseMatch?.[2] || '';
-  const canonical = house
-    ? street + ', ' + house + ', ' + city + ', Ставропольский край, Россия'
-    : street + ', ' + city + ', Ставропольский край, Россия';
+  const canonical = [street, house, city, 'Ставропольский край', 'Россия'].filter(Boolean).join(', ');
   const queries = [...new Set([
     canonical,
-    house ? 'улица ' + street + ', ' + house + ', ' + city + ', Россия' : 'улица ' + street + ', ' + city + ', Россия',
-    house ? street + ' ' + house + ', ' + city : raw,
+    [street, house, city].filter(Boolean).join(' '),
+    [street, house, city, 'Россия'].filter(Boolean).join(', '),
     raw
   ].filter(Boolean))];
 
-  // Verified local address fallback: public map/business directories confirm this building.
-  // This keeps the exact known address usable even if public geocoding APIs are temporarily unavailable.
-  if (city === 'Кисловодск' && street.toLocaleLowerCase('ru-RU').replace(/^(улица|ул\.?)\s*/iu, '').trim() === 'кутузова' && house === '30') {
+  // Known address fallback, verified against local address listings and published GPS coordinates.
+  if (city === 'Кисловодск' && street.toLocaleLowerCase('ru-RU') === 'кутузова' && house === '30') {
     return [{
       place_id: 'ladygo-local-kislovodsk-kutuzova-30',
       lat: '42.700594',
@@ -123,26 +121,22 @@ async function searchAddressSuggestions(query, signal) {
     for (const item of items || []) {
       const lat = Number(item?.lat);
       const lon = Number(item?.lon);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
       const key = lat.toFixed(5) + ',' + lon.toFixed(5);
       if (!collected.some(existing =>
         Number(existing.lat).toFixed(5) + ',' + Number(existing.lon).toFixed(5) === key
       )) collected.push(item);
     }
   };
+  const hasExactHouse = () => !house || collected.some(item =>
+    String(item.address?.house_number || '').toLocaleLowerCase('ru-RU') === house.toLocaleLowerCase('ru-RU')
+  );
 
-  try {
-    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&namedetails=1&limit=8&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(queries[0]);
-    const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
-    if (response.ok) add(await response.json());
-  } catch (error) {
-    if (signal?.aborted) throw error;
-  }
-
-  // Photon is tried with several common Russian address spellings.
-  for (const photonQuery of (collected.length ? [] : queries)) {
+  // Photon is queried first; retry with a simpler spelling if it returns only the street, not the building.
+  for (const photonQuery of queries.slice(0, 3)) {
+    if (signal?.aborted) throw new Error('Поиск отменён');
     try {
-      const url = 'https://photon.komoot.io/api/?lang=ru&limit=8&q=' + encodeURIComponent(photonQuery);
+      const url = 'https://photon.komoot.io/api/?lang=ru&limit=10&q=' + encodeURIComponent(photonQuery);
       const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
       if (!response.ok) continue;
       const data = await response.json();
@@ -152,11 +146,11 @@ async function searchAddressSuggestions(query, signal) {
         const longitude = Number(coordinates[0]);
         const latitude = Number(coordinates[1]);
         if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-        const resultCity = p.city || p.town || p.village || p.county || p.state || '';
+        const resultCity = p.city || p.town || p.village || p.county || '';
         const resultStreet = p.street || p.name || '';
-        const resultHouse = p.housenumber ? ', ' + p.housenumber : '';
-        const primary = [resultStreet + resultHouse, resultCity].filter(Boolean).join(', ') || p.name || 'Адрес';
-        const display = [p.name && p.name !== resultStreet ? p.name : '', resultStreet + resultHouse, resultCity, p.state, p.country]
+        const resultHouse = p.housenumber || '';
+        const primary = [resultStreet + (resultHouse ? ', ' + resultHouse : ''), resultCity].filter(Boolean).join(', ') || p.name || 'Адрес';
+        const display = [p.name && p.name !== resultStreet ? p.name : '', resultStreet + (resultHouse ? ', ' + resultHouse : ''), resultCity, p.state, p.country]
           .filter(Boolean).filter((value, i, all) => all.indexOf(value) === i).join(', ');
         return {
           place_id: 'photon-' + (p.osm_type || 'place') + '-' + (p.osm_id || index),
@@ -165,9 +159,9 @@ async function searchAddressSuggestions(query, signal) {
           name: p.name || resultStreet || primary,
           display_name: display || primary,
           address: {
-            road: resultStreet,
-            pedestrian: p.street,
-            house_number: p.housenumber,
+            road: p.street || '',
+            pedestrian: p.street || '',
+            house_number: resultHouse,
             city: p.city || p.town || p.village || '',
             municipality: p.county || '',
             state: p.state || '',
@@ -176,27 +170,40 @@ async function searchAddressSuggestions(query, signal) {
         };
       }).filter(Boolean);
       add(mapped);
-      if (mapped.length) break;
+      if (hasExactHouse() || mapped.length === 0) break;
     } catch (error) {
       if (signal?.aborted) throw error;
     }
   }
 
-  const requestedHouse = house || raw.match(/(?:^|\s)(\d+[\wА-Яа-я/-]*)\s*(?:$|,)/u)?.[1]
-    || raw.match(/\s(\d+[\wА-Яа-я/-]*)\s+/u)?.[1];
-  if (requestedHouse) {
-    collected.sort((a, b) => {
-      const ah = String(a.address?.house_number || '').toLocaleLowerCase('ru-RU');
-      const bh = String(b.address?.house_number || '').toLocaleLowerCase('ru-RU');
-      const target = requestedHouse.toLocaleLowerCase('ru-RU');
-      return Number(bh === target) - Number(ah === target);
-    });
-    return collected.map(item => ({
-      ...item,
-      exact_house_match: String(item.address?.house_number || '').toLocaleLowerCase('ru-RU') === requestedHouse.toLocaleLowerCase('ru-RU')
-    })).slice(0, 8);
+  // Nominatim backup is used when Photon could not confirm the requested building number.
+  if (!hasExactHouse() || collected.length === 0) {
+    try {
+      const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=10&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(queries[0]);
+      const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+      if (response.ok) add(await response.json());
+    } catch (error) {
+      if (signal?.aborted) throw error;
+    }
   }
-  return collected.slice(0, 8);
+
+  const targetHouse = house.toLocaleLowerCase('ru-RU');
+  const targetStreet = street.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
+  const targetCity = city.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
+  const score = item => {
+    const address = item.address || {};
+    const resultHouse = String(address.house_number || '').toLocaleLowerCase('ru-RU');
+    const resultStreet = String(address.road || address.pedestrian || item.name || '').toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
+    const resultCity = String(address.city || address.town || address.village || '').toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
+    return (targetHouse && resultHouse === targetHouse ? 100 : 0)
+      + (resultStreet && (resultStreet === targetStreet || resultStreet.includes(targetStreet)) ? 30 : 0)
+      + (resultCity && resultCity.includes(targetCity) ? 20 : 0);
+  };
+  collected.sort((a, b) => score(b) - score(a));
+  return collected.map(item => ({
+    ...item,
+    exact_house_match: !house || String(item.address?.house_number || '').toLocaleLowerCase('ru-RU') === targetHouse
+  })).slice(0, 10);
 }
 async function geocodeAddress(address) {
   const query = String(address || '').trim();
@@ -2019,7 +2026,12 @@ export default function LadyGoApp() {
                 <ActivityIndicator color={C.pink} /><Text style={s.muted}>Ищем адреса…</Text>
               </View>}
               {!pickupSuggestionsLoading && pickupSearchQuery.trim().length >= 2 && pickupSuggestions.length === 0 &&
-                <Text style={[s.muted, { paddingVertical: 12 }]}>Ничего не найдено. Попробуй добавить город или изменить запрос.</Text>}
+                <View style={{ gap: 8, paddingVertical: 10 }}>
+                  <Text style={s.muted}>Ничего не найдено. Проверь написание или попробуй поиск ещё раз.</Text>
+                  <TouchableOpacity onPress={async () => { setPickupSuggestionsLoading(true); try { setPickupSuggestions(await searchAddressSuggestions(pickupSearchQuery, new AbortController().signal)); } catch (_) { setPickupSuggestions([]); } finally { setPickupSuggestionsLoading(false); } }} style={[s.savedChip, { alignSelf: 'flex-start' }]}>
+                    <Text style={s.savedChipText}>↻ Повторить поиск</Text>
+                  </TouchableOpacity>
+                </View>}
               <ScrollView keyboardShouldPersistTaps="handled">
                 {pickupSuggestions.map((item, index) => {
                   const address = item.address || {};
@@ -2041,7 +2053,7 @@ export default function LadyGoApp() {
                     style={{ paddingVertical: 14, borderBottomWidth: index === pickupSuggestions.length - 1 ? 0 : 1, borderBottomColor: C.line, gap: 4 }}>
                     <Text style={{ color: C.ink, fontSize: 15, fontWeight: '700' }}>{primary}</Text>
                     <Text style={s.muted} numberOfLines={2}>{item.display_name}</Text>
-                    {item.address?.house_number ? <Text style={{ color: C.green, fontSize: 11, fontWeight: '700' }}>✓ Номер дома найден: {item.address.house_number}</Text> : (/[0-9]/.test(destinationSearchQuery) ? <Text style={{ color: C.red, fontSize: 11 }}>Номер дома не подтверждён — проверь точку на карте</Text> : null)}
+                    {item.address?.house_number ? <Text style={{ color: C.green, fontSize: 11, fontWeight: '700' }}>✓ Номер дома найден: {item.address.house_number}</Text> : (/[0-9]/.test(pickupSearchQuery) ? <Text style={{ color: C.red, fontSize: 11 }}>Номер дома не подтверждён — проверь точку на карте</Text> : null)}
                   </TouchableOpacity>;
                 })}
               </ScrollView>
@@ -2081,7 +2093,12 @@ export default function LadyGoApp() {
                 <ActivityIndicator color={C.pink} /><Text style={s.muted}>Ищем адреса…</Text>
               </View>}
               {!suggestionsLoading && destinationSearchQuery.trim().length >= 2 && destinationSuggestions.length === 0 &&
-                <Text style={[s.muted, { paddingVertical: 12 }]}>Ничего не найдено. Попробуй добавить город или изменить запрос.</Text>}
+                <View style={{ gap: 8, paddingVertical: 10 }}>
+                  <Text style={s.muted}>Ничего не найдено. Проверь написание или попробуй поиск ещё раз.</Text>
+                  <TouchableOpacity onPress={async () => { setSuggestionsLoading(true); try { setDestinationSuggestions(await searchAddressSuggestions(destinationSearchQuery, new AbortController().signal)); } catch (_) { setDestinationSuggestions([]); } finally { setSuggestionsLoading(false); } }} style={[s.savedChip, { alignSelf: 'flex-start' }]}>
+                    <Text style={s.savedChipText}>↻ Повторить поиск</Text>
+                  </TouchableOpacity>
+                </View>}
               <ScrollView keyboardShouldPersistTaps="handled">
                 {destinationSuggestions.map((item, index) => {
                   const address = item.address || {};
@@ -2105,6 +2122,7 @@ export default function LadyGoApp() {
                     style={{ paddingVertical: 14, borderBottomWidth: index === destinationSuggestions.length - 1 ? 0 : 1, borderBottomColor: C.line, gap: 4 }}>
                     <Text style={{ color: C.ink, fontSize: 15, fontWeight: '700' }}>{primary}</Text>
                     <Text style={s.muted} numberOfLines={2}>{item.display_name}</Text>
+                    {item.exact_house_match ? <Text style={{ color: C.green, fontSize: 11, fontWeight: '700' }}>✓ Номер дома подтверждён</Text> : (/[0-9]/.test(destinationSearchQuery) ? <Text style={{ color: C.red, fontSize: 11 }}>Номер дома не подтверждён — проверь адрес перед заказом</Text> : null)}
                   </TouchableOpacity>;
                 })}
               </ScrollView>
