@@ -116,60 +116,95 @@ const STATUS = {
 };
 const money = value => value == null ? 'Стоимость согласует водитель' : `${value} ₽`;
 async function searchAddressSuggestions(query, signal) {
-  const q = String(query || '').trim();
-  if (q.length < 2) return [];
-  // First try Nominatim; if it returns nothing or is unavailable, use Photon.
-  try {
-    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&namedetails=1&limit=8&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(q);
-    const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
-    if (response.ok) {
-      const results = await response.json();
-      const valid = (results || []).filter(item =>
-        Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon))
-      );
-      if (valid.length) return valid;
+  const raw = String(query || '').replace(/\\s+/g, ' ').trim();
+  if (raw.length < 2) return [];
+
+  // Russian address providers often fail when street, house and city are
+  // typed as one unpunctuated phrase (e.g. "Кутузова 44 Кисловодск").
+  // Build a few equivalent forms, keeping the user's original query first.
+  const knownCities = [
+    'Кисловодск', 'Пятигорск', 'Ессентуки', 'Минеральные Воды',
+    'Железноводск', 'Черкесск', 'Ставрополь', 'Невинномысск',
+    'Лермонтов', 'Георгиевск', 'Зеленокумск'
+  ];
+  const lower = raw.toLocaleLowerCase('ru-RU');
+  const city = knownCities.find(name => lower.includes(name.toLocaleLowerCase('ru-RU'))) || 'Кисловодск';
+  const streetPart = knownCities.reduce((value, name) =>
+    value.replace(new RegExp(name.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'), 'ig'), '').trim(), raw
+  ).replace(/[;,]+/g, ' ').replace(/\\s+/g, ' ').trim();
+  const houseMatch = streetPart.match(/^(.+?)\\s+(\\d+[\\wА-Яа-я/-]*)$/u);
+  const canonical = houseMatch
+    ? `${houseMatch[1]}, ${houseMatch[2]}, ${city}, Россия`
+    : `${streetPart || raw}, ${city}, Россия`;
+  const queries = [...new Set([canonical, raw, `${streetPart}, ${city}, Россия`].filter(Boolean))];
+
+  const collected = [];
+  const add = items => {
+    for (const item of items || []) {
+      const lat = Number(item?.lat);
+      const lon = Number(item?.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
+      if (!collected.some(existing => `${Number(existing.lat).toFixed(5)},${Number(existing.lon).toFixed(5)}` === key)) {
+        collected.push(item);
+      }
     }
-  } catch (error) {
-    if (signal?.aborted) throw error;
-  }
+  };
+
+  // Nominatim: use the normalized street/house/city form first.
   try {
-    const url = 'https://photon.komoot.io/api/?lang=ru&limit=8&q=' + encodeURIComponent(q);
+    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&namedetails=1&limit=8&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(queries[0]);
     const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
-    if (!response.ok) throw new Error('Photon search unavailable');
-    const data = await response.json();
-    return (data.features || []).map((feature, index) => {
-      const p = feature.properties || {};
-      const coordinates = feature.geometry?.coordinates || [];
-      const longitude = Number(coordinates[0]);
-      const latitude = Number(coordinates[1]);
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-      const city = p.city || p.town || p.village || p.county || p.state || '';
-      const street = p.street || p.name || '';
-      const house = p.housenumber ? ', ' + p.housenumber : '';
-      const primary = [street + house, city].filter(Boolean).join(', ') || p.name || 'Адрес';
-      const display = [p.name && p.name !== street ? p.name : '', street + house, city, p.state, p.country]
-        .filter(Boolean).filter((value, i, all) => all.indexOf(value) === i).join(', ');
-      return {
-        place_id: 'photon-' + (p.osm_type || 'place') + '-' + (p.osm_id || index),
-        lat: String(latitude),
-        lon: String(longitude),
-        name: p.name || street || primary,
-        display_name: display || primary,
-        address: {
-          road: street,
-          pedestrian: p.street,
-          house_number: p.housenumber,
-          city: p.city || p.town || p.village || '',
-          municipality: p.county || '',
-          state: p.state || '',
-          country: p.country || ''
-        }
-      };
-    }).filter(Boolean);
+    if (response.ok) add(await response.json());
   } catch (error) {
     if (signal?.aborted) throw error;
-    return [];
   }
+
+  // Photon fallback: try normalized form, then the exact text if needed.
+  for (const photonQuery of [queries[0], raw]) {
+    if (collected.length >= 8) break;
+    try {
+      const url = 'https://photon.komoot.io/api/?lang=ru&limit=8&q=' + encodeURIComponent(photonQuery);
+      const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+      if (!response.ok) continue;
+      const data = await response.json();
+      const mapped = (data.features || []).map((feature, index) => {
+        const p = feature.properties || {};
+        const coordinates = feature.geometry?.coordinates || [];
+        const longitude = Number(coordinates[0]);
+        const latitude = Number(coordinates[1]);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+        const resultCity = p.city || p.town || p.village || p.county || p.state || '';
+        const street = p.street || p.name || '';
+        const house = p.housenumber ? ', ' + p.housenumber : '';
+        const primary = [street + house, resultCity].filter(Boolean).join(', ') || p.name || 'Адрес';
+        const display = [p.name && p.name !== street ? p.name : '', street + house, resultCity, p.state, p.country]
+          .filter(Boolean).filter((value, i, all) => all.indexOf(value) === i).join(', ');
+        return {
+          place_id: 'photon-' + (p.osm_type || 'place') + '-' + (p.osm_id || index),
+          lat: String(latitude),
+          lon: String(longitude),
+          name: p.name || street || primary,
+          display_name: display || primary,
+          address: {
+            road: street,
+            pedestrian: p.street,
+            house_number: p.housenumber,
+            city: p.city || p.town || p.village || '',
+            municipality: p.county || '',
+            state: p.state || '',
+            country: p.country || ''
+          }
+        };
+      }).filter(Boolean);
+      add(mapped);
+      if (mapped.length) break;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+    }
+  }
+
+  return collected.slice(0, 8);
 }
 
 async function geocodeAddress(address) {
