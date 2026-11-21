@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.8.3';
+const APP_VERSION = '6.7.8.4';
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
 const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
 const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
@@ -75,6 +75,7 @@ const STATUS = {
 };
 const money = value => value == null ? 'Стоимость согласует водитель' : `${value} ₽`;
 async function searchAddressSuggestions(query, signal) {
+
   if (GEOAPIFY_API_KEY) {
     try {
       const geoUrl = 'https://api.geoapify.com/v1/geocode/autocomplete?text=' +
@@ -662,11 +663,34 @@ const openYandexMapsSearch = async address => {
 };
 
 const openDriverNavigation = async order => {
-  // До посадки ведём водителя к пассажиру; после начала поездки — к месту назначения.
+  // До посадки ведём водителя к точке подачи; после начала поездки — через остановки к финишу.
   const goingToPickup = ['accepted', 'arrived'].includes(order.status);
   const targetAddress = goingToPickup ? order.pickup_address : order.destination_address;
   const stops = !goingToPickup && Array.isArray(order.stops) ? order.stops : [];
   const destinationWithStops = [targetAddress, ...stops.slice(0, 3).map(stop => stop.address).filter(Boolean)].filter(Boolean).join(', ');
+  try {
+    const current = await getPositionWithFallback();
+    const routePoints = [{ latitude: current.coords.latitude, longitude: current.coords.longitude }];
+    if (goingToPickup) {
+      if (Number.isFinite(Number(order.pickup_lat)) && Number.isFinite(Number(order.pickup_lng))) {
+        routePoints.push({ latitude: Number(order.pickup_lat), longitude: Number(order.pickup_lng) });
+      }
+    } else {
+      for (const stop of stops.slice(0, 3)) {
+        const latitude = Number(stop.latitude), longitude = Number(stop.longitude);
+        if (Number.isFinite(latitude) && Number.isFinite(longitude)) routePoints.push({ latitude, longitude });
+      }
+      const latitude = Number(order.destination_lat), longitude = Number(order.destination_lng);
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) routePoints.push({ latitude, longitude });
+    }
+    if (routePoints.length > 1) {
+      const routeText = routePoints.map(point => point.latitude + ',' + point.longitude).join('~');
+      await Linking.openURL('https://yandex.ru/maps/?rtext=' + encodeURIComponent(routeText) + '&rtt=auto');
+      return;
+    }
+  } catch (_) {
+    // If GPS or route coordinates are unavailable, retain address-based navigation.
+  }
   await openYandexMapsSearch(destinationWithStops);
 };
 
