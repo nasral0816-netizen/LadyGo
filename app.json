@@ -2,17 +2,17 @@
   "expo": {
     "name": "LadyGo",
     "slug": "guga",
-    "version": "6.7.6.9",
+    "version": "6.7.7.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "ladygo",
-    "description": "LadyGo — сервис поездок с заботой: заказ поездки и доставки, фиксированные тарифы, предварительный заказ, карта и связь с водителем.",
+    "description": "LadyGo — сервис поездок с заботой: заказ поездки и доставки, предварительный заказ, карта, маршрут и связь с водителем.",
     "primaryColor": "#E85D91",
     "backgroundColor": "#E80B87",
     "icon": "./icon.png",
     "android": {
       "package": "com.ladygo.app",
-      "versionCode": 11,
+      "versionCode": 12,
       "adaptiveIcon": {
         "foregroundImage": "./adaptive-icon.png",
         "backgroundColor": "#E80B87"
