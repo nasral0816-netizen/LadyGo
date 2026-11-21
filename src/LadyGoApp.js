@@ -115,6 +115,63 @@ const STATUS = {
   cancelled: 'Заказ отменён', declined: 'Заказ отклонён',
 };
 const money = value => value == null ? 'Стоимость согласует водитель' : `${value} ₽`;
+async function searchAddressSuggestions(query, signal) {
+  const q = String(query || '').trim();
+  if (q.length < 2) return [];
+  // First try Nominatim; if it returns nothing or is unavailable, use Photon.
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&namedetails=1&limit=8&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(q);
+    const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+    if (response.ok) {
+      const results = await response.json();
+      const valid = (results || []).filter(item =>
+        Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon))
+      );
+      if (valid.length) return valid;
+    }
+  } catch (error) {
+    if (signal?.aborted) throw error;
+  }
+  try {
+    const url = 'https://photon.komoot.io/api/?lang=ru&limit=8&q=' + encodeURIComponent(q);
+    const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error('Photon search unavailable');
+    const data = await response.json();
+    return (data.features || []).map((feature, index) => {
+      const p = feature.properties || {};
+      const coordinates = feature.geometry?.coordinates || [];
+      const longitude = Number(coordinates[0]);
+      const latitude = Number(coordinates[1]);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+      const city = p.city || p.town || p.village || p.county || p.state || '';
+      const street = p.street || p.name || '';
+      const house = p.housenumber ? ', ' + p.housenumber : '';
+      const primary = [street + house, city].filter(Boolean).join(', ') || p.name || 'Адрес';
+      const display = [p.name && p.name !== street ? p.name : '', street + house, city, p.state, p.country]
+        .filter(Boolean).filter((value, i, all) => all.indexOf(value) === i).join(', ');
+      return {
+        place_id: 'photon-' + (p.osm_type || 'place') + '-' + (p.osm_id || index),
+        lat: String(latitude),
+        lon: String(longitude),
+        name: p.name || street || primary,
+        display_name: display || primary,
+        address: {
+          road: street,
+          pedestrian: p.street,
+          house_number: p.housenumber,
+          city: p.city || p.town || p.village || '',
+          municipality: p.county || '',
+          state: p.state || '',
+          country: p.country || ''
+        }
+      };
+    }).filter(Boolean);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return [];
+  }
+}
+
 async function geocodeAddress(address) {
   const query = String(address || '').trim();
   if (!query) return null;
@@ -464,13 +521,8 @@ export default function LadyGoApp() {
     const timer = setTimeout(async () => {
       setPickupSuggestionsLoading(true);
       try {
-        const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&namedetails=1&limit=8&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(query);
-        const response = await fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
-        if (!response.ok) throw new Error('Address suggestions unavailable');
-        const results = await response.json();
-        if (active) setPickupSuggestions((results || []).filter(item =>
-          Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon))
-        ));
+        const results = await searchAddressSuggestions(query, controller.signal);
+        if (active) setPickupSuggestions(results);
       } catch (_) {
         if (active) setPickupSuggestions([]);
       } finally {
@@ -496,14 +548,8 @@ export default function LadyGoApp() {
     const timer = setTimeout(async () => {
       setSuggestionsLoading(true);
       try {
-        // Search across Russia and let the user choose the exact city/address.
-        const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&namedetails=1&limit=8&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(query);
-        const response = await fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
-        if (!response.ok) throw new Error('Address suggestions unavailable');
-        const results = await response.json();
-        if (active) setDestinationSuggestions((results || []).filter(item =>
-          Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon))
-        ));
+        const results = await searchAddressSuggestions(query, controller.signal);
+        if (active) setDestinationSuggestions(results);
       } catch (_) {
         if (active) setDestinationSuggestions([]);
       } finally {
