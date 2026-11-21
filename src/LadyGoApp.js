@@ -74,7 +74,6 @@ const money = value => value == null ? 'Стоимость согласует в
 async function searchAddressSuggestions(query, signal) {
   const raw = String(query || '').replace(/\s+/g, ' ').trim();
   if (raw.length < 2) return [];
-
   const knownCities = [
     'Кисловодск', 'Пятигорск', 'Ессентуки', 'Минеральные Воды',
     'Железноводск', 'Черкесск', 'Ставрополь', 'Невинномысск',
@@ -94,65 +93,49 @@ async function searchAddressSuggestions(query, signal) {
     .trim();
   const house = houseMatch?.[2] || '';
   if (!normalizedStreet) return [];
-
-  const fullAddress = [normalizedStreet, house, city, 'Ставропольский край', 'Россия']
-    .filter(Boolean).join(', ');
+  const fullAddress = [normalizedStreet, house, city, 'Ставропольский край', 'Россия'].filter(Boolean).join(', ');
   const queries = [...new Set([
     fullAddress,
     [normalizedStreet, house, city].filter(Boolean).join(' '),
     [house, normalizedStreet, city].filter(Boolean).join(', '),
     raw
   ].filter(Boolean))];
-
   const collected = [];
   const add = items => {
     for (const item of items || []) {
-      const lat = Number(item?.lat);
-      const lon = Number(item?.lon);
+      const lat = Number(item?.lat), lon = Number(item?.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
       const key = lat.toFixed(5) + ',' + lon.toFixed(5);
-      if (!collected.some(existing =>
-        Number(existing.lat).toFixed(5) + ',' + Number(existing.lon).toFixed(5) === key
-      )) collected.push(item);
+      if (!collected.some(existing => Number(existing.lat).toFixed(5) + ',' + Number(existing.lon).toFixed(5) === key)) collected.push(item);
     }
   };
   const mapPhoton = features => (features || []).map((feature, index) => {
-    const p = feature.properties || {};
-    const coordinates = feature.geometry?.coordinates || [];
-    const longitude = Number(coordinates[0]);
-    const latitude = Number(coordinates[1]);
+    const p = feature.properties || {}, coordinates = feature.geometry?.coordinates || [];
+    const longitude = Number(coordinates[0]), latitude = Number(coordinates[1]);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
     const resultCity = p.city || p.town || p.village || p.county || '';
     const resultStreet = p.street || p.name || '';
     const resultHouse = p.housenumber || '';
-    const primary = [resultStreet + (resultHouse ? ', ' + resultHouse : ''), resultCity]
-      .filter(Boolean).join(', ') || p.name || 'Адрес';
-    const display = [
-      p.name && p.name !== resultStreet ? p.name : '',
-      resultStreet + (resultHouse ? ', ' + resultHouse : ''),
-      resultCity, p.state, p.country
-    ].filter(Boolean).filter((value, i, all) => all.indexOf(value) === i).join(', ');
+    const primary = [resultStreet + (resultHouse ? ', ' + resultHouse : ''), resultCity].filter(Boolean).join(', ') || p.name || 'Адрес';
+    const display = [p.name && p.name !== resultStreet ? p.name : '', resultStreet + (resultHouse ? ', ' + resultHouse : ''), resultCity, p.state, p.country]
+      .filter(Boolean).filter((value, i, all) => all.indexOf(value) === i).join(', ');
     return {
       place_id: 'photon-' + (p.osm_type || 'place') + '-' + (p.osm_id || index),
-      lat: String(latitude), lon: String(longitude),
-      name: p.name || resultStreet || primary,
-      display_name: display || primary,
+      lat: String(latitude), lon: String(longitude), name: p.name || resultStreet || primary, display_name: display || primary,
       address: {
-        road: p.street || '', pedestrian: p.street || '',
-        house_number: resultHouse,
-        city: p.city || p.town || p.village || '',
-        municipality: p.county || '', state: p.state || '', country: p.country || ''
+        road: p.street || '', pedestrian: p.street || '', house_number: resultHouse,
+        city: p.city || p.town || p.village || '', municipality: p.county || '',
+        state: p.state || '', country: p.country || ''
       }
     };
   }).filter(Boolean);
 
-  // Ask Photon with several common address formats. A failed/empty variant never
-  // prevents the other variants from being checked.
+  // Photon: try several spellings in parallel, each with a hard timeout.
   const photonResults = await Promise.all(queries.map(async photonQuery => {
     if (signal?.aborted) throw new Error('Поиск отменён');
     try {
-      const url = 'https://photon.komoot.io/api/?lang=ru&limit=15&q=' + encodeURIComponent(photonQuery);
-      const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+      const url = 'https://photon.komoot.io/api/?lang=ru&limit=20&q=' + encodeURIComponent(photonQuery);
+      const response = await fetchWithTimeout(url, { signal, headers: { Accept: 'application/json' } }, 9000);
       if (!response.ok) return [];
       return mapPhoton((await response.json()).features);
     } catch (error) {
@@ -162,27 +145,38 @@ async function searchAddressSuggestions(query, signal) {
   }));
   photonResults.forEach(add);
 
-  // Nominatim free-text search is an independent fallback. Use a complete
-  // city-qualified address rather than relying only on structured street parsing.
-  if (!signal?.aborted) {
+  // Nominatim structured search handles "street + house" better than a single
+  // free-text query. If it returns nothing, try the complete address as fallback.
+  const nominatimQueries = [];
+  if (house) {
+    const structured = new URLSearchParams({
+      format: 'jsonv2', addressdetails: '1', limit: '15', countrycodes: 'ru',
+      'accept-language': 'ru', street: house + ' ' + normalizedStreet,
+      city, state: 'Ставропольский край', country: 'Россия'
+    });
+    nominatimQueries.push('https://nominatim.openstreetmap.org/search?' + structured.toString());
+  }
+  const freeText = new URLSearchParams({
+    format: 'jsonv2', addressdetails: '1', limit: '15',
+    countrycodes: 'ru', 'accept-language': 'ru', q: fullAddress
+  });
+  nominatimQueries.push('https://nominatim.openstreetmap.org/search?' + freeText.toString());
+  for (const url of nominatimQueries) {
+    if (signal?.aborted) throw new Error('Поиск отменён');
     try {
-      const params = new URLSearchParams({
-        format: 'jsonv2', addressdetails: '1', limit: '15',
-        countrycodes: 'ru', 'accept-language': 'ru', q: fullAddress
-      });
-      const response = await fetch('https://nominatim.openstreetmap.org/search?' + params.toString(), {
-        signal, headers: { Accept: 'application/json' }
-      });
-      if (response.ok) add(await response.json());
+      const response = await fetchWithTimeout(url, { signal, headers: { Accept: 'application/json' } }, 10000);
+      if (response.ok) {
+        const results = await response.json();
+        add(results);
+        if (results.some(item => fold(item.address?.house_number) === fold(house) && fold(item.address?.road || '').includes(fold(normalizedStreet)))) break;
+      }
     } catch (error) {
       if (signal?.aborted) throw error;
     }
   }
   if (signal?.aborted) throw new Error('Поиск отменён');
 
-  const targetHouse = fold(house);
-  const targetStreet = fold(normalizedStreet);
-  const targetCity = fold(city);
+  const targetHouse = fold(house), targetStreet = fold(normalizedStreet), targetCity = fold(city);
   const score = item => {
     const address = item.address || {};
     const resultHouse = fold(address.house_number);
@@ -190,20 +184,22 @@ async function searchAddressSuggestions(query, signal) {
     const resultCity = fold(address.city || address.town || address.village || address.municipality);
     const display = fold(item.display_name);
     let value = 0;
-    if (targetHouse && resultHouse === targetHouse) value += 120;
-    else if (targetHouse && resultHouse) value -= 35;
-    if (resultStreet && (resultStreet === targetStreet || resultStreet.includes(targetStreet) || targetStreet.includes(resultStreet))) value += 50;
-    if (resultCity === targetCity || display.includes(targetCity)) value += 25;
+    if (targetHouse && resultHouse === targetHouse) value += 150;
+    else if (targetHouse && resultHouse) value -= 50;
+    if (resultStreet && (resultStreet === targetStreet || resultStreet.includes(targetStreet) || targetStreet.includes(resultStreet))) value += 60;
+    if (resultCity === targetCity || display.includes(targetCity)) value += 30;
+    else if (resultCity) value -= 25;
     if (fold(address.country) === 'россия' || display.includes('россия')) value += 5;
     return value;
   };
   collected.sort((a, b) => score(b) - score(a));
-  return collected.slice(0, 15).map(item => ({
+  return collected.slice(0, 20).map(item => ({
     ...item,
     exact_house_match: !house || fold(item.address?.house_number) === targetHouse,
     exact_street_match: fold(item.address?.road || item.address?.pedestrian || item.name).includes(targetStreet)
   }));
 }
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
