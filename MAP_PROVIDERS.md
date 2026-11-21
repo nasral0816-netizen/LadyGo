@@ -1,4 +1,4 @@
-# LadyGo map providers (6.7.8.3)
+# LadyGo map providers (6.7.8.4)
 
 - OpenFreeMap: default MapLibre basemap.
 - Geoapify: primary address autocomplete and driving routing when GEOAPIFY_API_KEY is configured.
