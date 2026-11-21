@@ -196,6 +196,12 @@ function TripMap({ order }) {
   }, [hasCoords, routeKey]);
 
   if (!hasCoords) return null;
+  if (Platform.OS === 'android') {
+    return <View style={{ backgroundColor: C.pale, borderRadius: 14, padding: 14 }}>
+      <Text style={s.muted}>Карта временно отключена на Android. Маршрут и адреса сохранены.</Text>
+      {routeSummary && <Text style={s.routeInfo}>{routeSummary.km} км · около {routeSummary.minutes} мин по дороге</Text>}
+    </View>;
+  }
   return <View style={{ gap: 7 }}>
     <MapView style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: (start.latitude + end.latitude) / 2, longitude: (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
       <Marker coordinate={start} title="Подача" pinColor={C.pink} />
@@ -1503,13 +1509,18 @@ export default function LadyGoApp() {
         <Button title={busy ? 'Отправляем…' : 'Отправить оценку'} disabled={busy || !ratingDraft[order.id]}
           onPress={() => submitRating(order)} />
       </Card>)}
-      <View style={s.mapWrap}><MapView ref={mapRef} style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
-        {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
-        {stopCoords.map((point, index) => <Marker key={'stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} pinColor="#D69A35" />)}
-        {destinationCoords && <Marker coordinate={destinationCoords} title="Назначение" pinColor={C.blue} />}
-        {driverLocation && <Marker coordinate={driverLocation} title="Автомобиль LadyGo" pinColor="#26865A" />}
-        {route.length > 1 && <Polyline coordinates={route} strokeColor={C.pink} strokeWidth={5} />}
-      </MapView><TouchableOpacity style={s.locButton} onPress={getCurrentLocation}><Text style={s.locText}>{locationBusy ? 'Определяем…' : '◎ Моё местоположение'}</Text></TouchableOpacity></View>
+      <View style={s.mapWrap}>
+        {Platform.OS === 'android'
+          ? <View style={[s.map, { alignItems: 'center', justifyContent: 'center', padding: 18, backgroundColor: C.pale }]}><Text style={s.muted}>Карта временно отключена на Android. Адрес подачи можно определить кнопкой ниже.</Text></View>
+          : <MapView ref={mapRef} style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
+              {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
+              {stopCoords.map((point, index) => <Marker key={'stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} pinColor="#D69A35" />)}
+              {destinationCoords && <Marker coordinate={destinationCoords} title="Назначение" pinColor={C.blue} />}
+              {driverLocation && <Marker coordinate={driverLocation} title="Автомобиль LadyGo" pinColor="#26865A" />}
+              {route.length > 1 && <Polyline coordinates={route} strokeColor={C.pink} strokeWidth={5} />}
+            </MapView>}
+        <TouchableOpacity style={s.locButton} onPress={getCurrentLocation}><Text style={s.locText}>{locationBusy ? 'Определяем…' : '◎ Моё местоположение'}</Text></TouchableOpacity>
+      </View>
       <Card>
         <Text style={s.title}>Куда едем?</Text>
         <Text style={s.label}>Тип заказа</Text>
