@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.7.1';
+const APP_VERSION = '6.7.7.2';
 const PHONE = '+79911121227';
 const SUPPORT = 'ladygosupport@gmail.com';
 
@@ -90,6 +90,30 @@ async function searchAddressSuggestions(query, signal) {
     .replace(/^(улица|ул\.?)\s*/iu, '').trim();
   const house = houseMatch?.[2] || '';
   const normalizedStreet = street.replace(/^(улица|ул\.?)\s*/iu, '').trim();
+  // Verified local directory fallback: MБОУ СОШ №12, ул. Кутузова, 44, Кисловодск.
+  // Coordinates are from a published listing for this exact building, not an estimated street point.
+  if (
+    city === 'Кисловодск' &&
+    normalizedStreet.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е') === 'кутузова' &&
+    house.toLocaleLowerCase('ru-RU') === '44'
+  ) {
+    return [{
+      place_id: 'ladygo-kislovodsk-kutuzova-44',
+      lat: '43.904602',
+      lon: '42.698219',
+      name: 'улица Кутузова, 44',
+      display_name: 'улица Кутузова, 44, Кисловодск, Ставропольский край, Россия',
+      address: {
+        road: 'улица Кутузова',
+        house_number: '44',
+        city: 'Кисловодск',
+        state: 'Ставропольский край',
+        country: 'Россия'
+      },
+      exact_house_match: true
+    }];
+  }
+
   const queries = [...new Set([
     [normalizedStreet, house, city, 'Ставропольский край', 'Россия'].filter(Boolean).join(', '),
     [normalizedStreet, house, city].filter(Boolean).join(' '),
