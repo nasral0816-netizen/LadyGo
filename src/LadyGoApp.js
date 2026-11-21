@@ -482,12 +482,16 @@ const shareTripDetails = async order => {
 };
 
 const openDriverNavigation = async order => {
-  const stops = Array.isArray(order.stops) ? order.stops : [];
+  // До посадки ведём водителя к пассажиру; после начала поездки — к месту назначения.
+  const goingToPickup = ['accepted', 'arrived'].includes(order.status);
+  const targetAddress = goingToPickup ? order.pickup_address : order.destination_address;
+  const stops = !goingToPickup && Array.isArray(order.stops) ? order.stops : [];
   const waypoints = stops.slice(0, 3).map(stop => stop.address).filter(Boolean).join('|');
   const query = [
     'api=1',
-    'destination=' + encodeURIComponent(order.destination_address || ''),
+    'destination=' + encodeURIComponent(targetAddress || ''),
     'travelmode=driving',
+    'dir_action=navigate',
     waypoints ? 'waypoints=' + encodeURIComponent(waypoints) : '',
   ].filter(Boolean).join('&');
   const url = 'https://www.google.com/maps/dir/?' + query;
@@ -495,6 +499,29 @@ const openDriverNavigation = async order => {
     await Linking.openURL(url);
   } catch (_) {
     Alert.alert('Навигация', 'Не удалось открыть карты на этом устройстве.');
+  }
+};
+
+const startExternalDriverNavigation = async () => {
+  const address = externalNavQuery.trim();
+  if (!address) {
+    Alert.alert('Навигатор', 'Введи адрес, куда нужно приехать.');
+    return;
+  }
+  const point = externalNavSelected;
+  const destination = point
+    ? point.latitude + ',' + point.longitude
+    : address;
+  const query = [
+    'api=1',
+    'destination=' + encodeURIComponent(destination),
+    'travelmode=driving',
+    'dir_action=navigate',
+  ].join('&');
+  try {
+    await Linking.openURL('https://www.google.com/maps/dir/?' + query);
+  } catch (_) {
+    Alert.alert('Навигатор', 'Не удалось открыть приложение карт. Проверь, установлены ли карты на телефоне.');
   }
 };
 
@@ -541,6 +568,10 @@ export default function LadyGoApp() {
   const [destinationSearchQuery, setDestinationSearchQuery] = useState('');
   const [destinationSuggestions, setDestinationSuggestions] = useState([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [externalNavQuery, setExternalNavQuery] = useState('');
+  const [externalNavSuggestions, setExternalNavSuggestions] = useState([]);
+  const [externalNavSelected, setExternalNavSelected] = useState(null);
+  const [externalNavLoading, setExternalNavLoading] = useState(false);
   const [phone, setPhone] = useState('');
   const [comment, setComment] = useState('');
   const [requestedFor, setRequestedFor] = useState('Как можно скорее');
@@ -616,6 +647,34 @@ export default function LadyGoApp() {
       controller.abort();
     };
   }, [destinationSearchQuery, destinationSearchOpen]);
+
+  useEffect(() => {
+    const query = externalNavQuery.trim();
+    if (query.length < 2 || externalNavSelected?.address === query) {
+      setExternalNavSuggestions([]);
+      setExternalNavLoading(false);
+      return undefined;
+    }
+    let active = true;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setExternalNavLoading(true);
+      try {
+        const results = await searchAddressSuggestions(query, controller.signal);
+        if (active) setExternalNavSuggestions(results);
+      } catch (_) {
+        if (active) setExternalNavSuggestions([]);
+      } finally {
+        if (active) setExternalNavLoading(false);
+      }
+    }, 550);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [externalNavQuery, externalNavSelected]);
+
 
   const [orders, setOrders] = useState([]);
   const [historyOrders, setHistoryOrders] = useState([]);
@@ -2074,6 +2133,45 @@ export default function LadyGoApp() {
         {driverGpsError ? <Text style={{ color: C.red, fontSize: 12, marginTop: 8 }}>Геолокация: {driverGpsError}</Text> : driverOnline && <Text style={{ color: C.green, fontSize: 12, marginTop: 8 }}>Геопозиция отправлена{driverGpsUpdatedAt ? ' · ' + new Date(driverGpsUpdatedAt).toLocaleTimeString() : ''}</Text>}
       </Card>
       <Text style={s.section}>Доступные заказы</Text>
+      <Card>
+        <Text style={s.section}>Навигатор для заказов вне LadyGo</Text>
+        <Text style={s.muted}>Введи адрес, который получил по телефону или лично. Выбери точный вариант из подсказок и открой автомобильную навигацию.</Text>
+        <Input
+          label="Куда ехать"
+          value={externalNavQuery}
+          onChangeText={value => { setExternalNavQuery(value); setExternalNavSelected(null); }}
+          placeholder="Город, улица, дом"
+        />
+        {externalNavLoading ? <Text style={s.muted}>Ищем адреса…</Text> : null}
+        {externalNavSuggestions.map((item, index) => (
+          <TouchableOpacity
+            key={String(item.place_id || index)}
+            activeOpacity={0.75}
+            onPress={() => {
+              const latitude = Number(item.lat);
+              const longitude = Number(item.lon);
+              setExternalNavQuery(item.display_name || item.name || '');
+              setExternalNavSelected({
+                latitude,
+                longitude,
+                address: item.display_name || item.name || '',
+              });
+              setExternalNavSuggestions([]);
+            }}
+            style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line }}
+          >
+            <Text style={s.address}>{item.display_name || item.name || 'Адрес'}</Text>
+          </TouchableOpacity>
+        ))}
+        {externalNavSelected ? <Text style={{ color: C.green, fontSize: 12, fontWeight: '700' }}>✓ Адрес выбран точно по карте</Text> : null}
+        <Button
+          title="Начать навигацию"
+          onPress={startExternalDriverNavigation}
+          disabled={!externalNavQuery.trim()}
+        />
+        <Text style={s.disclaimer}>Маршрут и голосовые подсказки откроются в Google Картах. LadyGo не отслеживает такой внешний заказ.</Text>
+      </Card>
+
       {orders.filter(o => o.status === 'new' && !o.driver_id).map(o => <Card key={o.id}>
         <View style={s.rowBetween}><Pill>Новый заказ</Pill><Text style={s.price}>{Math.max(0, 30 - Math.floor((clock - new Date(offerTimes[o.id] || o.created_at).getTime()) / 1000))} сек.</Text></View><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
         {o.estimated_price_rub != null ? <Text style={s.muted}>Ориентир для пассажира: {money(o.estimated_price_rub)}</Text> : null}
