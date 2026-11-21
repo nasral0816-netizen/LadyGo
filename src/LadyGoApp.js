@@ -346,7 +346,7 @@ function MapLibreMap({ points = [], route = [], height = 245 }) {
           type="symbol"
           filter={['==', ['get', 'markerType'], 'vehicle']}
           layout={{
-            'text-field': '🚕',
+            'text-field': '🚘',
             'text-size': 25,
             'text-allow-overlap': true,
             'text-rotate': ['get', 'heading'],
@@ -424,7 +424,7 @@ function TripMap({ order, driverLocation }) {
     </MapView>}
     {routeSummary && <Text style={s.routeInfo}>{routeSummary.km} км · около {routeSummary.minutes} мин по дороге</Text>}
     <Text style={s.muted}>© OpenStreetMap contributors</Text>
-    {driverEtaMinutes != null && <Text style={[s.routeInfo, { color: C.green }]}>Водитель примерно через {driverEtaMinutes} мин</Text>}
+    {driverEtaMinutes != null && <Text style={[s.routeInfo, { color: C.green }]}>🚘 {assignedDriver ? [assignedDriver.vehicleMake, assignedDriver.vehicleModel].filter(Boolean).join(' ') + ' · ' : ''}Водитель будет примерно через {driverEtaMinutes} мин</Text>}
     {driverLocation?.updated_at && <Text style={s.muted}>Геопозиция обновлена: {new Date(driverLocation.updated_at).toLocaleTimeString()}</Text>}
   </View>;
 }
@@ -759,7 +759,16 @@ export default function LadyGoApp() {
     Number(selectedTariffRate.base_fare_rub) > 0 ||
     Number(selectedTariffRate.per_km_rub) > 0
   );
-  const estimatedPrice = null; // Цена не рассчитывается автоматически: её предлагает водитель.
+  const estimatedPrice = (() => {
+    if (!routeInfo || !selectedTariffRate) return null;
+    const km = Number(routeInfo.km);
+    const base = Number(selectedTariffRate.base_fare_rub || 0);
+    const perKm = Number(selectedTariffRate.per_km_rub || 0);
+    const minimum = Number(selectedTariffRate.minimum_fare_rub || 0);
+    if (!Number.isFinite(km) || km <= 0 || (base <= 0 && perKm <= 0 && minimum <= 0)) return null;
+    const factor = Number(TARIFFS.find(item => item.id === tariff)?.factor || 1);
+    return Math.round(Math.max(minimum, base + km * perKm) * factor);
+  })();
 
   const loadProfile = useCallback(async currentUser => {
     if (!currentUser || !supabase) return null;
@@ -1501,7 +1510,7 @@ export default function LadyGoApp() {
         tariff_id: tariff,
         service_type: serviceType,
         door_to_door: doorToDoor,
-        estimated_price_rub: null,
+        estimated_price_rub: estimatedPrice,
         payment_method: paymentMethod,
         status: 'new',
         ...(start ? { pickup_lat: start.latitude, pickup_lng: start.longitude } : {}),
@@ -1886,7 +1895,7 @@ export default function LadyGoApp() {
     </View>
 
     {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
-      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripProgress status={activeOrder.status} /><TripMap order={activeOrder} driverLocation={driverLocation} />{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}
+      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripProgress status={activeOrder.status} /><TripMap order={activeOrder} driverLocation={driverLocation} />{activeOrder.status === 'new' && <Text style={s.muted}>Ищем свободного водителя. Как только заказ примут, появятся автомобиль и примерное время прибытия.</Text>}
         {['new','accepted','arrived'].includes(activeOrder.status) && <Button title={busy ? 'Отменяем…' : 'Отменить поездку'} danger secondary compact disabled={busy} onPress={() => cancelOrder(activeOrder)} />}
         <View style={s.row}>
           <View style={{ flex: 1 }}><Button title="Поделиться поездкой" secondary compact onPress={() => shareTripDetails(activeOrder)} /></View>
@@ -1927,13 +1936,13 @@ export default function LadyGoApp() {
           ...(coords ? [{ ...coords, label: 'Подача', color: C.pink }] : []),
           ...stopCoords.map((point, index) => ({ ...point, label: 'Остановка ' + (index + 1), color: '#D69A35' })),
           ...(destinationCoords ? [{ ...destinationCoords, label: 'Назначение', color: C.blue }] : []),
-          ...(driverLocation ? [{ ...driverLocation, label: 'Автомобиль LadyGo', color: '#26865A' }] : []),
+          ...(driverLocation ? [{ ...driverLocation, label: 'Автомобиль LadyGo', color: '#26865A', markerType: 'vehicle', heading: driverLocation.heading || 0 }] : []),
         ]} route={route} /> : <MapView ref={mapRef} mapType="none" style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
           <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
           {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
           {stopCoords.map((point, index) => <Marker key={'stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} pinColor="#D69A35" />)}
           {destinationCoords && <Marker coordinate={destinationCoords} title="Назначение" pinColor={C.blue} />}
-          {driverLocation && <Marker coordinate={driverLocation} title="Автомобиль LadyGo" pinColor="#26865A" />}
+          {driverLocation && <Marker coordinate={driverLocation} title="🚘 Автомобиль LadyGo" description={[assignedDriver?.vehicleMake, assignedDriver?.vehicleModel].filter(Boolean).join(' ')} pinColor="#26865A" />}
           {route.length > 1 && <Polyline coordinates={route} strokeColor={C.pink} strokeWidth={5} />}
         </MapView>}
         <Text style={[s.muted, { textAlign: 'center' }]}>© OpenStreetMap contributors</Text>
@@ -2087,7 +2096,7 @@ export default function LadyGoApp() {
         <Button title="Построить маршрут" secondary compact onPress={() => buildRoute()} />
         {routeInfo && <Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text>}
         <View style={{ gap: 4, paddingTop: 7 }}>
-          <Text style={s.routeInfo}>Стоимость поездки согласуется с водителем.</Text>
+          <Text style={s.routeInfo}>{estimatedPrice != null ? 'Предварительная стоимость: ' + money(estimatedPrice) + '. Итог подтвердит водитель.' : 'Стоимость поездки будет согласована с водителем.'}</Text>
           {serviceType === 'courier' && <Text style={s.muted}>Стоимость доставки согласуется с водителем до принятия заказа. Алкоголь и табачные изделия не принимаются.</Text>}
         </View>
       </Card>
