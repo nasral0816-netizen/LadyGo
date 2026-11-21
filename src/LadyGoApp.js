@@ -5,7 +5,7 @@ import {
   TouchableOpacity, View,
 } from 'react-native';
 import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
-import { WebView } from 'react-native-webview';
+import { Camera, GeoJSONSource, Layer, Map as MapLibreView } from '@maplibre/maplibre-react-native';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -256,36 +256,90 @@ function TripProgress({ status }) {
 function Card({ children, style }) { return <View style={[s.card, style]}>{children}</View>; }
 
 
-function LeafletMap({ points = [], route = [], height = 245 }) {
+function MapLibreMap({ points = [], route = [], height = 245 }) {
   const validPoints = points.filter(point =>
     Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude))
   ).map(point => ({
-    latitude: Number(point.latitude), longitude: Number(point.longitude),
-    label: String(point.label || ''), color: String(point.color || '#E85D91'),
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [Number(point.longitude), Number(point.latitude)] },
+    properties: { label: String(point.label || ''), color: String(point.color || C.pink) },
   }));
   const validRoute = route.filter(point =>
     Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude))
-  ).map(point => [Number(point.latitude), Number(point.longitude)]);
-  const mapData = JSON.stringify({ points: validPoints, route: validRoute }).replace(/</g, '\\u003c');
-  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <style>html,body,#map{height:100%;width:100%;margin:0;background:#F6F1ED} .leaflet-control-attribution{font-size:9px}</style>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script></head>
-    <body><div id="map"></div><script>
-      const data = ${mapData};
-      const map = L.map('map',{zoomControl:true,attributionControl:true}).setView([43.9,42.7],10);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
-      const bounds=[];
-      data.points.forEach(p=>{const ll=[p.latitude,p.longitude];bounds.push(ll);L.circleMarker(ll,{radius:8,color:p.color,fillColor:p.color,fillOpacity:0.95,weight:2}).addTo(map).bindPopup(p.label);});
-      if(data.route.length>1){data.route.forEach(p=>bounds.push(p));L.polyline(data.route,{color:'#E85D91',weight:5,opacity:.9}).addTo(map);}
-      if(bounds.length===1)map.setView(bounds[0],14);else if(bounds.length>1)map.fitBounds(bounds,{padding:[24,24],maxZoom:15});
-      setTimeout(()=>map.invalidateSize(),250);
-    <\/script></body></html>`;
+  ).map(point => [Number(point.longitude), Number(point.latitude)]);
+  const pointData = {
+    type: 'FeatureCollection',
+    features: validPoints,
+  };
+  const routeData = {
+    type: 'Feature',
+    geometry: { type: 'LineString', coordinates: validRoute },
+    properties: {},
+  };
+  const allCoordinates = [
+    ...validPoints.map(feature => feature.geometry.coordinates),
+    ...validRoute,
+  ];
+  const center = allCoordinates.length
+    ? [
+        (Math.min(...allCoordinates.map(point => point[0])) + Math.max(...allCoordinates.map(point => point[0]))) / 2,
+        (Math.min(...allCoordinates.map(point => point[1])) + Math.max(...allCoordinates.map(point => point[1]))) / 2,
+      ]
+    : [42.7, 43.9];
+  const spread = allCoordinates.length > 1
+    ? Math.max(
+        Math.max(...allCoordinates.map(point => point[0])) - Math.min(...allCoordinates.map(point => point[0])),
+        Math.max(...allCoordinates.map(point => point[1])) - Math.min(...allCoordinates.map(point => point[1])),
+        0.008
+      )
+    : 0.04;
+  const zoom = Math.max(8, Math.min(15, Math.log2(360 / spread) - 1));
   return <View style={{ height, borderRadius: 15, overflow: 'hidden', backgroundColor: C.map }}>
-    <WebView source={{ html }} originWhitelist={['*']} javaScriptEnabled domStorageEnabled
-      setSupportMultipleWindows={false} mixedContentMode="never" style={{ flex: 1, backgroundColor: C.map }}
-      renderError={() => <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 14, backgroundColor: C.pale }}><Text style={s.tariffName}>Карта недоступна</Text><Text style={s.muted}>Проверь подключение к интернету. Заказ можно оформить по адресу.</Text></View>}
-      onError={() => {}} />
+    <MapLibreView
+      style={{ flex: 1 }}
+      mapStyle="https://tiles.openfreemap.org/styles/liberty"
+      androidView="texture"
+      attribution
+      logo={false}
+      compass={false}
+    >
+      <Camera initialViewState={{ center, zoom }} />
+      {validRoute.length > 1 && <GeoJSONSource id="ladygo-route-source" data={routeData}>
+        <Layer
+          id="ladygo-route-line"
+          type="line"
+          paint={{ 'line-color': C.pink, 'line-width': 5, 'line-opacity': 0.92 }}
+        />
+      </GeoJSONSource>}
+      {validPoints.length > 0 && <GeoJSONSource id="ladygo-points-source" data={pointData}>
+        <Layer
+          id="ladygo-points-circles"
+          type="circle"
+          paint={{
+            'circle-radius': 8,
+            'circle-color': ['get', 'color'],
+            'circle-stroke-color': '#FFFFFF',
+            'circle-stroke-width': 2,
+          }}
+        />
+        <Layer
+          id="ladygo-points-labels"
+          type="symbol"
+          layout={{
+            'text-field': ['get', 'label'],
+            'text-size': 11,
+            'text-offset': [0, 1.35],
+            'text-anchor': 'top',
+            'text-allow-overlap': true,
+          }}
+          paint={{
+            'text-color': '#282329',
+            'text-halo-color': '#FFFFFF',
+            'text-halo-width': 1.5,
+          }}
+        />
+      </GeoJSONSource>}
+    </MapLibreView>
   </View>;
 }
 
@@ -340,7 +394,7 @@ function TripMap({ order, driverLocation }) {
 
   if (!hasCoords) return null;
   return <View style={{ gap: 7 }}>
-    {Platform.OS === 'android' ? <LeafletMap height={190} points={[
+    {Platform.OS === 'android' ? <MapLibreMap height={190} points={[
       { latitude: start.latitude, longitude: start.longitude, label: 'Подача', color: C.pink },
       ...stops.map((point, index) => ({ ...point, label: point.address || ('Остановка ' + (index + 1)), color: '#D69A35' })),
       { latitude: end.latitude, longitude: end.longitude, label: 'Назначение', color: C.blue },
@@ -1806,7 +1860,7 @@ export default function LadyGoApp() {
           onPress={() => submitRating(order)} />
       </Card>)}
       <View style={s.mapWrap}>
-        {Platform.OS === 'android' ? <LeafletMap height={245} points={[
+        {Platform.OS === 'android' ? <MapLibreMap height={245} points={[
           ...(coords ? [{ ...coords, label: 'Подача', color: C.pink }] : []),
           ...stopCoords.map((point, index) => ({ ...point, label: 'Остановка ' + (index + 1), color: '#D69A35' })),
           ...(destinationCoords ? [{ ...destinationCoords, label: 'Назначение', color: C.blue }] : []),
