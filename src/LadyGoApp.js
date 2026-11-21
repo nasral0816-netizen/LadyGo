@@ -80,42 +80,25 @@ async function searchAddressSuggestions(query, signal) {
     'Железноводск', 'Черкесск', 'Ставрополь', 'Невинномысск',
     'Лермонтов', 'Георгиевск', 'Зеленокумск'
   ];
-  const lower = raw.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
-  const city = knownCities.find(name => lower.includes(name.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е'))) || 'Кисловодск';
-  const cityIndex = lower.lastIndexOf(city.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е'));
+  const fold = value => String(value || '').toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').trim();
+  const lower = fold(raw);
+  const explicitCity = knownCities.find(name => lower.includes(fold(name)));
+  const city = explicitCity || 'Кисловодск';
+  const cityIndex = explicitCity ? lower.lastIndexOf(fold(explicitCity)) : -1;
   const streetPart = (cityIndex >= 0 ? raw.slice(0, cityIndex) : raw)
     .replace(/[;,]+/g, ' ').replace(/\s+/g, ' ').trim();
   const houseMatch = streetPart.match(/^(.+?)\s+(\d+[А-Яа-яA-Za-z/-]*)$/u);
-  const street = (houseMatch ? houseMatch[1] : streetPart)
-    .replace(/^(улица|ул\.?)\s*/iu, '').trim();
+  const normalizedStreet = (houseMatch ? houseMatch[1] : streetPart)
+    .replace(/^(улица|ул\.?)\s*/iu, '')
+    .replace(/\s+(улица|ул\.?)$/iu, '')
+    .trim();
   const house = houseMatch?.[2] || '';
-  const normalizedStreet = street.replace(/^(улица|ул\.?)\s*/iu, '').trim();
-  // Verified local directory fallback: MБОУ СОШ №12, ул. Кутузова, 44, Кисловодск.
-  // Coordinates are from a published listing for this exact building, not an estimated street point.
-  if (
-    city === 'Кисловодск' &&
-    normalizedStreet.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е') === 'кутузова' &&
-    house.toLocaleLowerCase('ru-RU') === '44'
-  ) {
-    return [{
-      place_id: 'ladygo-kislovodsk-kutuzova-44',
-      lat: '43.904602',
-      lon: '42.698219',
-      name: 'улица Кутузова, 44',
-      display_name: 'улица Кутузова, 44, Кисловодск, Ставропольский край, Россия',
-      address: {
-        road: 'улица Кутузова',
-        house_number: '44',
-        city: 'Кисловодск',
-        state: 'Ставропольский край',
-        country: 'Россия'
-      },
-      exact_house_match: true
-    }];
-  }
+  if (!normalizedStreet) return [];
 
+  const fullAddress = [normalizedStreet, house, city, 'Ставропольский край', 'Россия']
+    .filter(Boolean).join(', ');
   const queries = [...new Set([
-    [normalizedStreet, house, city, 'Ставропольский край', 'Россия'].filter(Boolean).join(', '),
+    fullAddress,
     [normalizedStreet, house, city].filter(Boolean).join(' '),
     [house, normalizedStreet, city].filter(Boolean).join(', '),
     raw
@@ -133,7 +116,7 @@ async function searchAddressSuggestions(query, signal) {
       )) collected.push(item);
     }
   };
-  const mapPhoton = (features) => (features || []).map((feature, index) => {
+  const mapPhoton = features => (features || []).map((feature, index) => {
     const p = feature.properties || {};
     const coordinates = feature.geometry?.coordinates || [];
     const longitude = Number(coordinates[0]);
@@ -142,83 +125,84 @@ async function searchAddressSuggestions(query, signal) {
     const resultCity = p.city || p.town || p.village || p.county || '';
     const resultStreet = p.street || p.name || '';
     const resultHouse = p.housenumber || '';
-    const primary = [resultStreet + (resultHouse ? ', ' + resultHouse : ''), resultCity].filter(Boolean).join(', ') || p.name || 'Адрес';
-    const display = [p.name && p.name !== resultStreet ? p.name : '', resultStreet + (resultHouse ? ', ' + resultHouse : ''), resultCity, p.state, p.country]
-      .filter(Boolean).filter((value, i, all) => all.indexOf(value) === i).join(', ');
+    const primary = [resultStreet + (resultHouse ? ', ' + resultHouse : ''), resultCity]
+      .filter(Boolean).join(', ') || p.name || 'Адрес';
+    const display = [
+      p.name && p.name !== resultStreet ? p.name : '',
+      resultStreet + (resultHouse ? ', ' + resultHouse : ''),
+      resultCity, p.state, p.country
+    ].filter(Boolean).filter((value, i, all) => all.indexOf(value) === i).join(', ');
     return {
       place_id: 'photon-' + (p.osm_type || 'place') + '-' + (p.osm_id || index),
-      lat: String(latitude),
-      lon: String(longitude),
+      lat: String(latitude), lon: String(longitude),
       name: p.name || resultStreet || primary,
       display_name: display || primary,
       address: {
-        road: p.street || '',
-        pedestrian: p.street || '',
+        road: p.street || '', pedestrian: p.street || '',
         house_number: resultHouse,
         city: p.city || p.town || p.village || '',
-        municipality: p.county || '',
-        state: p.state || '',
-        country: p.country || ''
+        municipality: p.county || '', state: p.state || '', country: p.country || ''
       }
     };
   }).filter(Boolean);
 
-  // IMPORTANT: an empty response from one Photon query must not stop all remaining variants.
-  for (const photonQuery of queries) {
+  // Ask Photon with several common address formats. A failed/empty variant never
+  // prevents the other variants from being checked.
+  const photonResults = await Promise.all(queries.map(async photonQuery => {
     if (signal?.aborted) throw new Error('Поиск отменён');
     try {
-      const url = 'https://photon.komoot.io/api/?lang=ru&limit=12&q=' + encodeURIComponent(photonQuery);
+      const url = 'https://photon.komoot.io/api/?lang=ru&limit=15&q=' + encodeURIComponent(photonQuery);
       const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
-      if (response.ok) add(mapPhoton((await response.json()).features));
-      const exactFound = house && collected.some(item =>
-        String(item.address?.house_number || '').toLocaleLowerCase('ru-RU') === house.toLocaleLowerCase('ru-RU')
-      );
-      if (exactFound) break;
+      if (!response.ok) return [];
+      return mapPhoton((await response.json()).features);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return [];
+    }
+  }));
+  photonResults.forEach(add);
+
+  // Nominatim free-text search is an independent fallback. Use a complete
+  // city-qualified address rather than relying only on structured street parsing.
+  if (!signal?.aborted) {
+    try {
+      const params = new URLSearchParams({
+        format: 'jsonv2', addressdetails: '1', limit: '15',
+        countrycodes: 'ru', 'accept-language': 'ru', q: fullAddress
+      });
+      const response = await fetch('https://nominatim.openstreetmap.org/search?' + params.toString(), {
+        signal, headers: { Accept: 'application/json' }
+      });
+      if (response.ok) add(await response.json());
     } catch (error) {
       if (signal?.aborted) throw error;
     }
   }
-
-  // Nominatim structured search is a separate fallback; it is more reliable for Russian street/house input.
   if (signal?.aborted) throw new Error('Поиск отменён');
-  try {
-    const params = new URLSearchParams({
-      format: 'jsonv2',
-      addressdetails: '1',
-      limit: '12',
-      countrycodes: 'ru',
-      'accept-language': 'ru',
-      city,
-      state: 'Ставропольский край',
-      country: 'Россия'
-    });
-    if (house) params.set('street', house + ' ' + normalizedStreet);
-    else params.set('street', normalizedStreet);
-    const response = await fetch('https://nominatim.openstreetmap.org/search?' + params.toString(), {
-      signal, headers: { Accept: 'application/json' }
-    });
-    if (response.ok) add(await response.json());
-  } catch (error) {
-    if (signal?.aborted) throw error;
-  }
 
-  const targetHouse = house.toLocaleLowerCase('ru-RU');
-  const targetStreet = normalizedStreet.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
-  const targetCity = city.toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
+  const targetHouse = fold(house);
+  const targetStreet = fold(normalizedStreet);
+  const targetCity = fold(city);
   const score = item => {
     const address = item.address || {};
-    const resultHouse = String(address.house_number || '').toLocaleLowerCase('ru-RU');
-    const resultStreet = String(address.road || address.pedestrian || address.residential || item.name || '').toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
-    const resultCity = String(address.city || address.town || address.village || address.municipality || '').toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
-    return (targetHouse && resultHouse === targetHouse ? 100 : 0)
-      + (resultStreet && (resultStreet === targetStreet || resultStreet.includes(targetStreet) || targetStreet.includes(resultStreet)) ? 30 : 0)
-      + (resultCity && resultCity.includes(targetCity) ? 20 : 0);
+    const resultHouse = fold(address.house_number);
+    const resultStreet = fold(address.road || address.pedestrian || address.residential || item.name);
+    const resultCity = fold(address.city || address.town || address.village || address.municipality);
+    const display = fold(item.display_name);
+    let value = 0;
+    if (targetHouse && resultHouse === targetHouse) value += 120;
+    else if (targetHouse && resultHouse) value -= 35;
+    if (resultStreet && (resultStreet === targetStreet || resultStreet.includes(targetStreet) || targetStreet.includes(resultStreet))) value += 50;
+    if (resultCity === targetCity || display.includes(targetCity)) value += 25;
+    if (fold(address.country) === 'россия' || display.includes('россия')) value += 5;
+    return value;
   };
   collected.sort((a, b) => score(b) - score(a));
-  return collected.map(item => ({
+  return collected.slice(0, 15).map(item => ({
     ...item,
-    exact_house_match: !house || String(item.address?.house_number || '').toLocaleLowerCase('ru-RU') === targetHouse
-  })).slice(0, 12);
+    exact_house_match: !house || fold(item.address?.house_number) === targetHouse,
+    exact_street_match: fold(item.address?.road || item.address?.pedestrian || item.name).includes(targetStreet)
+  }));
 }
 async function geocodeAddress(address) {
   const query = String(address || '').trim();
