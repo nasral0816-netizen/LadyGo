@@ -14,7 +14,7 @@
       "package": "com.ladygo.app",
       "versionCode": 11,
       "adaptiveIcon": {
-        "foregroundImage": "./icon.png",
+        "foregroundImage": "./adaptive-icon.png",
         "backgroundColor": "#E80B87"
       },
       "permissions": [
