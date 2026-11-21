@@ -55,6 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
+const APP_VERSION = '6.7.6.9';
 const PHONE = '+79911121227';
 const SUPPORT = 'ladygosupport@gmail.com';
 
@@ -118,6 +119,8 @@ const errorText = error => {
   const m = String(error?.message || '');
   if (/invalid login credentials/i.test(m)) return 'Неверная почта или пароль.';
   if (/email not confirmed/i.test(m)) return 'Сначала подтверди электронную почту.';
+  if (/email rate limit exceeded|too many requests/i.test(m)) return 'Слишком много запросов на почту. Подожди 10–15 минут и попробуй снова.';
+  if (/otp.*expired|token has expired|invalid otp/i.test(m)) return 'Код подтверждения недействителен или устарел. Запроси новое письмо.';
   if (/network request failed|fetch failed/i.test(m)) return 'Проверь подключение к интернету.';
   return m || 'Не удалось выполнить действие. Попробуй ещё раз.';
 };
@@ -382,6 +385,7 @@ export default function LadyGoApp() {
   const [profile, setProfile] = useState(null);
   const [booting, setBooting] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [authorTapCount, setAuthorTapCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [mode, setMode] = useState('passenger');
   const [tab, setTab] = useState('ride');
@@ -452,6 +456,13 @@ export default function LadyGoApp() {
   const locationWatch = useRef(null);
   const authProfileTimer = useRef(null);
   const mapRef = useRef(null);
+
+  useEffect(() => {
+    if (authorTapCount >= 7) {
+      setAuthorTapCount(0);
+      Alert.alert('Секрет LadyGo 🌸', 'Ты нашёл пасхалку! Спасибо, что поддерживаешь независимый проект.\n\nLadyGo создано с заботой — @acyma');
+    }
+  }, [authorTapCount]);
 
   const user = session?.user;
   const role = profile?.role || 'passenger';
@@ -1856,7 +1867,14 @@ export default function LadyGoApp() {
       </Card>
       <Button title="Написать на почту поддержки" secondary onPress={() => Linking.openURL('mailto:' + SUPPORT)} />
       <Button title="Позвонить водителю" secondary onPress={() => Linking.openURL('tel:' + PHONE)} />
-      <Text style={{ color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 12, marginBottom: 10 }}>Создано независимым автором @acyma</Text>
+      <Card>
+        <Text style={s.section}>О приложении</Text>
+        <View style={s.rowBetween}><Text style={s.muted}>Версия приложения</Text><Text style={s.tariffName}>{APP_VERSION}</Text></View>
+        <Text style={s.muted}>LadyGo — независимый сервис поездок с заботой. Спасибо, что пользуешься приложением.</Text>
+        <TouchableOpacity activeOpacity={0.7} onPress={() => setAuthorTapCount(count => count + 1)}>
+          <Text style={{ color: C.pinkDark, fontSize: 12, fontWeight: '700', textAlign: 'center', paddingVertical: 8 }}>Создано независимым автором @acyma</Text>
+        </TouchableOpacity>
+      </Card>
       <Button title="Выйти из аккаунта" danger secondary onPress={logout} />
     </ScrollView>}
 
