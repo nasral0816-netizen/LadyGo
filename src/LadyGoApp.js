@@ -1131,7 +1131,9 @@ export default function LadyGoApp() {
   };
 
   const buildRoute = async (destinationOverride, destinationPoint) => {
-    const destinationText = String(destinationOverride || destination).trim();
+    // React Native passes a press event to onPress handlers; never treat it as an address.
+    const destinationValue = typeof destinationOverride === 'string' ? destinationOverride : destination;
+    const destinationText = String(destinationValue || '').trim();
     if (!pickup.trim() || !destinationText) return Alert.alert('Маршрут', 'Укажи адрес подачи и назначения.');
     setLocationBusy(true);
     try {
@@ -1734,7 +1736,7 @@ export default function LadyGoApp() {
         <Input label="Когда подать машину" value={requestedFor} onChangeText={setRequestedFor} placeholder="Как можно скорее или ДД.ММ.ГГГГ ЧЧ:ММ" />
         <Text style={s.muted}>Для предварительного заказа введи дату и время, например 25.12.2026 14:30. Такие заказы автоматически отправляются водителям в назначенное время.</Text>
         {savedPlaces.length > 0 && <View style={{ gap: 6 }}><Text style={s.label}>Сохранённые адреса</Text><View style={s.row}>{savedPlaces.slice(0, 3).map(p => <TouchableOpacity key={p.id} style={s.savedChip} onPress={() => { setPickup(p.address); setCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }}><Text style={s.savedChipText}>{p.label}</Text></TouchableOpacity>)}</View></View>}
-        <Button title="Построить маршрут" secondary compact onPress={buildRoute} />
+        <Button title="Построить маршрут" secondary compact onPress={() => buildRoute()} />
         {routeInfo && <Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text>}
         <View style={{ gap: 4, paddingTop: 7 }}>
           <Text style={s.routeInfo}>{estimatedPrice == null ? 'Маршрут вне фиксированного списка — стоимость рассчитаем отдельно' : (fixedFare != null ? 'Фиксированная стоимость: ' : 'Расчётная стоимость: ') + money(Math.round(estimatedPrice))}</Text>
