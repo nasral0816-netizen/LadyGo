@@ -59,50 +59,6 @@ const APP_VERSION = '6.7.6.9';
 const PHONE = '+79911121227';
 const SUPPORT = 'ladygosupport@gmail.com';
 
-// Фиксированные тарифы LadyGo: цена за маршрут, не за километр.
-const FIXED_ROUTE_PRICES = [
-  { aliases: ['минеральные воды', 'минводы'], price: 2200 },
-  { aliases: ['медовые водопады', 'медовые'], price: 1200 },
-  { aliases: ['красный восток'], price: 2000 },
-  { aliases: ['первомайское'], price: 1350 },
-  { aliases: ['кичи-балык', 'кичи балык', 'кичи балыкъ'], price: 1000 },
-  { aliases: ['джегута'], price: 3500 },
-  { aliases: ['карачаевск'], price: 5000 },
-  { aliases: ['черкесск'], price: 4500 },
-  { aliases: ['ставрополь'], price: 7500 },
-  { aliases: ['ессентуки'], price: 1000 },
-  { aliases: ['пятигорск'], price: 1500 },
-  { aliases: ['учкекен'], price: 1200 },
-  { aliases: ['терезе'], price: 1500 },
-  { aliases: ['джагъа', "джаг а", "джаг"], price: 750 },
-  { aliases: ['конзавод', 'конный завод'], price: 650 },
-  { aliases: ['элькуш', 'елкуш'], price: 600 },
-  { aliases: ['кисловодск'], price: 250 },
-  { aliases: ['пригородные поселки'], price: 350 },
-];
-const normalizePlace = value => String(value || '').toLowerCase().replace(/ё/g, 'е')
-  .replace(/[ъь]/g, '').replace(/[^а-яa-z0-9]+/g, ' ').trim();
-const fixedRoutePrice = (destination, hasStops = false, priceList = FIXED_ROUTE_PRICES) => {
-  if (hasStops) return null;
-  const place = normalizePlace(destination);
-  if (!place) return null;
-  const suburb = /пригород|посел|село|станиц|окраин/.test(place);
-  if (suburb && place.includes('ессентук')) {
-    const item = priceList.find(row => row.route_key === 'essentuki_suburbs' && row.is_active !== false);
-    return Number(item?.price_rub ?? 1100);
-  }
-  if (suburb && place.includes('пятигор')) {
-    const item = priceList.find(row => row.route_key === 'pyatigorsk_suburbs' && row.is_active !== false);
-    return Number(item?.price_rub ?? 1600);
-  }
-  const match = priceList.find(item => item.is_active !== false && (item.aliases || []).some(alias => place.includes(normalizePlace(alias))));
-  if (match) return Number(match.price_rub ?? match.price);
-  if (suburb) {
-    const item = priceList.find(row => row.route_key === 'suburbs' && row.is_active !== false);
-    return Number(item?.price_rub ?? 350);
-  }
-  return null;
-};
 const TARIFFS = [
   { id: 'economy', name: 'Эконом', detail: 'Для повседневных поездок', factor: 1 },
   { id: 'comfort', name: 'Комфорт', detail: 'Больше пространства', factor: 1.35 },
@@ -771,19 +727,13 @@ export default function LadyGoApp() {
   const driverRecentEarnings = useMemo(() => driverCompletedOrders.reduce((sum, order) => sum + Number(order.price_rub || 0), 0), [driverCompletedOrders]);
   const unreadCount = notifications.filter(item => !item.read_at).length;
   const selectedTariffRate = tariffRates.find(rate => rate.tariff_id === tariff && rate.is_active);
-  const configuredCourierPrice = Number(fixedPrices.find(item => item.route_key === 'courier_delivery')?.price_rub ?? 300);
-  const configuredDoorToDoorPrice = Number(fixedPrices.find(item => item.route_key === 'door_to_door')?.price_rub ?? 100);
-  const fixedFare = serviceType === 'courier' ? configuredCourierPrice : fixedRoutePrice(destination, Boolean(stopsText.trim()), fixedPrices.length ? fixedPrices : FIXED_ROUTE_PRICES);
+  const fixedFare = null;
   const hasCustomRate = selectedTariffRate && (
     Number(selectedTariffRate.minimum_fare_rub) > 0 ||
     Number(selectedTariffRate.base_fare_rub) > 0 ||
     Number(selectedTariffRate.per_km_rub) > 0
   );
-  const estimatedPrice = fixedFare != null
-    ? fixedFare + (doorToDoor && serviceType === 'ride' ? configuredDoorToDoorPrice : 0)
-    : routeInfo && hasCustomRate
-      ? Math.round(Math.max(Number(selectedTariffRate.minimum_fare_rub), Number(selectedTariffRate.base_fare_rub) + Number(routeInfo.km) * Number(selectedTariffRate.per_km_rub)) + (doorToDoor ? configuredDoorToDoorPrice : 0))
-      : null;
+  const estimatedPrice = null; // Цена не рассчитывается автоматически: её предлагает водитель.
 
   const loadProfile = useCallback(async currentUser => {
     if (!currentUser || !supabase) return null;
@@ -1485,9 +1435,6 @@ export default function LadyGoApp() {
   const createOrder = async () => {
     if (!pickup.trim() || !destination.trim()) return Alert.alert('Маршрут не заполнен', 'Укажи адрес подачи и назначения.');
     if (activeOrder) return Alert.alert('У тебя уже есть активный заказ', 'Заверши или отмени текущую поездку перед новым заказом.');
-    if (serviceType === 'ride' && tariff === 'child' && !childAccompanied) {
-      return Alert.alert('Поездка с ребёнком', 'Ребёнок должен ехать только в сопровождении совершеннолетнего родителя или законного представителя. Самостоятельная перевозка детей в LadyGo не поддерживается.');
-    }
     setBusy(true);
     try {
       let start = coords, end = destinationCoords;
@@ -1505,7 +1452,6 @@ export default function LadyGoApp() {
         }
         structuredStops.push({ sequence: i + 1, address: stopAddresses[i], latitude: point.latitude, longitude: point.longitude });
       }
-      const selected = TARIFFS.find(t => t.id === tariff);
       const scheduleText = requestedFor.trim();
       let scheduledAt = null;
       if (scheduleText && !/^как можно скорее$|^сейчас$/i.test(scheduleText)) {
@@ -1524,12 +1470,12 @@ export default function LadyGoApp() {
       const payload = {
         passenger_id: user.id, pickup_address: pickup.trim(), destination_address: destination.trim(),
         requested_for: scheduleText || 'Как можно скорее', ...(scheduledAt ? { scheduled_at: scheduledAt } : {}), passenger_phone: phone.trim() || null,
-        notes: [serviceType === 'courier' ? 'Тип: курьерская доставка' : 'Тип: поездка', doorToDoor ? 'От двери до двери' : '', comment.trim(), 'Тариф: ' + (selected?.name || 'Эконом'), routeInfo ? `Маршрут: ${routeInfo.km} км, около ${routeInfo.minutes} мин` : ''].filter(Boolean).join(' | '),
+        notes: [serviceType === 'courier' ? 'Тип: курьерская доставка' : 'Тип: поездка', doorToDoor ? 'От двери до двери' : '', comment.trim(), 'Тариф: ' + (TARIFFS.find(t => t.id === tariff)?.name || 'Эконом'), routeInfo ? `Маршрут: ${routeInfo.km} км, около ${routeInfo.minutes} мин` : ''].filter(Boolean).join(' | '),
         stops: structuredStops,
         tariff_id: tariff,
         service_type: serviceType,
         door_to_door: doorToDoor,
-        estimated_price_rub: estimatedPrice == null ? null : Math.round(estimatedPrice),
+        estimated_price_rub: null,
         payment_method: paymentMethod,
         status: 'new',
         ...(start ? { pickup_lat: start.latitude, pickup_lng: start.longitude } : {}),
@@ -1537,7 +1483,7 @@ export default function LadyGoApp() {
       };
       const { error } = await supabase.from('orders').insert(payload);
       if (error) throw error;
-      Alert.alert('Заказ отправлен', estimatedPrice == null ? 'Ищем водителя. Стоимость маршрута вне списка будет рассчитана отдельно.' : 'Ищем водителя. Фиксированная стоимость: ' + Math.round(estimatedPrice) + ' ₽.');
+      Alert.alert('Заказ отправлен', 'Ищем водителя. Стоимость поездки согласуется с водителем перед принятием заказа.');
       setTab('ride');
       await loadOrders();
     } catch (e) { Alert.alert('Не удалось заказать поездку', errorText(e)); }
@@ -2114,8 +2060,8 @@ export default function LadyGoApp() {
         <Button title="Построить маршрут" secondary compact onPress={() => buildRoute()} />
         {routeInfo && <Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text>}
         <View style={{ gap: 4, paddingTop: 7 }}>
-          <Text style={s.routeInfo}>{estimatedPrice == null ? 'Маршрут вне фиксированного списка — стоимость рассчитаем отдельно' : (fixedFare != null ? 'Фиксированная стоимость: ' : 'Расчётная стоимость: ') + money(Math.round(estimatedPrice))}</Text>
-          {serviceType === 'courier' && <Text style={s.muted}>Курьерская доставка — {configuredCourierPrice} ₽. Алкоголь и табачные изделия не принимаются.</Text>}
+          <Text style={s.routeInfo}>Стоимость поездки согласуется с водителем.</Text>
+          {serviceType === 'courier' && <Text style={s.muted}>Стоимость доставки согласуется с водителем до принятия заказа. Алкоголь и табачные изделия не принимаются.</Text>}
         </View>
       </Card>
       <Text style={s.section}>Выберите тариф</Text>
@@ -2124,16 +2070,6 @@ export default function LadyGoApp() {
         <View style={{ flex: 1 }}><Text style={s.tariffName}>{t.name}</Text><Text style={s.muted}>{t.detail}</Text></View>
         <View style={[s.radio, tariff === t.id && s.radioOn]} />
       </TouchableOpacity>)}
-      {tariff === 'child' && <Card style={{ borderColor: C.pink }}>
-        <Text style={s.section}>Важное условие поездки с ребёнком</Text>
-        <Text style={s.muted}>Ребёнок должен ехать вместе с совершеннолетним родителем или законным представителем. LadyGo не поддерживает самостоятельную перевозку несовершеннолетних. Перед любым реальным запуском взрослый владелец сервиса должен отдельно проверить документы, согласие, требования к детским удерживающим устройствам и страхование.</Text>
-        <TouchableOpacity onPress={() => setChildAccompanied(value => !value)} style={[s.row, { alignItems: 'center', paddingVertical: 6 }]}>
-          <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: childAccompanied ? C.pink : C.muted, backgroundColor: childAccompanied ? C.pink : C.white, alignItems: 'center', justifyContent: 'center' }}>
-            {childAccompanied ? <Text style={{ color: C.white, fontWeight: '900' }}>✓</Text> : null}
-          </View>
-          <Text style={[s.address, { flex: 1 }]}>Подтверждаю, что ребёнок будет с совершеннолетним родителем или законным представителем.</Text>
-        </TouchableOpacity>
-      </Card>}
       <Text style={s.section}>Способ оплаты</Text>
       <View style={s.row}>
         <TouchableOpacity onPress={() => setPaymentMethod('cash')} style={[s.savedChip, paymentMethod === 'cash' && { borderWidth: 1, borderColor: C.pink }]}>
@@ -2147,7 +2083,7 @@ export default function LadyGoApp() {
         <Input label="Телефон для связи (необязательно)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+7…" />
         <Input label="Комментарий водителю" value={comment} onChangeText={setComment} multiline placeholder="Например, подъехать к главному входу" />
         <Button title={busy ? 'Отправляем…' : 'Заказать поездку'} onPress={createOrder} disabled={busy} />
-        <Text style={s.disclaimer}>{estimatedPrice == null ? 'Для маршрута вне списка стоимость согласуется отдельно до принятия заказа.' : 'Цена показана по тарифу LadyGo. Оплата — наличными или переводом водителю.'}</Text>
+        <Text style={s.disclaimer}>Стоимость и способ оплаты согласуются с водителем перед поездкой.</Text>
       </Card>
     </ScrollView>}
 
@@ -2251,26 +2187,6 @@ export default function LadyGoApp() {
     {mode === 'admin' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
       <Text style={s.title}>Панель администратора</Text>
       <View style={s.stats}><Card style={s.stat}><Text style={s.statNum}>{orders.length}</Text><Text style={s.muted}>Заказов</Text></Card><Card style={s.stat}><Text style={s.statNum}>{applications.filter(a => a.status === 'pending').length}</Text><Text style={s.muted}>Заявок</Text></Card></View>
-      <Text style={s.section}>Фиксированные цены маршрутов</Text>
-      <Card>
-        <Text style={s.muted}>Эти цены применяются автоматически. Администратор может менять их здесь — новая цена действует для новых заказов.</Text>
-        {fixedPrices.map(item => <Input key={item.route_key} label={item.display_name + ', ₽'} value={fixedPriceDraft[item.route_key] ?? String(item.price_rub)} onChangeText={value => setFixedPriceDraft(p => ({ ...p, [item.route_key]: value }))} keyboardType="numeric" />)}
-        <Button title={busy ? 'Сохраняем…' : 'Сохранить фиксированные цены'} onPress={() => saveFixedPrices().catch(e => Alert.alert('Фиксированные цены', errorText(e)))} disabled={busy || fixedPrices.length === 0} />
-      </Card>
-      <Text style={s.section}>Настройки тарифов</Text>
-      <Card>
-        <Text style={s.muted}>Укажи реальные цены LadyGo. Пока значения равны нулю, пассажирам не показывается выдуманная стоимость.</Text>
-        {TARIFFS.map(item => {
-          const draft = rateDraft[item.id] || {};
-          return <View key={'rate-' + item.id} style={{ gap: 6 }}>
-            <Text style={s.tariffName}>{item.name}</Text>
-            <Input label="Базовая стоимость, ₽" value={draft.base_fare_rub || ''} onChangeText={value => setRateDraft(p => ({ ...p, [item.id]: { ...(p[item.id] || {}), base_fare_rub: value } }))} keyboardType="numeric" placeholder="0" />
-            <Input label="Стоимость за 1 км, ₽" value={draft.per_km_rub || ''} onChangeText={value => setRateDraft(p => ({ ...p, [item.id]: { ...(p[item.id] || {}), per_km_rub: value } }))} keyboardType="numeric" placeholder="0" />
-            <Input label="Минимальная стоимость, ₽" value={draft.minimum_fare_rub || ''} onChangeText={value => setRateDraft(p => ({ ...p, [item.id]: { ...(p[item.id] || {}), minimum_fare_rub: value } }))} keyboardType="numeric" placeholder="0" />
-          </View>;
-        })}
-        <Button title={busy ? 'Сохраняем…' : 'Сохранить тарифы'} onPress={() => saveTariffRates().catch(e => Alert.alert('Тарифы', errorText(e)))} disabled={busy} />
-      </Card>
       <Text style={s.section}>Заявки водителей</Text>
       {applications.map(a => <Card key={a.id}>{a.avatar_url ? <Image source={{ uri: a.avatar_url }} style={s.driverAvatar} /> : null}<Text style={s.tariffName}>{a.full_name || 'Водитель'}</Text><Text style={s.muted}>{a.phone}</Text>{a.vehicle_photo_url ? <Image source={{ uri: a.vehicle_photo_url }} style={s.vehiclePhoto} resizeMode="cover" /> : null}<Text style={s.muted}>{[a.vehicle_make, a.vehicle_model, a.vehicle_color, a.vehicle_year, a.vehicle_plate].filter(Boolean).join(' · ')}</Text><Text style={s.muted}>{a.experience}</Text><Pill color={a.status === 'approved' ? C.green : a.status === 'rejected' ? C.red : C.pink}>{a.status}</Pill>
         {a.status === 'pending' && <View style={s.row}><View style={{ flex: 1 }}><Button title="Одобрить" onPress={() => reviewApplication(a, true)} /></View><View style={{ flex: 1 }}><Button title="Отклонить" secondary danger onPress={() => reviewApplication(a, false)} /></View></View>}
