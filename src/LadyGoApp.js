@@ -50,12 +50,12 @@ if (!TaskManager.isTaskDefined(DRIVER_LOCATION_TASK)) {
 }
 
 const C = {
-  pink: '#E85D91', pinkDark: '#C94378', pale: '#FFF3F7',
+  pink: '#E65B8A', pinkDark: '#C74773', pale: '#FFF4F7',
   ink: '#282329', muted: '#8E8289', line: '#F0E5E9',
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.8.4';
+const APP_VERSION = '6.7.8.5';
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
 const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
 const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
@@ -2113,8 +2113,8 @@ function LadyGoAppContent() {
         <TouchableOpacity style={s.locButton} onPress={getCurrentLocation}><Text style={s.locText}>{locationBusy ? 'Определяем…' : '◎ Моё местоположение'}</Text></TouchableOpacity>
       </View>
       <Card>
-        <Text style={s.title}>Куда едем?</Text>
-        <Text style={s.label}>Тип заказа</Text>
+        <Text style={s.title}>Планируем поездку</Text>
+        <Text style={s.label}>Что нужно?</Text>
         <View style={s.row}>
           <TouchableOpacity onPress={() => setServiceType('ride')} style={[s.savedChip, serviceType === 'ride' && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
             <Text style={s.savedChipText}>🚕 Поездка</Text>
@@ -2124,7 +2124,7 @@ function LadyGoAppContent() {
           </TouchableOpacity>
         </View>
         <View style={s.field}>
-          <Text style={s.label}>Откуда</Text>
+          <Text style={s.label}>Адрес подачи</Text>
           <TouchableOpacity activeOpacity={0.8} onPress={() => {
             setPickupSearchQuery(pickup);
             setPickupSuggestions([]);
@@ -2134,7 +2134,7 @@ function LadyGoAppContent() {
               {pickup || 'Выбери город и точный адрес'}
             </Text>
           </TouchableOpacity>
-          <Text style={s.muted}>Откроется поиск адреса с выбором города</Text>
+          <Text style={s.muted}>Нажми, чтобы найти и выбрать точный адрес</Text>
           {savedPlaces.length > 0 && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 5 }}>
             {savedPlaces.slice(0, 4).map(place => <TouchableOpacity key={place.id} onPress={async () => {
               setPickup(place.address);
@@ -2151,19 +2151,19 @@ function LadyGoAppContent() {
               <TouchableOpacity onPress={() => { setPickupSearchOpen(false); setPickupSuggestions([]); }} style={{ padding: 5 }}>
                 <Text style={{ color: C.pinkDark, fontSize: 25, fontWeight: '700' }}>‹</Text>
               </TouchableOpacity>
-              <Text style={{ color: C.ink, fontSize: 19, fontWeight: '800' }}>Откуда поедем?</Text>
+              <Text style={{ color: C.ink, fontSize: 19, fontWeight: '800' }}>Выберите адрес подачи</Text>
             </View>
             <View style={{ padding: 16, gap: 10 }}>
               <TextInput value={pickupSearchQuery} onChangeText={setPickupSearchQuery}
                 placeholder="Улица, дом или место" placeholderTextColor="#B6AAB0"
                 autoFocus returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
-              <Text style={s.muted}>Введи адрес и выбери нужный город в полном адресе.</Text>
+              <Text style={[s.muted, { fontSize: 13, lineHeight: 20 }]}>Введи улицу и дом, затем выбери подходящий адрес из списка.</Text>
               {pickupSuggestionsLoading && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 12 }}>
                 <ActivityIndicator color={C.pink} /><Text style={s.muted}>Ищем адреса…</Text>
               </View>}
               {!pickupSuggestionsLoading && pickupSearchQuery.trim().length >= 2 && pickupSuggestions.length === 0 &&
                 <View style={{ gap: 8, paddingVertical: 10 }}>
-                  <Text style={s.muted}>В базе адрес не найден. Попробуй поиск через Яндекс Карты или повтори запрос.</Text>
+                  <Text style={s.muted}>Пока не нашли подходящий вариант. Проверь написание или попробуй поиск в Яндекс Картах.</Text>
                   <TouchableOpacity onPress={() => openYandexMapsSearch(pickupSearchQuery + ', Кисловодск')} style={[s.savedChip, { alignSelf: 'flex-start' }]}>
                     <Text style={s.savedChipText}>Открыть поиск в Яндекс Картах</Text>
                   </TouchableOpacity>
@@ -2189,10 +2189,13 @@ function LadyGoAppContent() {
                       setRoute([]);
                       setRouteInfo(null);
                     }}
-                    style={{ paddingVertical: 14, borderBottomWidth: index === pickupSuggestions.length - 1 ? 0 : 1, borderBottomColor: C.line, gap: 4 }}>
-                    <Text style={{ color: C.ink, fontSize: 15, fontWeight: '700' }}>{primary}</Text>
-                    <Text style={s.muted} numberOfLines={2}>{item.display_name}</Text>
-                    {item.address?.house_number ? <Text style={{ color: C.green, fontSize: 11, fontWeight: '700' }}>✓ Номер дома найден: {item.address.house_number}</Text> : (/[0-9]/.test(pickupSearchQuery) ? <Text style={{ color: C.red, fontSize: 11 }}>Номер дома не подтверждён — проверь точку на карте</Text> : null)}
+                    style={{ marginBottom: 10, padding: 14, borderWidth: 1, borderColor: '#EDE4E8', borderRadius: 15, backgroundColor: C.white, gap: 7 }}>
+                     <Text style={{ color: C.ink, fontSize: 16, fontWeight: '750' }}>{primary}</Text>
+                     <Text style={[s.muted, { lineHeight: 18 }]} numberOfLines={2}>{item.display_name}</Text>
+                     {item.address?.house_number ? <Text style={{ color: C.green, fontSize: 12, fontWeight: '700' }}>✓ Дом {item.address.house_number} найден</Text> : (/[0-9]/.test(pickupSearchQuery) ? <Text style={{ color: C.red, fontSize: 12 }}>Дом не подтверждён — проверь точку на карте</Text> : null)}
+                     <View style={{ alignSelf: 'flex-start', backgroundColor: C.pale, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 7, marginTop: 2 }}>
+                       <Text style={{ color: C.pinkDark, fontSize: 12, fontWeight: '800' }}>Нажми, чтобы выбрать адрес  ›</Text>
+                     </View>
                   </TouchableOpacity>;
                 })}
               </ScrollView>
@@ -2201,7 +2204,7 @@ function LadyGoAppContent() {
         </Modal>
         <Button title="Определить моё местоположение" secondary compact onPress={getCurrentLocation} />
         <View style={s.field}>
-          <Text style={s.label}>Куда</Text>
+          <Text style={s.label}>Адрес назначения</Text>
           <TouchableOpacity activeOpacity={0.8} onPress={() => {
             setDestinationSearchQuery(destination);
             setDestinationSuggestions([]);
@@ -2221,13 +2224,13 @@ function LadyGoAppContent() {
               <TouchableOpacity onPress={() => { setDestinationSearchOpen(false); setDestinationSuggestions([]); }} style={{ padding: 5 }}>
                 <Text style={{ color: C.pinkDark, fontSize: 25, fontWeight: '700' }}>‹</Text>
               </TouchableOpacity>
-              <Text style={{ color: C.ink, fontSize: 19, fontWeight: '800' }}>Куда поедем?</Text>
+              <Text style={{ color: C.ink, fontSize: 19, fontWeight: '800' }}>Выберите адрес назначения</Text>
             </View>
             <View style={{ padding: 16, gap: 10 }}>
               <TextInput value={destinationSearchQuery} onChangeText={setDestinationSearchQuery}
                 placeholder="Улица, дом или место" placeholderTextColor="#B6AAB0"
                 autoFocus returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
-              <Text style={s.muted}>Начни вводить улицу и номер дома. Если адрес встречается в нескольких городах, выбери нужный вариант.</Text>
+              <Text style={[s.muted, { fontSize: 13, lineHeight: 20 }]}>Введи улицу и дом. Затем нажми на подходящий вариант в списке ниже — адрес добавится в маршрут.</Text>
               {suggestionsLoading && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 12 }}>
                 <ActivityIndicator color={C.pink} /><Text style={s.muted}>Ищем адреса…</Text>
               </View>}
@@ -2261,10 +2264,13 @@ function LadyGoAppContent() {
                       setRouteInfo(null);
                       if (pickup.trim()) buildRoute(label, point);
                     }}
-                    style={{ paddingVertical: 14, borderBottomWidth: index === destinationSuggestions.length - 1 ? 0 : 1, borderBottomColor: C.line, gap: 4 }}>
-                    <Text style={{ color: C.ink, fontSize: 15, fontWeight: '700' }}>{primary}</Text>
-                    <Text style={s.muted} numberOfLines={2}>{item.display_name}</Text>
-                    {item.exact_house_match ? <Text style={{ color: C.green, fontSize: 11, fontWeight: '700' }}>✓ Номер дома подтверждён</Text> : (/[0-9]/.test(destinationSearchQuery) ? <Text style={{ color: C.red, fontSize: 11 }}>Номер дома не подтверждён — проверь адрес перед заказом</Text> : null)}
+                    style={{ marginBottom: 10, padding: 14, borderWidth: 1, borderColor: '#EDE4E8', borderRadius: 15, backgroundColor: C.white, gap: 7 }}>
+                     <Text style={{ color: C.ink, fontSize: 16, fontWeight: '750' }}>{primary}</Text>
+                     <Text style={[s.muted, { lineHeight: 18 }]} numberOfLines={2}>{item.display_name}</Text>
+                     {item.exact_house_match ? <Text style={{ color: C.green, fontSize: 12, fontWeight: '700' }}>✓ Номер дома подтверждён</Text> : (/[0-9]/.test(destinationSearchQuery) ? <Text style={{ color: C.red, fontSize: 12 }}>Дом не подтверждён — проверь точку на карте</Text> : null)}
+                     <View style={{ alignSelf: 'flex-start', backgroundColor: C.pale, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 7, marginTop: 2 }}>
+                       <Text style={{ color: C.pinkDark, fontSize: 12, fontWeight: '800' }}>Нажми, чтобы выбрать адрес  ›</Text>
+                     </View>
                   </TouchableOpacity>;
                 })}
               </ScrollView>
@@ -2282,20 +2288,20 @@ function LadyGoAppContent() {
         <Input label="Когда подать машину" value={requestedFor} onChangeText={setRequestedFor} placeholder="Как можно скорее или ДД.ММ.ГГГГ ЧЧ:ММ" />
         <Text style={s.muted}>Для предварительного заказа введи дату и время, например 25.12.2026 14:30. Такие заказы автоматически отправляются водителям в назначенное время.</Text>
         {savedPlaces.length > 0 && <View style={{ gap: 6 }}><Text style={s.label}>Сохранённые адреса</Text><View style={s.row}>{savedPlaces.slice(0, 3).map(p => <TouchableOpacity key={p.id} style={s.savedChip} onPress={() => { setPickup(p.address); setCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }}><Text style={s.savedChipText}>{p.label}</Text></TouchableOpacity>)}</View></View>}
-        <Button title="Построить маршрут" secondary compact onPress={() => buildRoute()} />
+        <Button title="Показать маршрут на карте" secondary compact onPress={() => buildRoute()} />
         {routeInfo && <Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text>}
         <View style={{ gap: 4, paddingTop: 7 }}>
           <Text style={s.routeInfo}>{estimatedPrice != null ? 'Предварительная стоимость: ' + money(estimatedPrice) + '. Итог подтвердит водитель.' : 'Стоимость поездки будет согласована с водителем.'}</Text>
           {serviceType === 'courier' && <Text style={s.muted}>Стоимость доставки согласуется с водителем до принятия заказа. Алкоголь и табачные изделия не принимаются.</Text>}
         </View>
       </Card>
-      <Text style={s.section}>Выберите тариф</Text>
+      <Text style={s.section}>Выберите подходящий тариф</Text>
       {TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[s.tariff, tariff === t.id && s.tariffSelected]}>
         <View style={s.tariffIcon}><Text style={s.tariffEmoji}>{t.id === 'child' ? '♡' : t.id === 'comfort' ? '✦' : '↗'}</Text></View>
         <View style={{ flex: 1 }}><Text style={s.tariffName}>{t.name}</Text><Text style={s.muted}>{t.detail}</Text></View>
         <View style={[s.radio, tariff === t.id && s.radioOn]} />
       </TouchableOpacity>)}
-      <Text style={s.section}>Способ оплаты</Text>
+      <Text style={s.section}>Как оплатить</Text>
       <View style={s.row}>
         <TouchableOpacity onPress={() => setPaymentMethod('cash')} style={[s.savedChip, paymentMethod === 'cash' && { borderWidth: 1, borderColor: C.pink }]}>
           <Text style={s.savedChipText}>Наличными</Text>
@@ -2304,11 +2310,11 @@ function LadyGoAppContent() {
           <Text style={s.savedChipText}>Перевод водителю</Text>
         </TouchableOpacity>
       </View>
-      <Card><Text style={s.section}>Пожелания к поездке</Text>
+      <Card><Text style={s.section}>Дополнительная информация</Text>
         <Input label="Телефон для связи (необязательно)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+7…" />
         <Input label="Комментарий водителю" value={comment} onChangeText={setComment} multiline placeholder="Например, подъехать к главному входу" />
         <Button title={busy ? 'Отправляем…' : 'Заказать поездку'} onPress={createOrder} disabled={busy} />
-        <Text style={s.disclaimer}>Стоимость и способ оплаты согласуются с водителем перед поездкой.</Text>
+        <Text style={s.disclaimer}>Перед подтверждением водитель согласует с тобой итоговую стоимость и способ оплаты.</Text>
       </Card>
     </ScrollView>}
 
@@ -2585,7 +2591,7 @@ class LadyGoErrorBoundary extends React.Component {
 export default function LadyGoApp() { return <LadyGoErrorBoundary><LadyGoAppContent /></LadyGoErrorBoundary>; }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FCFAFB' },
+  safe: { flex: 1, backgroundColor: '#FAF9FA' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, backgroundColor: C.pale },
   auth: { flex: 1, justifyContent: 'center', padding: 22, backgroundColor: C.pale },
   brand: { color: C.pink, fontSize: 42, fontWeight: '900', textAlign: 'center', letterSpacing: -1 },
@@ -2609,14 +2615,14 @@ const s = StyleSheet.create({
   map: { flex: 1 },
   locButton: { position: 'absolute', bottom: 12, right: 12, backgroundColor: C.white, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, elevation: 3 },
   locText: { color: C.ink, fontSize: 12, fontWeight: '700' },
-  card: { backgroundColor: C.white, borderRadius: 20, borderWidth: 1, borderColor: '#F2E8EC', padding: 17, gap: 11, shadowColor: '#5A3444', shadowOpacity: 0.045, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
-  title: { fontSize: 23, fontWeight: '900', color: C.ink, letterSpacing: -0.4 },
+  card: { backgroundColor: C.white, borderRadius: 18, borderWidth: 1, borderColor: '#EEE8EB', padding: 17, gap: 12, shadowColor: '#33232A', shadowOpacity: 0.025, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
+  title: { fontSize: 24, fontWeight: '800', color: C.ink, letterSpacing: -0.55 },
   heading: { fontSize: 19, fontWeight: '800', color: C.ink },
-  section: { color: C.ink, fontSize: 16, fontWeight: '800', marginTop: 4 },
+  section: { color: C.ink, fontSize: 16, fontWeight: '750', marginTop: 5, letterSpacing: -0.15 },
   field: { gap: 6, marginTop: 4 },
   label: { color: C.muted, fontSize: 12, fontWeight: '700' },
-  input: { borderWidth: 1, borderColor: C.line, borderRadius: 13, paddingHorizontal: 13, paddingVertical: 12, color: C.ink, backgroundColor: '#FFFCFD', fontSize: 15 },
-  button: { backgroundColor: C.pink, paddingVertical: 15, paddingHorizontal: 15, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 4, shadowColor: C.pinkDark, shadowOpacity: 0.13, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+  input: { borderWidth: 1, borderColor: '#E9E2E6', borderRadius: 14, paddingHorizontal: 15, paddingVertical: 13, color: C.ink, backgroundColor: '#FFFFFF', fontSize: 16 },
+  button: { backgroundColor: C.pink, paddingVertical: 15, paddingHorizontal: 17, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 5, shadowColor: C.pinkDark, shadowOpacity: 0.08, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
   buttonSecondary: { backgroundColor: C.pale, borderWidth: 1, borderColor: '#F5D8E3' },
   buttonDanger: { backgroundColor: '#FFF5F6', borderColor: '#F1D6DC' },
   buttonText: { color: C.white, fontWeight: '800', fontSize: 14 },
