@@ -157,6 +157,20 @@ async function searchAddressSuggestions(query, signal) {
     }
   }
 
+  const requestedHouse = raw.match(/(?:^|\\s)(\\d+[\\wА-Яа-я/-]*)\\s*(?:$|,)/u)?.[1]
+    || raw.match(/\\s(\\d+[\\wА-Яа-я/-]*)\\s+/u)?.[1];
+  if (requestedHouse) {
+    collected.sort((a, b) => {
+      const ah = String(a.address?.house_number || '').toLocaleLowerCase('ru-RU');
+      const bh = String(b.address?.house_number || '').toLocaleLowerCase('ru-RU');
+      const target = requestedHouse.toLocaleLowerCase('ru-RU');
+      return Number(bh === target) - Number(ah === target);
+    });
+    return collected.map(item => ({
+      ...item,
+      exact_house_match: String(item.address?.house_number || '').toLocaleLowerCase('ru-RU') === requestedHouse.toLocaleLowerCase('ru-RU')
+    })).slice(0, 8);
+  }
   return collected.slice(0, 8);
 }
 
@@ -250,7 +264,7 @@ function MapLibreMap({ points = [], route = [], height = 245 }) {
   ).map(point => ({
     type: 'Feature',
     geometry: { type: 'Point', coordinates: [Number(point.longitude), Number(point.latitude)] },
-    properties: { label: String(point.label || ''), color: String(point.color || C.pink) },
+    properties: { label: String(point.label || ''), color: String(point.color || C.pink), markerType: String(point.markerType || 'point'), heading: Number(point.heading || 0) },
   }));
   const validRoute = route.filter(point =>
     Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude))
@@ -313,6 +327,7 @@ function MapLibreMap({ points = [], route = [], height = 245 }) {
         <Layer
           id="ladygo-points-labels"
           type="symbol"
+          filter={['!=', ['get', 'markerType'], 'vehicle']}
           layout={{
             'text-field': ['get', 'label'],
             'text-size': 11,
@@ -324,6 +339,18 @@ function MapLibreMap({ points = [], route = [], height = 245 }) {
             'text-color': '#282329',
             'text-halo-color': '#FFFFFF',
             'text-halo-width': 1.5,
+          }}
+        />
+        <Layer
+          id="ladygo-moving-car"
+          type="symbol"
+          filter={['==', ['get', 'markerType'], 'vehicle']}
+          layout={{
+            'text-field': '🚕',
+            'text-size': 25,
+            'text-allow-overlap': true,
+            'text-rotate': ['get', 'heading'],
+            'text-rotation-alignment': 'map',
           }}
         />
       </GeoJSONSource>}
@@ -386,7 +413,7 @@ function TripMap({ order, driverLocation }) {
       { latitude: start.latitude, longitude: start.longitude, label: 'Подача', color: C.pink },
       ...stops.map((point, index) => ({ ...point, label: point.address || ('Остановка ' + (index + 1)), color: '#D69A35' })),
       { latitude: end.latitude, longitude: end.longitude, label: 'Назначение', color: C.blue },
-      ...(driverLocation?.latitude != null && driverLocation?.longitude != null ? [{ latitude: driverLocation.latitude, longitude: driverLocation.longitude, label: 'Водитель LadyGo', color: '#26865A' }] : []),
+      ...(driverLocation?.latitude != null && driverLocation?.longitude != null ? [{ latitude: driverLocation.latitude, longitude: driverLocation.longitude, label: 'Водитель LadyGo', color: '#26865A', markerType: 'vehicle', heading: driverLocation.heading || 0 }] : []),
     ]} route={roadRoute.length > 1 ? roadRoute : routePoints} /> : <MapView mapType="none" style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: driverLocation?.latitude ?? (start.latitude + end.latitude) / 2, longitude: driverLocation?.longitude ?? (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
       <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
       <Marker coordinate={start} title="Подача" pinColor={C.pink} />
@@ -1163,11 +1190,11 @@ export default function LadyGoApp() {
     let alive = true;
     const driverId = activeOrder.driver_id;
     supabase.from('driver_locations').select('*').eq('driver_id', driverId).maybeSingle()
-      .then(({ data }) => { if (alive && data) setDriverLocation({ latitude: data.latitude, longitude: data.longitude, updated_at: data.updated_at }); });
+      .then(({ data }) => { if (alive && data) setDriverLocation({ latitude: data.latitude, longitude: data.longitude, heading: data.heading || 0, updated_at: data.updated_at }); });
     const channel = supabase.channel('ladygo-driver-location-' + driverId)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_locations', filter: 'driver_id=eq.' + driverId }, payload => {
         const row = payload.new;
-        if (alive && row?.latitude != null && row?.longitude != null) setDriverLocation({ latitude: row.latitude, longitude: row.longitude, updated_at: row.updated_at });
+        if (alive && row?.latitude != null && row?.longitude != null) setDriverLocation({ latitude: row.latitude, longitude: row.longitude, heading: row.heading || 0, updated_at: row.updated_at });
       }).subscribe();
     return () => { alive = false; supabase.removeChannel(channel); };
   }, [mode, activeOrder?.driver_id]);
@@ -1976,6 +2003,7 @@ export default function LadyGoApp() {
                     style={{ paddingVertical: 14, borderBottomWidth: index === pickupSuggestions.length - 1 ? 0 : 1, borderBottomColor: C.line, gap: 4 }}>
                     <Text style={{ color: C.ink, fontSize: 15, fontWeight: '700' }}>{primary}</Text>
                     <Text style={s.muted} numberOfLines={2}>{item.display_name}</Text>
+                    {item.address?.house_number ? <Text style={{ color: C.green, fontSize: 11, fontWeight: '700' }}>✓ Номер дома найден: {item.address.house_number}</Text> : (/[0-9]/.test(destinationSearchQuery) ? <Text style={{ color: C.red, fontSize: 11 }}>Номер дома не подтверждён — проверь точку на карте</Text> : null)}
                   </TouchableOpacity>;
                 })}
               </ScrollView>
