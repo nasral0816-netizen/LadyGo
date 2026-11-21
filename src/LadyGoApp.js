@@ -396,6 +396,8 @@ export default function LadyGoApp() {
   const [password, setPassword] = useState('');
   const [pickup, setPickup] = useState('');
   const [destination, setDestination] = useState('');
+  const [destinationSuggestions, setDestinationSuggestions] = useState([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [phone, setPhone] = useState('');
   const [comment, setComment] = useState('');
   const [requestedFor, setRequestedFor] = useState('Как можно скорее');
@@ -417,6 +419,37 @@ export default function LadyGoApp() {
   const [route, setRoute] = useState([]);
   const [routeInfo, setRouteInfo] = useState(null);
   const [locationBusy, setLocationBusy] = useState(false);
+
+  useEffect(() => {
+    const query = destination.trim();
+    if (query.length < 3 || destinationCoords) {
+      setDestinationSuggestions([]);
+      setSuggestionsLoading(false);
+      return undefined;
+    }
+    let active = true;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setSuggestionsLoading(true);
+      try {
+        const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(query);
+        const response = await fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
+        if (!response.ok) throw new Error('Address suggestions unavailable');
+        const results = await response.json();
+        if (active) setDestinationSuggestions((results || []).filter(item => Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon))));
+      } catch (_) {
+        if (active) setDestinationSuggestions([]);
+      } finally {
+        if (active) setSuggestionsLoading(false);
+      }
+    }, 550);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [destination, destinationCoords]);
+
   const [orders, setOrders] = useState([]);
   const [historyOrders, setHistoryOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -1081,7 +1114,7 @@ export default function LadyGoApp() {
       for (let i = 0; i < addresses.length; i++) {
         let result;
         if (i === 0 && coords) result = coords;
-        else if (i === addresses.length - 1 && destinationCoords) result = destinationCoords;
+        else if (i === addresses.length - 1 && destinationPoint) result = destinationPoint;\n        else if (i === addresses.length - 1 && destinationCoords) result = destinationCoords;
         else result = (await Location.geocodeAsync(addresses[i]))[0];
         if (!result || !Number.isFinite(result.latitude) || !Number.isFinite(result.longitude)) {
           throw new Error('Не удалось найти адрес: ' + addresses[i]);
@@ -1640,7 +1673,29 @@ export default function LadyGoApp() {
         </View>
         <Input label="Откуда" value={pickup} onChangeText={v => { setPickup(v); setCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }} placeholder="Адрес подачи" />
         <Button title="Определить моё местоположение" secondary compact onPress={getCurrentLocation} />
-        <Input label="Куда" value={destination} onChangeText={v => { setDestination(v); setDestinationCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }} placeholder="Адрес назначения" />
+        <Input label="Куда" value={destination} onChangeText={v => { setDestination(v); setDestinationCoords(null); setDestinationSuggestions([]); setStopCoords([]); setRoute([]); setRouteInfo(null); }} placeholder="Начни вводить адрес или место" />
+        {(suggestionsLoading || destinationSuggestions.length > 0) && <View style={{ borderWidth: 1, borderColor: C.line, borderRadius: 13, overflow: 'hidden', backgroundColor: C.white, marginTop: -7 }}>
+          {suggestionsLoading && <Text style={[s.muted, { padding: 11 }]}>Ищем адреса…</Text>}
+          {destinationSuggestions.map((item, index) => (
+            <TouchableOpacity key={item.place_id || (item.lat + '-' + item.lon)} activeOpacity={0.75}
+              onPress={() => {
+                const point = { latitude: Number(item.lat), longitude: Number(item.lon) };
+                const label = item.display_name || destination;
+                setDestination(label);
+                setDestinationCoords(point);
+                setDestinationSuggestions([]);
+                setStopCoords([]);
+                setRoute([]);
+                setRouteInfo(null);
+                if (pickup.trim()) buildRoute(label, point);
+              }}
+              style={{ paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: index === destinationSuggestions.length - 1 ? 0 : 1, borderBottomColor: C.line }}>
+              <Text style={{ color: C.ink, fontSize: 13, fontWeight: '600' }}>{item.name || item.display_name}</Text>
+              {item.name && <Text style={s.muted} numberOfLines={2}>{item.display_name}</Text>}
+            </TouchableOpacity>
+          ))}
+        </View>}
+
         <Input label="Промежуточные точки (по одной на строку)" value={stopsText} onChangeText={v => { setStopsText(v); setStopCoords([]); setRoute([]); setRouteInfo(null); }} multiline placeholder="Можно оставить пустым" />
         {serviceType === 'ride' && <TouchableOpacity onPress={() => setDoorToDoor(value => !value)} style={[s.row, { alignItems: 'center', paddingVertical: 8 }]}>
           <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: doorToDoor ? C.pink : C.muted, backgroundColor: doorToDoor ? C.pink : C.white, alignItems: 'center', justifyContent: 'center' }}>
