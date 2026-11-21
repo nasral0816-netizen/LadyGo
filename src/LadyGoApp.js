@@ -1104,11 +1104,12 @@ export default function LadyGoApp() {
     }
   };
 
-  const buildRoute = async () => {
-    if (!pickup.trim() || !destination.trim()) return Alert.alert('Маршрут', 'Укажи адрес подачи и назначения.');
+  const buildRoute = async (destinationOverride, destinationPoint) => {
+    const destinationText = String(destinationOverride || destination).trim();
+    if (!pickup.trim() || !destinationText) return Alert.alert('Маршрут', 'Укажи адрес подачи и назначения.');
     setLocationBusy(true);
     try {
-      const addresses = [pickup.trim(), ...stopsText.split(/\n+/).map(x => x.trim()).filter(Boolean), destination.trim()];
+      const addresses = [pickup.trim(), ...stopsText.split(/\n+/).map(x => x.trim()).filter(Boolean), destinationText];
       if (addresses.length > 22) throw new Error('Можно добавить не больше 20 промежуточных точек.');
       const points = [];
       for (let i = 0; i < addresses.length; i++) {
