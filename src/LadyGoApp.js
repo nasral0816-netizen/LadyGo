@@ -219,14 +219,17 @@ function TripMap({ order, driverLocation }) {
 
   if (!hasCoords) return null;
   return <View style={{ gap: 7 }}>
-    <MapView mapType="none" style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: driverLocation?.latitude ?? (start.latitude + end.latitude) / 2, longitude: driverLocation?.longitude ?? (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
+    {Platform.OS === 'android' ? <View style={{ height: 190, borderRadius: 15, backgroundColor: C.pale, alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <Text style={s.tariffName}>Карта временно отключена</Text>
+      <Text style={s.muted}>Маршрут и примерное время рассчитываются отдельно.</Text>
+    </View> : <MapView mapType="none" style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: driverLocation?.latitude ?? (start.latitude + end.latitude) / 2, longitude: driverLocation?.longitude ?? (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
       <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
       <Marker coordinate={start} title="Подача" pinColor={C.pink} />
       {driverLocation?.latitude != null && driverLocation?.longitude != null && <Marker coordinate={{ latitude: driverLocation.latitude, longitude: driverLocation.longitude }} title="Водитель LadyGo" description="Текущее местоположение" pinColor="#26865A" />}
       {stops.map((point, index) => <Marker key={'trip-stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} description={point.address} pinColor="#D69A35" />)}
       <Marker coordinate={end} title="Назначение" pinColor={C.blue} />
       <Polyline coordinates={roadRoute.length > 1 ? roadRoute : routePoints} strokeColor={C.pink} strokeWidth={4} />
-    </MapView>
+    </MapView>}
     {routeSummary && <Text style={s.routeInfo}>{routeSummary.km} км · около {routeSummary.minutes} мин по дороге</Text>}
     <Text style={s.muted}>© OpenStreetMap contributors</Text>
     {driverEtaMinutes != null && <Text style={[s.routeInfo, { color: C.green }]}>Водитель примерно через {driverEtaMinutes} мин</Text>}
@@ -1560,14 +1563,17 @@ export default function LadyGoApp() {
           onPress={() => submitRating(order)} />
       </Card>)}
       <View style={s.mapWrap}>
-        <MapView ref={mapRef} mapType="none" style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
+        {Platform.OS === 'android' ? <View style={[s.map, { alignItems: 'center', justifyContent: 'center', padding: 18, backgroundColor: C.pale }]}>
+          <Text style={s.tariffName}>Карта временно отключена</Text>
+          <Text style={[s.muted, { textAlign: 'center' }]}>Адрес подачи можно определить кнопкой ниже. Заказ доступен без карты.</Text>
+        </View> : <MapView ref={mapRef} mapType="none" style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
           <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
           {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
           {stopCoords.map((point, index) => <Marker key={'stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} pinColor="#D69A35" />)}
           {destinationCoords && <Marker coordinate={destinationCoords} title="Назначение" pinColor={C.blue} />}
           {driverLocation && <Marker coordinate={driverLocation} title="Автомобиль LadyGo" pinColor="#26865A" />}
           {route.length > 1 && <Polyline coordinates={route} strokeColor={C.pink} strokeWidth={5} />}
-        </MapView>
+        </MapView>}
         <Text style={[s.muted, { textAlign: 'center' }]}>© OpenStreetMap contributors</Text>
         <TouchableOpacity style={s.locButton} onPress={getCurrentLocation}><Text style={s.locText}>{locationBusy ? 'Определяем…' : '◎ Моё местоположение'}</Text></TouchableOpacity>
       </View>
