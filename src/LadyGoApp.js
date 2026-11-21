@@ -698,11 +698,54 @@ const openDriverNavigation = async order => {
 const startExternalDriverNavigation = async () => {
   const address = externalNavQuery.trim();
   if (!address) {
-    Alert.alert('Навигатор', 'Введи адрес, куда нужно приехать.');
+    Alert.alert('Навигатор', 'Сначала введи адрес назначения.');
     return;
   }
-  const selectedLabel = externalNavSelected?.address || address;
-  await openYandexMapsSearch(selectedLabel);
+
+  try {
+    let destinationPoint = externalNavSelected &&
+      Number.isFinite(Number(externalNavSelected.latitude)) &&
+      Number.isFinite(Number(externalNavSelected.longitude))
+      ? { latitude: Number(externalNavSelected.latitude), longitude: Number(externalNavSelected.longitude) }
+      : null;
+
+    if (!destinationPoint) {
+      const resolved = await geocodeAddress(address);
+      if (resolved && Number.isFinite(Number(resolved.latitude)) && Number.isFinite(Number(resolved.longitude))) {
+        destinationPoint = { latitude: Number(resolved.latitude), longitude: Number(resolved.longitude) };
+      }
+    }
+
+    if (destinationPoint) {
+      let routeUrl = null;
+      try {
+        const current = await getPositionWithFallback();
+        const origin = Number(current.coords.latitude) + ',' + Number(current.coords.longitude);
+        const target = destinationPoint.latitude + ',' + destinationPoint.longitude;
+        routeUrl = 'https://yandex.ru/maps/?rtext=' + encodeURIComponent(origin + '~' + target) + '&rtt=auto';
+      } catch (_) {
+        const target = destinationPoint.latitude + ',' + destinationPoint.longitude;
+        routeUrl = 'https://yandex.ru/maps/?ll=' + encodeURIComponent(destinationPoint.longitude + ',' + destinationPoint.latitude) + '&text=' + encodeURIComponent(address) + '&z=16';
+      }
+
+      try {
+        await Linking.openURL(routeUrl);
+        return;
+      } catch (_) {
+        const fallback = 'https://www.google.com/maps/dir/?api=1&destination=' +
+          encodeURIComponent(destinationPoint.latitude + ',' + destinationPoint.longitude) + '&travelmode=driving';
+        await Linking.openURL(fallback);
+        return;
+      }
+    }
+
+    await Linking.openURL('https://yandex.ru/maps/?text=' + encodeURIComponent(address));
+  } catch (error) {
+    Alert.alert(
+      'Не удалось открыть навигатор',
+      'Проверь интернет и разрешение на открытие ссылок. Можно также выбрать адрес из подсказок и повторить.'
+    );
+  }
 };
 
 async function getPositionWithFallback() {
