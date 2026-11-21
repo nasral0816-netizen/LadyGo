@@ -8,14 +8,14 @@
     "scheme": "ladygo",
     "description": "LadyGo — сервис поездок с заботой: заказ поездки и доставки, фиксированные тарифы, предварительный заказ, карта и связь с водителем.",
     "primaryColor": "#E85D91",
-    "backgroundColor": "#FFF4F7",
+    "backgroundColor": "#E80B87",
     "icon": "./icon.png",
     "android": {
       "package": "com.ladygo.app",
       "versionCode": 11,
       "adaptiveIcon": {
         "foregroundImage": "./icon.png",
-        "backgroundColor": "#FFF4F7"
+        "backgroundColor": "#E80B87"
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
