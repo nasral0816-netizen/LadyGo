@@ -75,6 +75,28 @@ const STATUS = {
 };
 const money = value => value == null ? 'Стоимость согласует водитель' : `${value} ₽`;
 async function searchAddressSuggestions(query, signal) {
+  const raw = String(query || '').replace(/\s+/g, ' ').trim();
+  if (raw.length < 2) return [];
+  const knownCities = [
+    'Кисловодск', 'Пятигорск', 'Ессентуки', 'Минеральные Воды',
+    'Железноводск', 'Черкесск', 'Ставрополь', 'Невинномысск',
+    'Лермонтов', 'Георгиевск', 'Зеленокумск'
+  ];
+  const fold = value => String(value || '').toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').trim();
+  const lower = fold(raw);
+  const explicitCity = knownCities.find(name => lower.includes(fold(name)));
+  const city = explicitCity || 'Кисловодск';
+  const cityIndex = explicitCity ? lower.lastIndexOf(fold(explicitCity)) : -1;
+  const streetPart = (cityIndex >= 0 ? raw.slice(0, cityIndex) : raw)
+    .replace(/[;,]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const houseMatch = streetPart.match(/^(.+?)\s+(\d+[А-Яа-яA-Za-z/-]*)$/u);
+  const normalizedStreet = (houseMatch ? houseMatch[1] : streetPart)
+    .replace(/^(улица|ул\.?)\s*/iu, '')
+    .replace(/\s+(улица|ул\.?)$/iu, '')
+    .trim();
+  const house = houseMatch?.[2] || '';
+  if (!normalizedStreet) return [];
+
 
   if (GEOAPIFY_API_KEY) {
     try {
@@ -106,27 +128,6 @@ async function searchAddressSuggestions(query, signal) {
     } catch (error) { if (signal?.aborted) throw error; }
   }
 
-  const raw = String(query || '').replace(/\s+/g, ' ').trim();
-  if (raw.length < 2) return [];
-  const knownCities = [
-    'Кисловодск', 'Пятигорск', 'Ессентуки', 'Минеральные Воды',
-    'Железноводск', 'Черкесск', 'Ставрополь', 'Невинномысск',
-    'Лермонтов', 'Георгиевск', 'Зеленокумск'
-  ];
-  const fold = value => String(value || '').toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').trim();
-  const lower = fold(raw);
-  const explicitCity = knownCities.find(name => lower.includes(fold(name)));
-  const city = explicitCity || 'Кисловодск';
-  const cityIndex = explicitCity ? lower.lastIndexOf(fold(explicitCity)) : -1;
-  const streetPart = (cityIndex >= 0 ? raw.slice(0, cityIndex) : raw)
-    .replace(/[;,]+/g, ' ').replace(/\s+/g, ' ').trim();
-  const houseMatch = streetPart.match(/^(.+?)\s+(\d+[А-Яа-яA-Za-z/-]*)$/u);
-  const normalizedStreet = (houseMatch ? houseMatch[1] : streetPart)
-    .replace(/^(улица|ул\.?)\s*/iu, '')
-    .replace(/\s+(улица|ул\.?)$/iu, '')
-    .trim();
-  const house = houseMatch?.[2] || '';
-  if (!normalizedStreet) return [];
   const fullAddress = [normalizedStreet, house, city, 'Ставропольский край', 'Россия'].filter(Boolean).join(', ');
   const queries = [...new Set([
     fullAddress,
