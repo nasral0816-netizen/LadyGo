@@ -55,7 +55,10 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.8.2';
+const APP_VERSION = '6.7.8.3';
+const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
+const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
+const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
 const PHONE = '+79911121227';
 const SUPPORT = 'ladygosupport@gmail.com';
 
@@ -72,6 +75,36 @@ const STATUS = {
 };
 const money = value => value == null ? 'Стоимость согласует водитель' : `${value} ₽`;
 async function searchAddressSuggestions(query, signal) {
+  if (GEOAPIFY_API_KEY) {
+    try {
+      const geoUrl = 'https://api.geoapify.com/v1/geocode/autocomplete?text=' +
+        encodeURIComponent(raw) + '&lang=ru&limit=20&filter=countrycode:ru&format=json&apiKey=' +
+        encodeURIComponent(GEOAPIFY_API_KEY);
+      const response = await fetchWithTimeout(geoUrl, { signal, headers: { Accept: 'application/json' } }, 9000);
+      if (response.ok) {
+        const payload = await response.json();
+        const geoItems = (payload.results || []).map((item, index) => ({
+          place_id: 'geoapify-' + (item.place_id || index),
+          lat: String(item.lat), lon: String(item.lon),
+          name: item.name || item.street || item.formatted || 'Адрес',
+          display_name: item.formatted || [item.street, item.housenumber, item.city, item.state, item.country].filter(Boolean).join(', '),
+          address: { road: item.street || '', pedestrian: item.street || '', house_number: item.housenumber || '',
+            city: item.city || item.town || item.village || '', municipality: item.county || '', state: item.state || '', country: item.country || '' },
+          provider: 'Geoapify'
+        })).filter(item => Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon)));
+        if (geoItems.length) {
+          const exact = geoItems.filter(item => (!house || fold(item.address.house_number) === fold(house)) &&
+            fold(item.address.road).includes(fold(normalizedStreet)));
+          const selected = exact.length ? exact : geoItems;
+          return selected.slice(0, 20).map(item => ({ ...item,
+            exact_house_match: !house || fold(item.address.house_number) === fold(house),
+            exact_street_match: fold(item.address.road).includes(fold(normalizedStreet))
+          }));
+        }
+      }
+    } catch (error) { if (signal?.aborted) throw error; }
+  }
+
   const raw = String(query || '').replace(/\s+/g, ' ').trim();
   if (raw.length < 2) return [];
   const knownCities = [
@@ -254,6 +287,23 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
 }
 
 async function fetchDrivingRoute(points, signal) {
+  if (GEOAPIFY_API_KEY) {
+    try {
+      const waypoints = points.map(point => Number(point.latitude) + ',' + Number(point.longitude)).join('|');
+      const geoUrl = 'https://api.geoapify.com/v1/routing?waypoints=' +
+        encodeURIComponent(waypoints) + '&mode=drive&details=instruction_details&apiKey=' + encodeURIComponent(GEOAPIFY_API_KEY);
+      const response = await fetchWithTimeout(geoUrl, { signal, headers: { Accept: 'application/json' } }, 12000);
+      if (!response.ok) throw new Error('Geoapify routing unavailable');
+      const feature = (await response.json()).features?.[0];
+      const properties = feature?.properties || {};
+      const routeCoordinates = feature?.geometry?.coordinates || [];
+      if (routeCoordinates.length > 1) return {
+        geometry: { coordinates: routeCoordinates },
+        distance: Number(properties.distance),
+        duration: Number(properties.time)
+      };
+    } catch (error) { if (signal?.aborted) throw error; }
+  }
   const coordinates = points.map(point => Number(point.longitude) + ',' + Number(point.latitude)).join(';');
   const urls = [
     'https://router.project-osrm.org/route/v1/driving/' + coordinates + '?overview=full&geometries=geojson&steps=true',
@@ -407,7 +457,7 @@ function MapLibreMap({ points = [], route = [], height = 245 }) {
   return <View style={{ height, borderRadius: 15, overflow: 'hidden', backgroundColor: C.map }}>
     <MapLibreView
       style={{ flex: 1 }}
-      mapStyle="https://tiles.openfreemap.org/styles/liberty"
+      mapStyle={DEFAULT_MAP_STYLE_URL}
       androidView="texture"
       attribution
       logo={false}
