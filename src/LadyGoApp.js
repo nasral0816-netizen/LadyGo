@@ -421,6 +421,10 @@ export default function LadyGoApp() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pickup, setPickup] = useState('');
+  const [pickupSearchOpen, setPickupSearchOpen] = useState(false);
+  const [pickupSearchQuery, setPickupSearchQuery] = useState('');
+  const [pickupSuggestions, setPickupSuggestions] = useState([]);
+  const [pickupSuggestionsLoading, setPickupSuggestionsLoading] = useState(false);
   const [destination, setDestination] = useState('');
   const [destinationSearchOpen, setDestinationSearchOpen] = useState(false);
   const [destinationSearchQuery, setDestinationSearchQuery] = useState('');
@@ -447,6 +451,38 @@ export default function LadyGoApp() {
   const [route, setRoute] = useState([]);
   const [routeInfo, setRouteInfo] = useState(null);
   const [locationBusy, setLocationBusy] = useState(false);
+
+  useEffect(() => {
+    const query = pickupSearchQuery.trim();
+    if (!pickupSearchOpen || query.length < 2) {
+      setPickupSuggestions([]);
+      setPickupSuggestionsLoading(false);
+      return undefined;
+    }
+    let active = true;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setPickupSuggestionsLoading(true);
+      try {
+        const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&namedetails=1&limit=8&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(query);
+        const response = await fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
+        if (!response.ok) throw new Error('Address suggestions unavailable');
+        const results = await response.json();
+        if (active) setPickupSuggestions((results || []).filter(item =>
+          Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon))
+        ));
+      } catch (_) {
+        if (active) setPickupSuggestions([]);
+      } finally {
+        if (active) setPickupSuggestionsLoading(false);
+      }
+    }, 650);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [pickupSearchQuery, pickupSearchOpen]);
 
   useEffect(() => {
     const query = destinationSearchQuery.trim();
@@ -1751,7 +1787,65 @@ export default function LadyGoApp() {
             <Text style={s.savedChipText}>📦 Курьер — {configuredCourierPrice} ₽</Text>
           </TouchableOpacity>
         </View>
-        <Input label="Откуда" value={pickup} onChangeText={v => { setPickup(v); setCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }} placeholder="Адрес подачи" />
+        <View style={s.field}>
+          <Text style={s.label}>Откуда</Text>
+          <TouchableOpacity activeOpacity={0.8} onPress={() => {
+            setPickupSearchQuery(pickup);
+            setPickupSuggestions([]);
+            setPickupSearchOpen(true);
+          }} style={[s.input, { minHeight: 48, justifyContent: 'center' }]}>
+            <Text style={{ color: pickup ? C.ink : '#B6AAB0', fontSize: 15 }} numberOfLines={2}>
+              {pickup || 'Выбери город и точный адрес'}
+            </Text>
+          </TouchableOpacity>
+          <Text style={s.muted}>Откроется поиск адреса с выбором города</Text>
+        </View>
+        <Modal visible={pickupSearchOpen} animationType="slide" presentationStyle="fullScreen"
+          onRequestClose={() => { setPickupSearchOpen(false); setPickupSuggestions([]); }}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: '#FCFAFB' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.line, backgroundColor: C.white }}>
+              <TouchableOpacity onPress={() => { setPickupSearchOpen(false); setPickupSuggestions([]); }} style={{ padding: 5 }}>
+                <Text style={{ color: C.pinkDark, fontSize: 25, fontWeight: '700' }}>‹</Text>
+              </TouchableOpacity>
+              <Text style={{ color: C.ink, fontSize: 19, fontWeight: '800' }}>Откуда поедем?</Text>
+            </View>
+            <View style={{ padding: 16, gap: 10 }}>
+              <TextInput value={pickupSearchQuery} onChangeText={setPickupSearchQuery}
+                placeholder="Улица, дом или место" placeholderTextColor="#B6AAB0"
+                autoFocus returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
+              <Text style={s.muted}>Введи адрес и выбери нужный город в полном адресе.</Text>
+              {pickupSuggestionsLoading && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 12 }}>
+                <ActivityIndicator color={C.pink} /><Text style={s.muted}>Ищем адреса…</Text>
+              </View>}
+              {!pickupSuggestionsLoading && pickupSearchQuery.trim().length >= 2 && pickupSuggestions.length === 0 &&
+                <Text style={[s.muted, { paddingVertical: 12 }]}>Ничего не найдено. Попробуй добавить город или изменить запрос.</Text>}
+              <ScrollView keyboardShouldPersistTaps="handled">
+                {pickupSuggestions.map((item, index) => {
+                  const address = item.address || {};
+                  const city = address.city || address.town || address.village || address.municipality || address.county || '';
+                  const street = address.road || address.pedestrian || address.residential || item.name || '';
+                  const house = address.house_number ? ', ' + address.house_number : '';
+                  const primary = [street + house, city].filter(Boolean).join(', ') || item.display_name || 'Адрес';
+                  return <TouchableOpacity key={item.place_id || (item.lat + '-' + item.lon)} activeOpacity={0.75}
+                    onPress={() => {
+                      const point = { latitude: Number(item.lat), longitude: Number(item.lon) };
+                      setPickup(item.display_name || primary);
+                      setCoords(point);
+                      setPickupSuggestions([]);
+                      setPickupSearchOpen(false);
+                      setStopCoords([]);
+                      setRoute([]);
+                      setRouteInfo(null);
+                    }}
+                    style={{ paddingVertical: 14, borderBottomWidth: index === pickupSuggestions.length - 1 ? 0 : 1, borderBottomColor: C.line, gap: 4 }}>
+                    <Text style={{ color: C.ink, fontSize: 15, fontWeight: '700' }}>{primary}</Text>
+                    <Text style={s.muted} numberOfLines={2}>{item.display_name}</Text>
+                  </TouchableOpacity>;
+                })}
+              </ScrollView>
+            </View>
+          </SafeAreaView>
+        </Modal>
         <Button title="Определить моё местоположение" secondary compact onPress={getCurrentLocation} />
         <View style={s.field}>
           <Text style={s.label}>Куда</Text>
