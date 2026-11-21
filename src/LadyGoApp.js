@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.8.5';
+const APP_VERSION = '6.7.8.7';
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
 const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
 const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
@@ -371,9 +371,11 @@ const errorText = error => {
 };
 
 function Button({ title, onPress, secondary, danger, disabled, compact }) {
-  return <TouchableOpacity activeOpacity={0.82} disabled={disabled} onPress={onPress}
+  return <TouchableOpacity activeOpacity={0.76} disabled={disabled} onPress={onPress}
+    accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled: !!disabled }}
+    hitSlop={4}
     style={[s.button, secondary && s.buttonSecondary, danger && s.buttonDanger,
-      disabled && { opacity: 0.45 }, compact && { paddingVertical: 10 }]}>
+      disabled && s.buttonDisabled, compact && { paddingVertical: 11, minHeight: 42 }]}>
     <Text style={[s.buttonText, secondary && { color: C.pinkDark }, danger && { color: C.red }]}>{title}</Text>
   </TouchableOpacity>;
 }
@@ -381,8 +383,10 @@ function Input({ label, value, onChangeText, placeholder, keyboardType, secureTe
   return <View style={s.field}>
     {label ? <Text style={s.label}>{label}</Text> : null}
     <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder || label}
-      placeholderTextColor="#B6AAB0" keyboardType={keyboardType} secureTextEntry={secureTextEntry}
-      multiline={multiline} autoCapitalize="none" style={[s.input, multiline && { minHeight: 76, textAlignVertical: 'top' }]} />
+      placeholderTextColor="#A99DA3" keyboardType={keyboardType} secureTextEntry={secureTextEntry}
+      multiline={multiline} autoCapitalize="none" selectionColor={C.pink}
+      accessibilityLabel={label || placeholder || 'Поле ввода'}
+      style={[s.input, multiline && { minHeight: 88, textAlignVertical: 'top' }]} />
   </View>;
 }
 function Pill({ children, color = C.pink }) {
@@ -2634,14 +2638,14 @@ class LadyGoErrorBoundary extends React.Component {
 export default function LadyGoApp() { return <LadyGoErrorBoundary><LadyGoAppContent /></LadyGoErrorBoundary>; }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FAF9FA' },
+  safe: { flex: 1, backgroundColor: '#F8F7F8' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, backgroundColor: C.pale },
   auth: { flex: 1, justifyContent: 'center', padding: 22, backgroundColor: C.pale },
   brand: { color: C.pink, fontSize: 42, fontWeight: '900', textAlign: 'center', letterSpacing: -1 },
   brandSmall: { color: C.pink, fontSize: 26, fontWeight: '900', letterSpacing: -0.7 },
   tagline: { textAlign: 'center', color: C.muted, marginBottom: 28, marginTop: 4 },
   topSub: { color: C.muted, fontSize: 11, marginTop: -2 },
-  topbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 13, backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: '#F7EEF1' },
+  topbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: '#F0EAED' },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.pale, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: C.pinkDark, fontSize: 17, fontWeight: '800' },
   driverAvatar: { width: 68, height: 68, borderRadius: 34, backgroundColor: C.pale },
@@ -2653,23 +2657,24 @@ const s = StyleSheet.create({
   roleActive: { backgroundColor: C.white, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 5, elevation: 2 },
   roleText: { color: C.muted, fontWeight: '700', fontSize: 12 },
   roleTextActive: { color: C.pinkDark },
-  content: { padding: 16, paddingBottom: 36, gap: 14 },
-  mapWrap: { height: 245, borderRadius: 20, overflow: 'hidden', position: 'relative', backgroundColor: C.map },
+  content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 42, gap: 15 },
+  mapWrap: { height: 250, borderRadius: 18, overflow: 'hidden', position: 'relative', backgroundColor: C.map, borderWidth: 1, borderColor: '#EEE7EA' },
   map: { flex: 1 },
   locButton: { position: 'absolute', bottom: 12, right: 12, backgroundColor: C.white, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, elevation: 3 },
   locText: { color: C.ink, fontSize: 12, fontWeight: '700' },
-  card: { backgroundColor: C.white, borderRadius: 18, borderWidth: 1, borderColor: '#EEE8EB', padding: 17, gap: 12, shadowColor: '#33232A', shadowOpacity: 0.025, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
-  title: { fontSize: 24, fontWeight: '800', color: C.ink, letterSpacing: -0.55 },
-  heading: { fontSize: 19, fontWeight: '800', color: C.ink },
+  card: { backgroundColor: C.white, borderRadius: 18, borderWidth: 1, borderColor: '#EEE8EB', padding: 17, gap: 13, shadowColor: '#33232A', shadowOpacity: 0.025, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
+  title: { fontSize: 24, fontWeight: '800', color: C.ink, letterSpacing: -0.6, lineHeight: 30 },
+  heading: { fontSize: 19, fontWeight: '800', color: C.ink, letterSpacing: -0.25 },
   section: { color: C.ink, fontSize: 16, fontWeight: '750', marginTop: 5, letterSpacing: -0.15 },
   field: { gap: 6, marginTop: 4 },
-  label: { color: C.muted, fontSize: 12, fontWeight: '700' },
-  input: { borderWidth: 1, borderColor: '#E9E2E6', borderRadius: 14, paddingHorizontal: 15, paddingVertical: 13, color: C.ink, backgroundColor: '#FFFFFF', fontSize: 16 },
-  button: { backgroundColor: C.pink, paddingVertical: 15, paddingHorizontal: 17, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 5, shadowColor: C.pinkDark, shadowOpacity: 0.08, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
-  buttonSecondary: { backgroundColor: C.pale, borderWidth: 1, borderColor: '#F5D8E3' },
+  label: { color: '#81757C', fontSize: 12, fontWeight: '700', letterSpacing: 0.1 },
+  input: { borderWidth: 1, borderColor: '#E8E1E5', borderRadius: 14, paddingHorizontal: 15, paddingVertical: 14, color: C.ink, backgroundColor: '#FFFFFF', fontSize: 16, minHeight: 50 },
+  button: { backgroundColor: C.pink, paddingVertical: 15, paddingHorizontal: 18, minHeight: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 5, shadowColor: C.pinkDark, shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
+  buttonSecondary: { backgroundColor: '#FFF8FA', borderWidth: 1, borderColor: '#F0DCE4' },
+  buttonDisabled: { opacity: 0.42, elevation: 0, shadowOpacity: 0 },
   buttonDanger: { backgroundColor: '#FFF5F6', borderColor: '#F1D6DC' },
-  buttonText: { color: C.white, fontWeight: '800', fontSize: 14 },
-  muted: { color: C.muted, fontSize: 12, lineHeight: 18 },
+  buttonText: { color: C.white, fontWeight: '800', fontSize: 14, letterSpacing: 0.05 },
+  muted: { color: '#877B82', fontSize: 13, lineHeight: 19 },
   routeInfo: { color: C.pinkDark, fontWeight: '800', fontSize: 13, paddingTop: 4 },
   tariff: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderRadius: 16, borderWidth: 1, borderColor: C.line, backgroundColor: C.white },
   tariffSelected: { borderColor: C.pink, backgroundColor: C.pale },
@@ -2687,13 +2692,13 @@ const s = StyleSheet.create({
   stats: { flexDirection: 'row', gap: 10 },
   stat: { flex: 1, alignItems: 'center' },
   statNum: { fontSize: 26, color: C.pink, fontWeight: '900' },
-  bottomNav: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.line, paddingTop: 9, paddingBottom: Platform.OS === 'android' ? 10 : 6, paddingHorizontal: 7, backgroundColor: C.white, elevation: 10 },
-  navItem: { flex: 1, alignItems: 'center', gap: 2 },
+  bottomNav: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#EEE8EB', paddingTop: 10, paddingBottom: Platform.OS === 'android' ? 11 : 7, paddingHorizontal: 8, backgroundColor: C.white, elevation: 8 },
+  navItem: { flex: 1, alignItems: 'center', gap: 3, minHeight: 42, justifyContent: 'center' },
   navIconWrap: { position: 'relative', minWidth: 26, alignItems: 'center' },
   navBadge: { position: 'absolute', top: -5, right: -12, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: C.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3, borderWidth: 1, borderColor: C.white },
   navBadgeText: { color: C.white, fontSize: 9, fontWeight: '900' },
   navIcon: { color: C.muted, fontSize: 22, fontWeight: '700' },
-  navLabel: { color: C.muted, fontSize: 10, fontWeight: '600' },
+  navLabel: { color: C.muted, fontSize: 11, fontWeight: '600' },
   savedChip: { backgroundColor: C.pale, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   savedChipText: { color: C.pinkDark, fontWeight: '700', fontSize: 12 },
 });
