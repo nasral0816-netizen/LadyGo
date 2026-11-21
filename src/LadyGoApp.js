@@ -116,12 +116,10 @@ const STATUS = {
 };
 const money = value => value == null ? 'Стоимость согласует водитель' : `${value} ₽`;
 async function searchAddressSuggestions(query, signal) {
-  const raw = String(query || '').replace(/\\s+/g, ' ').trim();
+  const raw = String(query || '').replace(/\s+/g, ' ').trim();
   if (raw.length < 2) return [];
 
-  // Russian address providers often fail when street, house and city are
-  // typed as one unpunctuated phrase (e.g. "Кутузова 44 Кисловодск").
-  // Build a few equivalent forms, keeping the user's original query first.
+  // Normalize unpunctuated Russian addresses such as "Кутузова 44 Кисловодск".
   const knownCities = [
     'Кисловодск', 'Пятигорск', 'Ессентуки', 'Минеральные Воды',
     'Железноводск', 'Черкесск', 'Ставрополь', 'Невинномысск',
@@ -129,14 +127,14 @@ async function searchAddressSuggestions(query, signal) {
   ];
   const lower = raw.toLocaleLowerCase('ru-RU');
   const city = knownCities.find(name => lower.includes(name.toLocaleLowerCase('ru-RU'))) || 'Кисловодск';
-  const streetPart = knownCities.reduce((value, name) =>
-    value.replace(new RegExp(name.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'), 'ig'), '').trim(), raw
-  ).replace(/[;,]+/g, ' ').replace(/\\s+/g, ' ').trim();
-  const houseMatch = streetPart.match(/^(.+?)\\s+(\\d+[\\wА-Яа-я/-]*)$/u);
+  const cityIndex = lower.lastIndexOf(city.toLocaleLowerCase('ru-RU'));
+  const streetPart = (cityIndex >= 0 ? raw.slice(0, cityIndex) : raw)
+    .replace(/[;,]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const houseMatch = streetPart.match(/^(.+?)\s+(\d+[\wА-Яа-я/-]*)$/u);
   const canonical = houseMatch
-    ? `${houseMatch[1]}, ${houseMatch[2]}, ${city}, Россия`
-    : `${streetPart || raw}, ${city}, Россия`;
-  const queries = [...new Set([canonical, raw, `${streetPart}, ${city}, Россия`].filter(Boolean))];
+    ? houseMatch[1] + ', ' + houseMatch[2] + ', ' + city + ', Россия'
+    : (streetPart || raw) + ', ' + city + ', Россия';
+  const queries = [...new Set([canonical, raw, streetPart + ', ' + city + ', Россия'].filter(Boolean))];
 
   const collected = [];
   const add = items => {
@@ -144,14 +142,14 @@ async function searchAddressSuggestions(query, signal) {
       const lat = Number(item?.lat);
       const lon = Number(item?.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-      const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
-      if (!collected.some(existing => `${Number(existing.lat).toFixed(5)},${Number(existing.lon).toFixed(5)}` === key)) {
-        collected.push(item);
-      }
+      const key = lat.toFixed(5) + ',' + lon.toFixed(5);
+      if (!collected.some(existing =>
+        Number(existing.lat).toFixed(5) + ',' + Number(existing.lon).toFixed(5) === key
+      )) collected.push(item);
     }
   };
 
-  // Nominatim: use the normalized street/house/city form first.
+  // First provider: Nominatim with a normalized street/house/city query.
   try {
     const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&namedetails=1&limit=8&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(queries[0]);
     const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
@@ -160,9 +158,8 @@ async function searchAddressSuggestions(query, signal) {
     if (signal?.aborted) throw error;
   }
 
-  // Photon fallback: try normalized form, then the exact text if needed.
-  for (const photonQuery of [queries[0], raw]) {
-    if (collected.length >= 8) break;
+  // Backup provider: Photon. Retry the exact user text if normalized search is empty.
+  for (const photonQuery of (collected.length ? [] : [queries[0], raw])) {
     try {
       const url = 'https://photon.komoot.io/api/?lang=ru&limit=8&q=' + encodeURIComponent(photonQuery);
       const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
