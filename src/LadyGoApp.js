@@ -4,7 +4,7 @@ import {
   SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -80,15 +80,15 @@ const FIXED_ROUTE_PRICES = [
 ];
 const normalizePlace = value => String(value || '').toLowerCase().replace(/ё/g, 'е')
   .replace(/[ъь]/g, '').replace(/[^а-яa-z0-9]+/g, ' ').trim();
-const fixedRoutePrice = (destination, hasStops = false) => {
+const fixedRoutePrice = (destination, hasStops = false, priceList = FIXED_ROUTE_PRICES) => {
   if (hasStops) return null;
   const place = normalizePlace(destination);
   if (!place) return null;
   const suburb = /пригород|посел|село|станиц|окраин/.test(place);
   if (suburb && place.includes('ессентук')) return 1100;
   if (suburb && place.includes('пятигор')) return 1600;
-  const match = FIXED_ROUTE_PRICES.find(item => item.aliases.some(alias => place.includes(normalizePlace(alias))));
-  if (match) return match.price;
+  const match = priceList.find(item => item.is_active !== false && (item.aliases || []).some(alias => place.includes(normalizePlace(alias))));
+  if (match) return Number(match.price_rub ?? match.price);
   return suburb ? 350 : null;
 };
 const TARIFFS = [
@@ -158,9 +158,10 @@ function TripProgress({ status }) {
 }
 function Card({ children, style }) { return <View style={[s.card, style]}>{children}</View>; }
 
-function TripMap({ order }) {
+function TripMap({ order, driverLocation }) {
   const [roadRoute, setRoadRoute] = useState([]);
   const [routeSummary, setRouteSummary] = useState(null);
+  const [driverEtaMinutes, setDriverEtaMinutes] = useState(null);
   const hasCoords = order.pickup_lat != null && order.pickup_lng != null && order.destination_lat != null && order.destination_lng != null;
   const start = { latitude: Number(order.pickup_lat || 0), longitude: Number(order.pickup_lng || 0) };
   const end = { latitude: Number(order.destination_lat || 0), longitude: Number(order.destination_lng || 0) };
@@ -195,21 +196,30 @@ function TripMap({ order }) {
     return () => { active = false; };
   }, [hasCoords, routeKey]);
 
+  useEffect(() => {
+    let active = true;
+    setDriverEtaMinutes(null);
+    if (!driverLocation?.latitude || !driverLocation?.longitude || !hasCoords || !['accepted', 'arrived'].includes(order.status)) return () => { active = false; };
+    fetch(`https://router.project-osrm.org/route/v1/driving/${driverLocation.longitude},${driverLocation.latitude};${start.longitude},${start.latitude}?overview=false`)
+      .then(response => { if (!response.ok) throw new Error('ETA unavailable'); return response.json(); })
+      .then(json => { const seconds = json.routes?.[0]?.duration; if (active && Number.isFinite(seconds)) setDriverEtaMinutes(Math.max(1, Math.round(seconds / 60))); })
+      .catch(() => { if (active) setDriverEtaMinutes(null); });
+    return () => { active = false; };
+  }, [driverLocation?.latitude, driverLocation?.longitude, hasCoords, order.status, start.latitude, start.longitude]);
+
   if (!hasCoords) return null;
-  if (Platform.OS === 'android') {
-    return <View style={{ backgroundColor: C.pale, borderRadius: 14, padding: 14 }}>
-      <Text style={s.muted}>Карта временно отключена на Android. Маршрут и адреса сохранены.</Text>
-      {routeSummary && <Text style={s.routeInfo}>{routeSummary.km} км · около {routeSummary.minutes} мин по дороге</Text>}
-    </View>;
-  }
   return <View style={{ gap: 7 }}>
-    <MapView style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: (start.latitude + end.latitude) / 2, longitude: (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
+    <MapView mapType="none" style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: driverLocation?.latitude ?? (start.latitude + end.latitude) / 2, longitude: driverLocation?.longitude ?? (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
+      <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
       <Marker coordinate={start} title="Подача" pinColor={C.pink} />
+      {driverLocation?.latitude != null && driverLocation?.longitude != null && <Marker coordinate={{ latitude: driverLocation.latitude, longitude: driverLocation.longitude }} title="Водитель LadyGo" description="Текущее местоположение" pinColor="#26865A" />}
       {stops.map((point, index) => <Marker key={'trip-stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} description={point.address} pinColor="#D69A35" />)}
       <Marker coordinate={end} title="Назначение" pinColor={C.blue} />
       <Polyline coordinates={roadRoute.length > 1 ? roadRoute : routePoints} strokeColor={C.pink} strokeWidth={4} />
     </MapView>
     {routeSummary && <Text style={s.routeInfo}>{routeSummary.km} км · около {routeSummary.minutes} мин по дороге</Text>}
+    {driverEtaMinutes != null && <Text style={[s.routeInfo, { color: C.green }]}>Водитель примерно через {driverEtaMinutes} мин</Text>}
+    {driverLocation?.updated_at && <Text style={s.muted}>Геопозиция обновлена: {new Date(driverLocation.updated_at).toLocaleTimeString()}</Text>}
   </View>;
 }
 
@@ -363,6 +373,8 @@ export default function LadyGoApp() {
   const [supportReplyDraft, setSupportReplyDraft] = useState({});
   const [tariffRates, setTariffRates] = useState([]);
   const [rateDraft, setRateDraft] = useState({});
+  const [fixedPrices, setFixedPrices] = useState([]);
+  const [fixedPriceDraft, setFixedPriceDraft] = useState({});
   const [ratingDraft, setRatingDraft] = useState({});
   const [ratingComments, setRatingComments] = useState({});
   const [applications, setApplications] = useState([]);
@@ -399,7 +411,7 @@ export default function LadyGoApp() {
   const driverRecentEarnings = useMemo(() => driverCompletedOrders.reduce((sum, order) => sum + Number(order.price_rub || 0), 0), [driverCompletedOrders]);
   const unreadCount = notifications.filter(item => !item.read_at).length;
   const selectedTariffRate = tariffRates.find(rate => rate.tariff_id === tariff && rate.is_active);
-  const fixedFare = serviceType === 'courier' ? 300 : fixedRoutePrice(destination, Boolean(stopsText.trim()));
+  const fixedFare = serviceType === 'courier' ? 300 : fixedRoutePrice(destination, Boolean(stopsText.trim()), fixedPrices.length ? fixedPrices : FIXED_ROUTE_PRICES);
   const hasCustomRate = selectedTariffRate && (
     Number(selectedTariffRate.minimum_fare_rub) > 0 ||
     Number(selectedTariffRate.base_fare_rub) > 0 ||
@@ -530,6 +542,13 @@ export default function LadyGoApp() {
     setTariffRates(data || []);
   }, [user]);
 
+  const loadFixedPrices = useCallback(async () => {
+    if (!user || !supabase) return;
+    const { data, error } = await supabase.from('fixed_route_prices').select('*').order('display_name');
+    if (error) throw error;
+    setFixedPrices(data || []);
+  }, [user]);
+
   const loadApplications = useCallback(async () => {
     if (!user || !profile || !supabase) return;
     let query = supabase.from('driver_applications').select('*').order('created_at', { ascending: false });
@@ -547,9 +566,9 @@ export default function LadyGoApp() {
 
   const refreshAll = useCallback(async () => {
     try {
-      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces(), loadNotifications(), loadRatings(), loadTariffRates(), loadSupportTickets(), loadDriverProfile()]);
+      await Promise.all([loadOrders(), loadApplications(), loadSavedPlaces(), loadNotifications(), loadRatings(), loadTariffRates(), loadFixedPrices(), loadSupportTickets(), loadDriverProfile()]);
     } catch (e) { Alert.alert('Не удалось обновить данные', errorText(e)); }
-  }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications, loadRatings, loadTariffRates, loadSupportTickets, loadDriverProfile]);
+  }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications, loadRatings, loadTariffRates, loadFixedPrices, loadSupportTickets, loadDriverProfile]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -611,6 +630,9 @@ export default function LadyGoApp() {
   }, [loadProfile]);
 
   useEffect(() => { if (user && profile) refreshAll(); }, [user, profile, refreshAll]);
+  useEffect(() => {
+    setFixedPriceDraft(Object.fromEntries(fixedPrices.map(item => [item.route_key, String(item.price_rub ?? '')])));
+  }, [fixedPrices]);
   useEffect(() => {
     setRateDraft(Object.fromEntries(tariffRates.map(rate => [rate.tariff_id, {
       base_fare_rub: String(rate.base_fare_rub ?? ''),
@@ -1164,6 +1186,21 @@ export default function LadyGoApp() {
     await loadSupportTickets();
   };
 
+  const saveFixedPrices = async () => {
+    const now = new Date().toISOString();
+    const rows = fixedPrices.map(item => {
+      const price = Number(String(fixedPriceDraft[item.route_key] ?? item.price_rub).replace(',', '.'));
+      if (!Number.isFinite(price) || price <= 0) throw new Error('Цена маршрута должна быть числом больше нуля.');
+      return { route_key: item.route_key, display_name: item.display_name, aliases: item.aliases || [], price_rub: price, is_active: item.is_active !== false, updated_at: now };
+    });
+    setBusy(true);
+    const { error } = await supabase.from('fixed_route_prices').upsert(rows, { onConflict: 'route_key' });
+    setBusy(false);
+    if (error) return Alert.alert('Фиксированные цены', errorText(error));
+    await loadFixedPrices();
+    Alert.alert('Цены сохранены', 'Новые фиксированные цены применены к новым заказам.');
+  };
+
   const saveTariffRates = async () => {
     const now = new Date().toISOString();
     const rows = TARIFFS.map(item => {
@@ -1473,7 +1510,7 @@ export default function LadyGoApp() {
     </View>
 
     {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
-      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripProgress status={activeOrder.status} /><TripMap order={activeOrder} />{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}
+      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripProgress status={activeOrder.status} /><TripMap order={activeOrder} driverLocation={driverLocation} />{activeOrder.status === 'new' && <Text style={s.muted}>Ожидаем подтверждения водителя.</Text>}
         {['new','accepted','arrived'].includes(activeOrder.status) && <Button title={busy ? 'Отменяем…' : 'Отменить поездку'} danger secondary compact disabled={busy} onPress={() => cancelOrder(activeOrder)} />}
         <View style={s.row}>
           <View style={{ flex: 1 }}><Button title="Поделиться поездкой" secondary compact onPress={() => shareTripDetails(activeOrder)} /></View>
@@ -1510,15 +1547,14 @@ export default function LadyGoApp() {
           onPress={() => submitRating(order)} />
       </Card>)}
       <View style={s.mapWrap}>
-        {Platform.OS === 'android'
-          ? <View style={[s.map, { alignItems: 'center', justifyContent: 'center', padding: 18, backgroundColor: C.pale }]}><Text style={s.muted}>Карта временно отключена на Android. Адрес подачи можно определить кнопкой ниже.</Text></View>
-          : <MapView ref={mapRef} style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
-              {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
-              {stopCoords.map((point, index) => <Marker key={'stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} pinColor="#D69A35" />)}
-              {destinationCoords && <Marker coordinate={destinationCoords} title="Назначение" pinColor={C.blue} />}
-              {driverLocation && <Marker coordinate={driverLocation} title="Автомобиль LadyGo" pinColor="#26865A" />}
-              {route.length > 1 && <Polyline coordinates={route} strokeColor={C.pink} strokeWidth={5} />}
-            </MapView>}
+        <MapView ref={mapRef} mapType="none" style={s.map} region={driverLocation ? { ...driverLocation, latitudeDelta: 0.025, longitudeDelta: 0.025 } : mapRegion} showsUserLocation showsMyLocationButton={false}>
+          <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
+          {coords && <Marker coordinate={coords} title="Подача" pinColor={C.pink} />}
+          {stopCoords.map((point, index) => <Marker key={'stop-' + index} coordinate={point} title={'Остановка ' + (index + 1)} pinColor="#D69A35" />)}
+          {destinationCoords && <Marker coordinate={destinationCoords} title="Назначение" pinColor={C.blue} />}
+          {driverLocation && <Marker coordinate={driverLocation} title="Автомобиль LadyGo" pinColor="#26865A" />}
+          {route.length > 1 && <Polyline coordinates={route} strokeColor={C.pink} strokeWidth={5} />}
+        </MapView>
         <TouchableOpacity style={s.locButton} onPress={getCurrentLocation}><Text style={s.locText}>{locationBusy ? 'Определяем…' : '◎ Моё местоположение'}</Text></TouchableOpacity>
       </View>
       <Card>
@@ -1646,6 +1682,12 @@ export default function LadyGoApp() {
     {mode === 'admin' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
       <Text style={s.title}>Панель администратора</Text>
       <View style={s.stats}><Card style={s.stat}><Text style={s.statNum}>{orders.length}</Text><Text style={s.muted}>Заказов</Text></Card><Card style={s.stat}><Text style={s.statNum}>{applications.filter(a => a.status === 'pending').length}</Text><Text style={s.muted}>Заявок</Text></Card></View>
+      <Text style={s.section}>Фиксированные цены маршрутов</Text>
+      <Card>
+        <Text style={s.muted}>Эти цены применяются автоматически. Администратор может менять их здесь — новая цена действует для новых заказов.</Text>
+        {fixedPrices.map(item => <Input key={item.route_key} label={item.display_name + ', ₽'} value={fixedPriceDraft[item.route_key] ?? String(item.price_rub)} onChangeText={value => setFixedPriceDraft(p => ({ ...p, [item.route_key]: value }))} keyboardType="numeric" />)}
+        <Button title={busy ? 'Сохраняем…' : 'Сохранить фиксированные цены'} onPress={() => saveFixedPrices().catch(e => Alert.alert('Фиксированные цены', errorText(e)))} disabled={busy || fixedPrices.length === 0} />
+      </Card>
       <Text style={s.section}>Настройки тарифов</Text>
       <Card>
         <Text style={s.muted}>Укажи реальные цены LadyGo. Пока значения равны нулю, пассажирам не показывается выдуманная стоимость.</Text>
