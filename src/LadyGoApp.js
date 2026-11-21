@@ -259,6 +259,8 @@ const shareTripDetails = async order => {
     'Откуда: ' + order.pickup_address,
     stops ? 'Остановки:\n' + stops : '',
     'Куда: ' + order.destination_address,
+    'Услуга: ' + (order.service_type === 'courier' ? 'Курьерская доставка' : 'Поездка'),
+    order.door_to_door ? 'От двери до двери (+100 ₽)' : '',
     'Тариф: ' + tariffName,
     'Стоимость: ' + money(order.price_rub),
     'Оплата: ' + (order.payment_method === 'transfer_to_driver' ? 'Перевод водителю' : 'Наличными'),
@@ -391,9 +393,14 @@ export default function LadyGoApp() {
   const unreadCount = notifications.filter(item => !item.read_at).length;
   const selectedTariffRate = tariffRates.find(rate => rate.tariff_id === tariff && rate.is_active);
   const fixedFare = serviceType === 'courier' ? 300 : fixedRoutePrice(destination, Boolean(stopsText.trim()));
+  const hasCustomRate = selectedTariffRate && (
+    Number(selectedTariffRate.minimum_fare_rub) > 0 ||
+    Number(selectedTariffRate.base_fare_rub) > 0 ||
+    Number(selectedTariffRate.per_km_rub) > 0
+  );
   const estimatedPrice = fixedFare != null
     ? fixedFare + (doorToDoor && serviceType === 'ride' ? 100 : 0)
-    : routeInfo && selectedTariffRate
+    : routeInfo && hasCustomRate
       ? Math.round(Math.max(Number(selectedTariffRate.minimum_fare_rub), Number(selectedTariffRate.base_fare_rub) + Number(routeInfo.km) * Number(selectedTariffRate.per_km_rub)) + (doorToDoor ? 100 : 0))
       : null;
 
