@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Linking, Platform, Share, RefreshControl,
+  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Linking, Modal, Platform, Share, RefreshControl,
   SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
@@ -422,6 +422,8 @@ export default function LadyGoApp() {
   const [password, setPassword] = useState('');
   const [pickup, setPickup] = useState('');
   const [destination, setDestination] = useState('');
+  const [destinationSearchOpen, setDestinationSearchOpen] = useState(false);
+  const [destinationSearchQuery, setDestinationSearchQuery] = useState('');
   const [destinationSuggestions, setDestinationSuggestions] = useState([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [phone, setPhone] = useState('');
@@ -447,8 +449,8 @@ export default function LadyGoApp() {
   const [locationBusy, setLocationBusy] = useState(false);
 
   useEffect(() => {
-    const query = destination.trim();
-    if (query.length < 3 || destinationCoords) {
+    const query = destinationSearchQuery.trim();
+    if (!destinationSearchOpen || query.length < 2) {
       setDestinationSuggestions([]);
       setSuggestionsLoading(false);
       return undefined;
@@ -458,23 +460,26 @@ export default function LadyGoApp() {
     const timer = setTimeout(async () => {
       setSuggestionsLoading(true);
       try {
-        const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(query);
+        // Search across Russia and let the user choose the exact city/address.
+        const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&namedetails=1&limit=8&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(query);
         const response = await fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
         if (!response.ok) throw new Error('Address suggestions unavailable');
         const results = await response.json();
-        if (active) setDestinationSuggestions((results || []).filter(item => Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon))));
+        if (active) setDestinationSuggestions((results || []).filter(item =>
+          Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon))
+        ));
       } catch (_) {
         if (active) setDestinationSuggestions([]);
       } finally {
         if (active) setSuggestionsLoading(false);
       }
-    }, 550);
+    }, 650);
     return () => {
       active = false;
       clearTimeout(timer);
       controller.abort();
     };
-  }, [destination, destinationCoords]);
+  }, [destinationSearchQuery, destinationSearchOpen]);
 
   const [orders, setOrders] = useState([]);
   const [historyOrders, setHistoryOrders] = useState([]);
@@ -1703,28 +1708,68 @@ export default function LadyGoApp() {
         </View>
         <Input label="Откуда" value={pickup} onChangeText={v => { setPickup(v); setCoords(null); setStopCoords([]); setRoute([]); setRouteInfo(null); }} placeholder="Адрес подачи" />
         <Button title="Определить моё местоположение" secondary compact onPress={getCurrentLocation} />
-        <Input label="Куда" value={destination} onChangeText={v => { setDestination(v); setDestinationCoords(null); setDestinationSuggestions([]); setStopCoords([]); setRoute([]); setRouteInfo(null); }} placeholder="Начни вводить адрес или место" />
-        {(suggestionsLoading || destinationSuggestions.length > 0) && <View style={{ borderWidth: 1, borderColor: C.line, borderRadius: 13, overflow: 'hidden', backgroundColor: C.white, marginTop: -7 }}>
-          {suggestionsLoading && <Text style={[s.muted, { padding: 11 }]}>Ищем адреса…</Text>}
-          {destinationSuggestions.map((item, index) => (
-            <TouchableOpacity key={item.place_id || (item.lat + '-' + item.lon)} activeOpacity={0.75}
-              onPress={() => {
-                const point = { latitude: Number(item.lat), longitude: Number(item.lon) };
-                const label = item.display_name || destination;
-                setDestination(label);
-                setDestinationCoords(point);
-                setDestinationSuggestions([]);
-                setStopCoords([]);
-                setRoute([]);
-                setRouteInfo(null);
-                if (pickup.trim()) buildRoute(label, point);
-              }}
-              style={{ paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: index === destinationSuggestions.length - 1 ? 0 : 1, borderBottomColor: C.line }}>
-              <Text style={{ color: C.ink, fontSize: 13, fontWeight: '600' }}>{item.name || item.display_name}</Text>
-              {item.name && <Text style={s.muted} numberOfLines={2}>{item.display_name}</Text>}
-            </TouchableOpacity>
-          ))}
-        </View>}
+        <View style={s.field}>
+          <Text style={s.label}>Куда</Text>
+          <TouchableOpacity activeOpacity={0.8} onPress={() => {
+            setDestinationSearchQuery(destination);
+            setDestinationSuggestions([]);
+            setDestinationCoords(null);
+            setDestinationSearchOpen(true);
+          }} style={[s.input, { minHeight: 48, justifyContent: 'center' }]}>
+            <Text style={{ color: destination ? C.ink : '#B6AAB0', fontSize: 15 }} numberOfLines={2}>
+              {destination || 'Выбери город и точный адрес'}
+            </Text>
+          </TouchableOpacity>
+          <Text style={s.muted}>Откроется поиск адреса с выбором города</Text>
+        </View>
+        <Modal visible={destinationSearchOpen} animationType="slide" presentationStyle="fullScreen"
+          onRequestClose={() => { setDestinationSearchOpen(false); setDestinationSuggestions([]); }}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: '#FCFAFB' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.line, backgroundColor: C.white }}>
+              <TouchableOpacity onPress={() => { setDestinationSearchOpen(false); setDestinationSuggestions([]); }} style={{ padding: 5 }}>
+                <Text style={{ color: C.pinkDark, fontSize: 25, fontWeight: '700' }}>‹</Text>
+              </TouchableOpacity>
+              <Text style={{ color: C.ink, fontSize: 19, fontWeight: '800' }}>Куда поедем?</Text>
+            </View>
+            <View style={{ padding: 16, gap: 10 }}>
+              <TextInput value={destinationSearchQuery} onChangeText={setDestinationSearchQuery}
+                placeholder="Улица, дом или место" placeholderTextColor="#B6AAB0"
+                autoFocus returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
+              <Text style={s.muted}>Введи, например, «Зеленогорская 28». Выбери нужный город в полном адресе.</Text>
+              {suggestionsLoading && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 12 }}>
+                <ActivityIndicator color={C.pink} /><Text style={s.muted}>Ищем адреса…</Text>
+              </View>}
+              {!suggestionsLoading && destinationSearchQuery.trim().length >= 2 && destinationSuggestions.length === 0 &&
+                <Text style={[s.muted, { paddingVertical: 12 }]}>Ничего не найдено. Попробуй добавить город или изменить запрос.</Text>}
+              <ScrollView keyboardShouldPersistTaps="handled">
+                {destinationSuggestions.map((item, index) => {
+                  const address = item.address || {};
+                  const city = address.city || address.town || address.village || address.municipality || address.county || '';
+                  const street = address.road || address.pedestrian || address.residential || item.name || '';
+                  const house = address.house_number ? ', ' + address.house_number : '';
+                  const primary = [street + house, city].filter(Boolean).join(', ') || item.display_name || 'Адрес';
+                  return <TouchableOpacity key={item.place_id || (item.lat + '-' + item.lon)} activeOpacity={0.75}
+                    onPress={() => {
+                      const point = { latitude: Number(item.lat), longitude: Number(item.lon) };
+                      const label = item.display_name || primary;
+                      setDestination(label);
+                      setDestinationCoords(point);
+                      setDestinationSuggestions([]);
+                      setDestinationSearchOpen(false);
+                      setStopCoords([]);
+                      setRoute([]);
+                      setRouteInfo(null);
+                      if (pickup.trim()) buildRoute(label, point);
+                    }}
+                    style={{ paddingVertical: 14, borderBottomWidth: index === destinationSuggestions.length - 1 ? 0 : 1, borderBottomColor: C.line, gap: 4 }}>
+                    <Text style={{ color: C.ink, fontSize: 15, fontWeight: '700' }}>{primary}</Text>
+                    <Text style={s.muted} numberOfLines={2}>{item.display_name}</Text>
+                  </TouchableOpacity>;
+                })}
+              </ScrollView>
+            </View>
+          </SafeAreaView>
+        </Modal>
 
         <Input label="Промежуточные точки (по одной на строку)" value={stopsText} onChangeText={v => { setStopsText(v); setStopCoords([]); setRoute([]); setRouteInfo(null); }} multiline placeholder="Можно оставить пустым" />
         {serviceType === 'ride' && <TouchableOpacity onPress={() => setDoorToDoor(value => !value)} style={[s.row, { alignItems: 'center', paddingVertical: 8 }]}>
