@@ -533,6 +533,12 @@ export default function LadyGoApp() {
   const isAdmin = role === 'admin';
   const isDriver = role === 'driver';
   const activeOrder = useMemo(() => orders.find(o => ACTIVE.includes(o.status)), [orders]);
+  const incomingOffer = useMemo(() => {
+    if (!isDriver) return null;
+    return orders
+      .filter(order => order.status === 'new' && !order.driver_id && offerTimes[order.id])
+      .sort((a, b) => new Date(offerTimes[b.id]) - new Date(offerTimes[a.id]))[0] || null;
+  }, [isDriver, orders, offerTimes]);
   const driverCompletedOrders = useMemo(() => orders.filter(order => order.status === 'completed'), [orders]);
   const driverRecentEarnings = useMemo(() => driverCompletedOrders.reduce((sum, order) => sum + Number(order.price_rub || 0), 0), [driverCompletedOrders]);
   const unreadCount = notifications.filter(item => !item.read_at).length;
@@ -1469,9 +1475,21 @@ export default function LadyGoApp() {
     setBusy(true);
     const { data, error } = await supabase.rpc('ladygo_skip_order_offer', { p_order_id: order.id });
     setBusy(false);
-    if (error) Alert.alert('Не удалось пропустить заказ', errorText(error));
+    if (error) Alert.alert('Не удалось отказать от заказа', errorText(error));
     else { await loadOrders(); }
   };
+
+  // An offer is available for 30 seconds. If the driver does not answer,
+  // release it so dispatch can offer the order to the next online driver.
+  useEffect(() => {
+    if (!isDriver || !incomingOffer) return undefined;
+    const createdAt = new Date(offerTimes[incomingOffer.id] || incomingOffer.created_at).getTime();
+    const remaining = Math.max(0, 30000 - (Date.now() - createdAt));
+    const timer = setTimeout(() => {
+      skipOfferedOrder(incomingOffer).catch(() => {});
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [isDriver, incomingOffer?.id, offerTimes]);
 
   const cancelOrder = order => Alert.alert('Отменить поездку?', 'Отмена доступна до начала поездки. После её начала свяжись с поддержкой.', [
     { text: 'Оставить', style: 'cancel' },
@@ -2008,6 +2026,44 @@ export default function LadyGoApp() {
       <Button title="Выйти из аккаунта" danger secondary onPress={logout} />
     </ScrollView>}
 
+    {isDriver && mode === 'driver' && incomingOffer && <Modal
+      visible
+      transparent
+      animationType="fade"
+      onRequestClose={() => skipOfferedOrder(incomingOffer)}
+    >
+      <View style={{ flex: 1, backgroundColor: 'rgba(25, 17, 22, 0.58)', justifyContent: 'center', padding: 18 }}>
+        <View style={{ backgroundColor: C.white, borderRadius: 24, padding: 20, gap: 13, borderWidth: 1, borderColor: '#F3DCE5' }}>
+          <View style={s.rowBetween}>
+            <View style={{ backgroundColor: C.pale, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 }}>
+              <Text style={{ color: C.pinkDark, fontWeight: '900', fontSize: 12 }}>🔔 НОВЫЙ ЗАКАЗ</Text>
+            </View>
+            <Text style={{ color: C.pinkDark, fontWeight: '900', fontSize: 15, fontVariant: ['tabular-nums'] }}>
+              {Math.max(0, 30 - Math.floor((clock - new Date(offerTimes[incomingOffer.id] || incomingOffer.created_at).getTime()) / 1000))} сек.
+            </Text>
+          </View>
+          <Text style={s.title}>Поступил заказ LadyGo</Text>
+          <View style={{ gap: 5 }}>
+            <Text style={s.label}>ЗАБРАТЬ ПАССАЖИРА</Text>
+            <Text style={[s.address, { fontWeight: '700' }]}>{incomingOffer.pickup_address}</Text>
+          </View>
+          <View style={{ height: 1, backgroundColor: C.line }} />
+          <View style={{ gap: 5 }}>
+            <Text style={s.label}>ПУНКТ НАЗНАЧЕНИЯ</Text>
+            <Text style={[s.address, { fontWeight: '700' }]}>{incomingOffer.destination_address}</Text>
+          </View>
+          <View style={{ backgroundColor: C.pale, borderRadius: 14, padding: 13, gap: 5 }}>
+            <Text style={s.muted}>Оплата: {incomingOffer.payment_method === 'transfer_to_driver' ? 'Перевод водителю' : 'Наличными'}</Text>
+            {incomingOffer.estimated_price_rub != null
+              ? <Text style={[s.price, { fontSize: 19 }]}>Цена: {money(incomingOffer.estimated_price_rub)}</Text>
+              : <Input label="Предложи стоимость, ₽" value={String(fare[incomingOffer.id] || '')} onChangeText={v => setFare(p => ({ ...p, [incomingOffer.id]: v }))} keyboardType="numeric" placeholder="Например, 450" />}
+          </View>
+          <Button title={busy ? 'Обрабатываем…' : '✓  Принять заказ'} disabled={busy} onPress={() => acceptOfferedOrder(incomingOffer)} />
+          <Button title="Отказать" secondary danger disabled={busy} onPress={() => skipOfferedOrder(incomingOffer)} />
+          <Text style={[s.muted, { textAlign: 'center' }]}>Если не ответить за 30 секунд, предложение перейдёт следующему водителю.</Text>
+        </View>
+      </View>
+    </Modal>}
     <View style={s.bottomNav}>
       {(mode === 'passenger' ? [{ id: 'ride', label: 'Заказать', icon: '⌖' }, { id: 'notifications', label: 'События', icon: '♧' }, { id: 'profile', label: 'Профиль', icon: '◯' }] : [{ id: 'ride', label: mode === 'admin' ? 'Обзор' : 'Работа', icon: '⌖' }, { id: 'notifications', label: 'События', icon: '♧' }, { id: 'profile', label: 'Профиль', icon: '◯' }]).map(item =>
         <TouchableOpacity key={item.id} onPress={() => setTab(item.id)} style={s.navItem}>
