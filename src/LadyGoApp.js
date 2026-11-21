@@ -358,7 +358,7 @@ function MapLibreMap({ points = [], route = [], height = 245 }) {
   </View>;
 }
 
-function TripMap({ order, driverLocation }) {
+function TripMap({ order, driverLocation, assignedDriver }) {
   const [roadRoute, setRoadRoute] = useState([]);
   const [routeSummary, setRouteSummary] = useState(null);
   const [driverEtaMinutes, setDriverEtaMinutes] = useState(null);
@@ -1469,12 +1469,17 @@ export default function LadyGoApp() {
 
   const createOrder = async () => {
     if (!pickup.trim() || !destination.trim()) return Alert.alert('Маршрут не заполнен', 'Укажи адрес подачи и назначения.');
+    if (!destinationCoords || !Number.isFinite(Number(destinationCoords.latitude)) || !Number.isFinite(Number(destinationCoords.longitude))) {
+      return Alert.alert('Уточни адрес назначения', 'Выбери точный адрес из подсказок. Так LadyGo сохранит правильную точку на карте и построит маршрут без догадок.');
+    }
     if (activeOrder) return Alert.alert('У тебя уже есть активный заказ', 'Заверши или отмени текущую поездку перед новым заказом.');
     setBusy(true);
     try {
       let start = coords, end = destinationCoords;
       if (!start) start = await geocodeAddress(pickup);
-      if (!end) end = await geocodeAddress(destination);
+      if (!start || !Number.isFinite(Number(start.latitude)) || !Number.isFinite(Number(start.longitude))) {
+        throw new Error('Не удалось точно определить адрес подачи. Укажи адрес ещё раз или выбери своё местоположение.');
+      }
       const stopAddresses = stopsText.split(/\n+/).map(x => x.trim()).filter(Boolean);
       if (stopAddresses.length > 20) throw new Error('Можно добавить не больше 20 промежуточных точек.');
       const structuredStops = [];
@@ -1895,7 +1900,7 @@ export default function LadyGoApp() {
     </View>
 
     {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
-      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripProgress status={activeOrder.status} /><TripMap order={activeOrder} driverLocation={driverLocation} />{activeOrder.status === 'new' && <Text style={s.muted}>Ищем свободного водителя. Как только заказ примут, появятся автомобиль и примерное время прибытия.</Text>}
+      {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripProgress status={activeOrder.status} /><TripMap order={activeOrder} driverLocation={driverLocation} assignedDriver={assignedDriver} />{activeOrder.status === 'new' && <Text style={s.muted}>Ищем свободного водителя. Как только заказ примут, появятся автомобиль и примерное время прибытия.</Text>}
         {['new','accepted','arrived'].includes(activeOrder.status) && <Button title={busy ? 'Отменяем…' : 'Отменить поездку'} danger secondary compact disabled={busy} onPress={() => cancelOrder(activeOrder)} />}
         <View style={s.row}>
           <View style={{ flex: 1 }}><Button title="Поделиться поездкой" secondary compact onPress={() => shareTripDetails(activeOrder)} /></View>
