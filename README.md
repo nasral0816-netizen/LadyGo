@@ -1,11 +1,17 @@
 # LadyGo
 
-## Version 1.5.0
+## Релиз 6.7.6.9
 
-- Added a clear passenger trip progress timeline.
-- Added driver trip history for the latest loaded orders.
-- Added a driver dashboard summary for completed trips and recorded fares.
-- Deferred profile loading until the Supabase auth callback has returned, reducing the risk of a sign-in lock/freeze.
-- Android versionCode: 6.
+- Обновлена версия приложения до 6.7.6.9 (Android versionCode 11).
+- Добавлен раздел «О приложении» с версией и подписью независимого автора @acyma.
+- Добавлена пасхалка: нажми на подпись автора 7 раз.
+- Улучшены подсказки при ограничении частоты писем авторизации и при истёкшем коде подтверждения.
+- Сохранены карта OpenStreetMap, построение маршрута, предварительный заказ, избранные адреса, чат поездки, уведомления, оценки и поддержка.
 
-Build validation is performed by GitHub Actions. A successful APK build confirms compilation and artifact creation, not a full live-device test of sign-in, GPS, notifications, or ride dispatch.
+## Проверка перед публичным запуском
+
+Успешная сборка APK подтверждает компиляцию и создание файла, но не заменяет проверку на реальных устройствах. Перед публикацией необходимо проверить вход/регистрацию и восстановление пароля, создание и отмену заказа, фиксированные тарифы, GPS и отображение карты, push-уведомления, чат, работу водителя и администратора, а также правила обработки персональных данных и юридические требования к перевозкам.
+
+## Сборка
+
+Android APK собирается GitHub Actions из ветки `main`. Артефакт сборки доступен в разделе Actions.
