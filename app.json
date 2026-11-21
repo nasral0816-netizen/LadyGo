@@ -45,12 +45,14 @@
           "cameraPermission": false,
           "microphonePermission": false
         }
-      ]
+      ],
+      "@maplibre/maplibre-react-native"
     ],
     "extra": {
       "eas": {
         "projectId": "95ac82ec-010d-4770-9aba-9f52878e1b3b"
       }
-    }
+    },
+    "newArchEnabled": true
   }
 }
