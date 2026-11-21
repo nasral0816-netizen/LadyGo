@@ -456,7 +456,7 @@ const shareTripDetails = async order => {
     stops ? 'Остановки:\n' + stops : '',
     'Куда: ' + order.destination_address,
     'Услуга: ' + (order.service_type === 'courier' ? 'Курьерская доставка' : 'Поездка'),
-    order.door_to_door ? 'От двери до двери (+{configuredDoorToDoorPrice} ₽)' : '',
+    order.door_to_door ? 'От двери до двери' : '',
     'Тариф: ' + tariffName,
     'Стоимость: ' + money(order.price_rub),
     'Оплата: ' + (order.payment_method === 'transfer_to_driver' ? 'Перевод водителю' : 'Наличными'),
@@ -568,8 +568,7 @@ export default function LadyGoApp() {
   const [serviceType, setServiceType] = useState('ride');
   const [doorToDoor, setDoorToDoor] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('cash');
-  const [childAccompanied, setChildAccompanied] = useState(false);
-  const [savedPlaces, setSavedPlaces] = useState([]);
+    const [savedPlaces, setSavedPlaces] = useState([]);
   const [savedLabel, setSavedLabel] = useState('Дом');
   const [savedAddress, setSavedAddress] = useState('');
   const [clock, setClock] = useState(Date.now());
@@ -1920,8 +1919,8 @@ export default function LadyGoApp() {
           <TouchableOpacity onPress={() => setServiceType('ride')} style={[s.savedChip, serviceType === 'ride' && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
             <Text style={s.savedChipText}>🚕 Поездка</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setServiceType('courier'); setTariff('economy'); setChildAccompanied(false); }} style={[s.savedChip, serviceType === 'courier' && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
-            <Text style={s.savedChipText}>📦 Курьер — {configuredCourierPrice} ₽</Text>
+          <TouchableOpacity onPress={() => { setServiceType('courier'); setTariff('economy'); }} style={[s.savedChip, serviceType === 'courier' && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
+            <Text style={s.savedChipText}>📦 Курьерская доставка</Text>
           </TouchableOpacity>
         </View>
         <View style={s.field}>
@@ -2052,7 +2051,7 @@ export default function LadyGoApp() {
           <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: doorToDoor ? C.pink : C.muted, backgroundColor: doorToDoor ? C.pink : C.white, alignItems: 'center', justifyContent: 'center' }}>
             {doorToDoor ? <Text style={{ color: C.white, fontWeight: '900' }}>✓</Text> : null}
           </View>
-          <Text style={[s.address, { flex: 1 }]}>От двери до двери (+{configuredDoorToDoorPrice} ₽)</Text>
+          <Text style={[s.address, { flex: 1 }]}>От двери до двери</Text>
         </TouchableOpacity>}
         <Input label="Когда подать машину" value={requestedFor} onChangeText={setRequestedFor} placeholder="Как можно скорее или ДД.ММ.ГГГГ ЧЧ:ММ" />
         <Text style={s.muted}>Для предварительного заказа введи дату и время, например 25.12.2026 14:30. Такие заказы автоматически отправляются водителям в назначенное время.</Text>
@@ -2065,7 +2064,7 @@ export default function LadyGoApp() {
         </View>
       </Card>
       <Text style={s.section}>Выберите тариф</Text>
-      {TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => { setTariff(t.id); if (t.id !== 'child') setChildAccompanied(false); }} style={[s.tariff, tariff === t.id && s.tariffSelected]}>
+      {TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => { setTariff(t.id); if (t.id !== 'child')  }} style={[s.tariff, tariff === t.id && s.tariffSelected]}>
         <View style={s.tariffIcon}><Text style={s.tariffEmoji}>{t.id === 'child' ? '♡' : t.id === 'comfort' ? '✦' : '↗'}</Text></View>
         <View style={{ flex: 1 }}><Text style={s.tariffName}>{t.name}</Text><Text style={s.muted}>{t.detail}</Text></View>
         <View style={[s.radio, tariff === t.id && s.radioOn]} />
@@ -2145,7 +2144,7 @@ export default function LadyGoApp() {
         {o.estimated_price_rub != null ? <Text style={s.muted}>Ориентир для пассажира: {money(o.estimated_price_rub)}</Text> : null}
         <Text style={s.muted}>Оплата: {o.payment_method === 'transfer_to_driver' ? 'Перевод водителю' : 'Наличными'}</Text>
         {o.estimated_price_rub != null
-          ? <Text style={s.price}>Фиксированная цена: {money(o.estimated_price_rub)}</Text>
+          ? <Text style={s.price}>Стоимость заказа: {money(o.estimated_price_rub)}</Text>
           : <Input label="Стоимость индивидуального маршрута, ₽" value={String(fare[o.id] || '')} onChangeText={v => setFare(p => ({ ...p, [o.id]: v }))} keyboardType="numeric" placeholder="Например, 450" />}
         <Button title="Принять заказ" disabled={busy} onPress={() => acceptOfferedOrder(o)} />
         <Button title="Пропустить" secondary onPress={() => skipOfferedOrder(o)} disabled={busy} compact />
