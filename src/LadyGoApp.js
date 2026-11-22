@@ -42,65 +42,81 @@ async function findAddresses(q) {
   const clean = String(q || '').trim();
   if (clean.length < 2) return [];
 
-  // Если пользователь уже указал город/регион, ищем по всей стране без привязки к Кисловодску.
   const explicitCity = /краснодар|саратов|кисловодск|пятигорск|ессентуки|минеральн|черкесск|невинномысск|ставропол|георгиевск|железноводск|лермонтов|подкумок|карачаевск|домбай/i.test(clean);
-  const searches = explicitCity
-    ? [...new Set([clean, clean + ', Россия'])]
-    : [...new Set([
-        clean + ', Кисловодск, Ставропольский край, Россия',
-        clean + ', Пятигорск, Ставропольский край, Россия',
-        clean + ', Ессентуки, Ставропольский край, Россия',
-        clean + ', Минеральные Воды, Ставропольский край, Россия',
-        clean + ', Черкесск, Карачаево-Черкесия, Россия',
-        clean,
-        clean + ', Россия'
-      ])];
+  const toItems = features => {
+    const found = [];
+    const seen = new Set();
+    for (const feature of features || []) {
+      const p = feature.properties || {};
+      const coords = feature.geometry?.coordinates || [feature.lon, feature.lat];
+      const longitude = Number(coords[0]);
+      const latitude = Number(coords[1]);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+          Math.abs(latitude) > 90 || Math.abs(longitude) > 180) continue;
+      const kind = String(p.osm_value || p.type || '').toLowerCase();
+      const keyType = String(p.osm_key || '').toLowerCase();
+      const isLocality = keyType === 'place' && ['city','town','village','municipality','administrative'].includes(kind);
+      if (isLocality && !explicitCity) continue;
+      const name = p.name || p.street || p.display_name?.split(',')[0] || clean;
+      const city = p.city || p.town || p.village || p.locality || p.address?.city || p.address?.town;
+      const house = p.housenumber || p.address?.house_number;
+      const label = [name, house, city && city !== name ? city : null].filter(Boolean).join(', ');
+      const detail = [p.district || p.address?.suburb, city, p.state || p.address?.state, p.country || p.address?.country]
+        .filter((v, i, a) => v && a.indexOf(v) === i).join(', ');
+      const id = String(p.osm_type || p.osm_id || p.osm_id || feature.id || '') + ':' + latitude.toFixed(5) + ':' + longitude.toFixed(5);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      found.push({ id, label, detail: detail || 'Россия', latitude, longitude,
+        localRank: /ставропольский край|карачаево-черкес/i.test(detail) ? 0 : 1 });
+    }
+    if (!explicitCity) found.sort((a, b) => a.localRank - b.localRank);
+    return found.slice(0, 12).map(({ localRank, ...item }) => item);
+  };
 
-  const found = [];
-  const seen = new Set();
-  const localityOnly = new Set(['city', 'town', 'village', 'municipality', 'administrative']);
-  for (const search of searches) {
-    try {
-      const url = 'https://photon.komoot.io/api/?lang=ru&limit=12&q=' + encodeURIComponent(search);
-      const response = await fetch(url, { headers: { Accept: 'application/json' } });
-      if (!response.ok) continue;
+  // Основной поиск: один запрос Photon с приоритетом КМВ, без серии медленных запросов.
+  try {
+    const params = new URLSearchParams({ q: clean, lang: 'ru', limit: '20' });
+    if (!explicitCity) { params.set('lat', '43.9052'); params.set('lon', '42.7168'); }
+    const response = await fetch('https://photon.komoot.io/api/?' + params.toString(), {
+      headers: { Accept: 'application/json' }
+    });
+    if (response.ok) {
       const json = await response.json();
-      for (const feature of json.features || []) {
-        const p = feature.properties || {};
-        const coords = feature.geometry?.coordinates || [];
-        const latitude = Number(coords[1]);
-        const longitude = Number(coords[0]);
-        if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
-            Math.abs(latitude) > 90 || Math.abs(longitude) > 180) continue;
+      const results = toItems(json.features);
+      if (results.length) return results;
+    }
+  } catch (_) {}
 
-        // Не принимаем города/административные центры за конкретные объекты
-        // вроде мечети: иначе маршрут может вести в центр города.
-        const placeKind = String(p.osm_value || '').toLowerCase();
-        const isLocality = String(p.osm_key || '').toLowerCase() === 'place' && localityOnly.has(placeKind);
-        if (isLocality && !explicitCity) continue;
+  // Резервный геокодер: если Photon недоступен или ничего не нашёл.
+  try {
+    const query = explicitCity ? clean : clean + ', Кисловодск, Россия';
+    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=15&countrycodes=ru&accept-language=ru&q=' + encodeURIComponent(query);
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (response.ok) {
+      const rows = await response.json();
+      const results = toItems(rows.map(row => ({
+        id: row.place_id,
+        lat: row.lat,
+        lon: row.lon,
+        properties: {
+          osm_type: row.osm_type,
+          osm_id: row.osm_id,
+          name: row.name || row.display_name?.split(',')[0],
+          display_name: row.display_name,
+          type: row.type,
+          address: row.address,
+          country: row.address?.country,
+          state: row.address?.state,
+          city: row.address?.city || row.address?.town || row.address?.village,
+          street: row.address?.road,
+          housenumber: row.address?.house_number
+        }
+      })));
+      if (results.length) return results;
+    }
+  } catch (_) {}
 
-        const name = p.name || p.street || p.locality || p.city || clean;
-        const city = p.city || p.town || p.village || p.locality;
-        const label = [name, p.housenumber, city && city !== name ? city : null].filter(Boolean).join(', ');
-        const detail = [p.district, city, p.state, p.country].filter((v, i, arr) => v && arr.indexOf(v) === i).join(', ');
-        const key = String(p.osm_type || '') + ':' + String(p.osm_id || '') + ':' + latitude.toFixed(5) + ':' + longitude.toFixed(5);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        found.push({
-          id: key,
-          label,
-          detail: detail || 'Россия',
-          latitude,
-          longitude,
-          localRank: /ставропольский край|карачаево-черкес/i.test(detail) ? 0 : 1
-        });
-      }
-    } catch (_) {}
-  }
-
-  // Для общих названий сначала показываем реальные объекты КМВ, затем другие города.
-  if (!explicitCity) found.sort((a, b) => a.localRank - b.localRank);
-  return found.slice(0, 12).map(({ localRank, ...item }) => item);
+  return [];
 }
 
 function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, allowPickDestination = true }) {
