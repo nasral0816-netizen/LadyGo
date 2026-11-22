@@ -21,16 +21,64 @@ const STATUS = { new: 'Ищем водителя', accepted: 'Водитель �
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' ₽';
 
 async function findAddresses(q) {
-  const url = 'https://photon.komoot.io/api/?lang=ru&limit=8&q=' + encodeURIComponent(q + ', Кисловодск, Россия');
-  const response = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error('Поиск адресов временно недоступен');
-  const json = await response.json();
-  return (json.features || []).map((f, i) => {
-    const p = f.properties || {}, c = f.geometry?.coordinates || [];
-    const street = p.street || p.name || p.city || 'Адрес';
-    const label = [street, p.housenumber, p.city || p.town || p.village].filter(Boolean).join(', ');
-    return { id: String(p.osm_id || i), label, detail: [p.district, p.city || p.town, p.state].filter(Boolean).join(', '), latitude: Number(c[1]), longitude: Number(c[0]) };
-  }).filter(x => Number.isFinite(x.latitude) && Number.isFinite(x.longitude));
+  const clean = String(q || '').trim();
+  if (clean.length < 2) return [];
+  const searches = [...new Set([
+    clean,
+    clean + ', Кисловодск',
+    clean + ', Ставропольский край, Россия'
+  ])];
+  const found = [];
+  const seen = new Set();
+
+  // Сначала ищем точные подсказки через Photon, не ограничивая запрос одним городом.
+  for (const search of searches) {
+    try {
+      const url = 'https://photon.komoot.io/api/?lang=ru&limit=8&q=' + encodeURIComponent(search);
+      const response = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) continue;
+      const json = await response.json();
+      for (const f of json.features || []) {
+        const p = f.properties || {};
+        const coords = f.geometry?.coordinates || [];
+        const latitude = Number(coords[1]);
+        const longitude = Number(coords[0]);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
+        const street = p.street || p.name || p.locality || p.city || 'Адрес';
+        const label = [street, p.housenumber, p.city || p.town || p.village].filter(Boolean).join(', ');
+        const key = label.toLowerCase() + ':' + latitude.toFixed(5) + ':' + longitude.toFixed(5);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        found.push({
+          id: String(p.osm_id || key), label,
+          detail: [p.district, p.city || p.town || p.village, p.state, p.country].filter(Boolean).join(', '),
+          latitude, longitude
+        });
+      }
+      if (found.length >= 6) break;
+    } catch (_) {}
+  }
+
+  // Если сервис подсказок недоступен, пробуем встроенный геокодер телефона.
+  if (found.length === 0) {
+    for (const search of [clean + ', Кисловодск, Россия', clean + ', Россия']) {
+      try {
+        const results = await Location.geocodeAsync(search);
+        const point = results?.[0];
+        if (point && Number.isFinite(point.latitude) && Number.isFinite(point.longitude)) {
+          found.push({
+            id: 'device-' + point.latitude + '-' + point.longitude,
+            label: clean,
+            detail: 'Найдено по адресу',
+            latitude: point.latitude,
+            longitude: point.longitude
+          });
+          break;
+        }
+      } catch (_) {}
+    }
+  }
+  return found.slice(0, 8);
 }
 
 function MapPanel({ pickup, destination, route, onLocate }) {
@@ -303,7 +351,7 @@ export default function LadyGoApp() {
       {suggestions.map(item => <TouchableOpacity key={item.id} style={st.suggestion} onPress={() => chooseSuggestion(item)}>
         <View style={st.suggestionIcon}><Text>⌖</Text></View><View style={{ flex: 1 }}><Text style={st.suggestionTitle}>{item.label}</Text><Text style={st.suggestionSub}>{item.detail || 'Кисловодск'}</Text></View>
       </TouchableOpacity>)}
-      {!searching && query.length > 1 && suggestions.length === 0 && <Text style={st.empty}>Адрес не найден. Попробуй написать улицу и номер дома.</Text>}
+      {!searching && query.length > 1 && suggestions.length === 0 && <Text style={st.empty}>Не получилось найти адрес. Проверь написание или попробуй указать улицу и номер дома.</Text>}
     </ScrollView>
   </SafeAreaView>;
 
