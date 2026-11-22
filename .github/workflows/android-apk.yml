@@ -21,6 +21,8 @@ jobs:
     env:
       EXPO_PUBLIC_GEOAPIFY_API_KEY: ${{ secrets.GEOAPIFY_API_KEY }}
       EXPO_PUBLIC_PROTOMAPS_STYLE_URL: ${{ secrets.PROTOMAPS_STYLE_URL }}
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
 
     steps:
       - name: Checkout repository
