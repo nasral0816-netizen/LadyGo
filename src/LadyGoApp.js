@@ -209,6 +209,9 @@ export default function LadyGoApp() {
   const autoLocateStarted = useRef(false);
   const [adminOrders, setAdminOrders] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatDraft, setChatDraft] = useState('');
+  const [chatSending, setChatSending] = useState(false);
 
   const loadProfile = useCallback(async u => {
     if (!u || !supabase) return;
@@ -540,6 +543,71 @@ export default function LadyGoApp() {
     ]);
   };
 
+  const chatOrder = tab === 'driver'
+    ? driverOrders.find(o => o.driver_id === session?.user?.id && ['accepted','arrived','in_progress'].includes(o.status)) || null
+    : (activeOrder?.driver_id && ['accepted','arrived','in_progress'].includes(activeOrder.status) ? activeOrder : null);
+
+  useEffect(() => {
+    if (!chatOrder?.id || !session?.user?.id || !supabase) {
+      setChatMessages([]);
+      return;
+    }
+    let alive = true;
+    const loadMessages = async () => {
+      const { data, error } = await supabase.from('trip_messages')
+        .select('id,order_id,sender_id,message,created_at')
+        .eq('order_id', chatOrder.id)
+        .order('created_at', { ascending: true })
+        .limit(100);
+      if (alive && !error) setChatMessages(data || []);
+    };
+    loadMessages();
+    const channel = supabase.channel('trip-chat-' + chatOrder.id)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trip_messages', filter: 'order_id=eq.' + chatOrder.id }, () => loadMessages())
+      .subscribe();
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [chatOrder?.id, session?.user?.id]);
+
+  const sendTripMessage = async () => {
+    const message = chatDraft.trim();
+    if (!message || !chatOrder?.id || !session?.user?.id || chatSending) return;
+    setChatSending(true);
+    try {
+      const { error } = await supabase.from('trip_messages').insert({
+        order_id: chatOrder.id,
+        sender_id: session.user.id,
+        message
+      });
+      if (error) throw error;
+      setChatDraft('');
+    } catch (e) {
+      Alert.alert('Не удалось отправить сообщение', translateError(e));
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  const renderTripChat = () => !chatOrder ? null : <View style={st.chatCard}>
+    <View style={st.rowBetween}>
+      <Text style={st.heading}>💬 Чат поездки</Text>
+      <Text style={st.chatHint}>Только участники заказа</Text>
+    </View>
+    <ScrollView style={st.chatMessages} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+      {chatMessages.length === 0 ? <Text style={st.chatEmpty}>Напиши водителю, чтобы уточнить детали поездки.</Text> :
+        chatMessages.map(item => <View key={item.id} style={[st.chatBubble, item.sender_id === session?.user?.id ? st.chatMine : st.chatOther]}>
+          <Text style={st.chatSender}>{item.sender_id === session?.user?.id ? 'Вы' : 'Собеседник'}</Text>
+          <Text style={st.chatMessage}>{item.message}</Text>
+          <Text style={st.chatTime}>{new Date(item.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</Text>
+        </View>)}
+    </ScrollView>
+    <View style={st.chatComposer}>
+      <TextInput style={st.chatInput} value={chatDraft} onChangeText={setChatDraft} placeholder="Сообщение…" multiline maxLength={2000}/>
+      <TouchableOpacity style={[st.chatSend, (!chatDraft.trim() || chatSending) && st.disabled]} onPress={sendTripMessage} disabled={!chatDraft.trim() || chatSending}>
+        {chatSending ? <ActivityIndicator color="#fff" size="small"/> : <Text style={st.chatSendText}>➤</Text>}
+      </TouchableOpacity>
+    </View>
+  </View>;
+
   if (boot) return <View style={st.loading}><ActivityIndicator size="large" color={P.pink}/><Text style={st.muted}>Загружаем LadyGo…</Text></View>;
   if (!session) return <SafeAreaView style={st.auth}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
     <View style={st.authLogo}><Text style={st.logo}>LadyGo</Text><Text style={st.tagline}>Поездки с заботой</Text></View>
@@ -616,6 +684,7 @@ export default function LadyGoApp() {
           <Text style={st.orderAddress}>{driverVehicle?.vehicle_plate || 'Номер автомобиля не указан'}{driverVehicle?.vehicle_year ? ' · ' + driverVehicle.vehicle_year : ''}</Text>
           <Text style={st.muted}>{driverLocation ? 'Геопозиция обновляется в реальном времени' : 'Ожидаем первую геопозицию автомобиля…'}</Text>
         </View>
+        {renderTripChat()}
       </>}
       {orders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет поездок</Text><Text style={st.muted}>Оформленные заказы появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Заказать поездку</Text></TouchableOpacity></View> :
         orders.map(o => <View key={o.id} style={st.orderCard}><View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status] || o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleDateString('ru-RU')}</Text></View><Text style={st.orderAddress}>●  {o.pickup_address}</Text><Text style={st.orderAddress}>●  {o.destination_address}</Text><View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub ? fmt(o.price_rub) : 'Цена уточняется'}</Text>{o.status === 'new' && <TouchableOpacity onPress={() => cancelOrder(o)}><Text style={st.cancelText}>Отменить</Text></TouchableOpacity>}</View></View>)}
@@ -655,6 +724,7 @@ export default function LadyGoApp() {
             {o.status === 'arrived' && <TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'in_progress')}><Text style={st.primaryText}>Начать поездку</Text></TouchableOpacity>}
             {o.status === 'in_progress' && <TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'completed')}><Text style={st.primaryText}>Завершить поездку</Text></TouchableOpacity>}
           </View>}
+          {chatOrder?.id === o.id && renderTripChat()}
         </View>)}
     </ScrollView>}
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
@@ -707,6 +777,20 @@ const st = StyleSheet.create({
   adminStat: { flex: 1, backgroundColor: '#FAF6F8', borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 13, gap: 5 },
   adminStatValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
   adminStatLabel: { color: P.muted, fontSize: 10, fontWeight: '800' },
+  chatCard: { backgroundColor: '#FFFAFC', borderWidth: 1, borderColor: '#F4DCE6', borderRadius: 18, padding: 13, gap: 10 },
+  chatHint: { color: P.muted, fontSize: 10, fontWeight: '700' },
+  chatMessages: { maxHeight: 230, minHeight: 90 },
+  chatEmpty: { color: P.muted, fontSize: 13, textAlign: 'center', padding: 18, lineHeight: 19 },
+  chatBubble: { maxWidth: '86%', borderRadius: 15, padding: 10, marginVertical: 4, gap: 3 },
+  chatMine: { alignSelf: 'flex-end', backgroundColor: '#FCE5EE', borderBottomRightRadius: 5 },
+  chatOther: { alignSelf: 'flex-start', backgroundColor: '#F1EEF0', borderBottomLeftRadius: 5 },
+  chatSender: { color: P.pinkDark, fontSize: 10, fontWeight: '900' },
+  chatMessage: { color: P.ink, fontSize: 14, lineHeight: 19 },
+  chatTime: { color: P.muted, fontSize: 9, textAlign: 'right' },
+  chatComposer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  chatInput: { flex: 1, minHeight: 44, maxHeight: 100, borderWidth: 1, borderColor: P.line, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, color: P.ink, backgroundColor: P.white, fontSize: 14 },
+  chatSend: { width: 44, height: 44, borderRadius: 14, backgroundColor: P.pink, alignItems: 'center', justifyContent: 'center' },
+  chatSendText: { color: P.white, fontSize: 19, fontWeight: '900' },
   avatarText: { color: P.pinkDark, fontWeight: '900', fontSize: 16 },
   map: { height: 280, backgroundColor: '#E9E7E3' },
   mapControls: { position: 'absolute', left: 9, bottom: 12, gap: 6, alignItems: 'flex-start' },
