@@ -1800,8 +1800,7 @@ function LadyGoAppContent() {
     if (!pickup.trim() || !destinationText) return Alert.alert('Маршрут', 'Укажи адрес подачи и назначения.');
     setLocationBusy(true);
     try {
-      const addresses = [pickup.trim(), ...stopsText.split(/
-+/).map(x => x.trim()).filter(Boolean), destinationText];
+      const addresses = [pickup.trim(), ...stopsText.split(/\n+/).map(x => x.trim()).filter(Boolean), destinationText];
       if (addresses.length > 22) throw new Error('Можно добавить не больше 20 промежуточных точек.');
       const points = [];
       for (let i = 0; i < addresses.length; i++) {
