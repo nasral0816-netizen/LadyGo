@@ -23,62 +23,66 @@ const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' ₽';
 async function findAddresses(q) {
   const clean = String(q || '').trim();
   if (clean.length < 2) return [];
-  const searches = [...new Set([
-    clean,
-    clean + ', Кисловодск',
-    clean + ', Ставропольский край, Россия'
-  ])];
+
+  // Если пользователь уже указал город/регион, ищем по всей стране без привязки к Кисловодску.
+  const explicitCity = /краснодар|саратов|кисловодск|пятигорск|ессентуки|минеральн|черкесск|невинномысск|ставропол|георгиевск|железноводск|лермонтов|подкумок|карачаевск|домбай/i.test(clean);
+  const searches = explicitCity
+    ? [...new Set([clean, clean + ', Россия'])]
+    : [...new Set([
+        clean + ', Кисловодск, Ставропольский край, Россия',
+        clean + ', Пятигорск, Ставропольский край, Россия',
+        clean + ', Ессентуки, Ставропольский край, Россия',
+        clean + ', Минеральные Воды, Ставропольский край, Россия',
+        clean + ', Черкесск, Карачаево-Черкесия, Россия',
+        clean,
+        clean + ', Россия'
+      ])];
+
   const found = [];
   const seen = new Set();
-
-  // Сначала ищем точные подсказки через Photon, не ограничивая запрос одним городом.
+  const localityOnly = new Set(['city', 'town', 'village', 'municipality', 'administrative']);
   for (const search of searches) {
     try {
-      const url = 'https://photon.komoot.io/api/?lang=ru&limit=8&q=' + encodeURIComponent(search);
+      const url = 'https://photon.komoot.io/api/?lang=ru&limit=12&q=' + encodeURIComponent(search);
       const response = await fetch(url, { headers: { Accept: 'application/json' } });
       if (!response.ok) continue;
       const json = await response.json();
-      for (const f of json.features || []) {
-        const p = f.properties || {};
-        const coords = f.geometry?.coordinates || [];
+      for (const feature of json.features || []) {
+        const p = feature.properties || {};
+        const coords = feature.geometry?.coordinates || [];
         const latitude = Number(coords[1]);
         const longitude = Number(coords[0]);
-        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
-        const street = p.street || p.name || p.locality || p.city || 'Адрес';
-        const label = [street, p.housenumber, p.city || p.town || p.village].filter(Boolean).join(', ');
-        const key = label.toLowerCase() + ':' + latitude.toFixed(5) + ':' + longitude.toFixed(5);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+            Math.abs(latitude) > 90 || Math.abs(longitude) > 180) continue;
+
+        // Не принимаем города/административные центры за конкретные объекты
+        // вроде мечети: иначе маршрут может вести в центр города.
+        const placeKind = String(p.osm_value || '').toLowerCase();
+        const isLocality = String(p.osm_key || '').toLowerCase() === 'place' && localityOnly.has(placeKind);
+        if (isLocality && !explicitCity) continue;
+
+        const name = p.name || p.street || p.locality || p.city || clean;
+        const city = p.city || p.town || p.village || p.locality;
+        const label = [name, p.housenumber, city && city !== name ? city : null].filter(Boolean).join(', ');
+        const detail = [p.district, city, p.state, p.country].filter((v, i, arr) => v && arr.indexOf(v) === i).join(', ');
+        const key = String(p.osm_type || '') + ':' + String(p.osm_id || '') + ':' + latitude.toFixed(5) + ':' + longitude.toFixed(5);
         if (seen.has(key)) continue;
         seen.add(key);
         found.push({
-          id: String(p.osm_id || key), label,
-          detail: [p.district, p.city || p.town || p.village, p.state, p.country].filter(Boolean).join(', '),
-          latitude, longitude
+          id: key,
+          label,
+          detail: detail || 'Россия',
+          latitude,
+          longitude,
+          localRank: /ставропольский край|карачаево-черкес/i.test(detail) ? 0 : 1
         });
       }
-      if (found.length >= 6) break;
     } catch (_) {}
   }
 
-  // Если сервис подсказок недоступен, пробуем встроенный геокодер телефона.
-  if (found.length === 0) {
-    for (const search of [clean + ', Кисловодск, Россия', clean + ', Россия']) {
-      try {
-        const results = await Location.geocodeAsync(search);
-        const point = results?.[0];
-        if (point && Number.isFinite(point.latitude) && Number.isFinite(point.longitude)) {
-          found.push({
-            id: 'device-' + point.latitude + '-' + point.longitude,
-            label: clean,
-            detail: 'Найдено по адресу',
-            latitude: point.latitude,
-            longitude: point.longitude
-          });
-          break;
-        }
-      } catch (_) {}
-    }
-  }
-  return found.slice(0, 8);
+  // Для общих названий сначала показываем реальные объекты КМВ, затем другие города.
+  if (!explicitCity) found.sort((a, b) => a.localRank - b.localRank);
+  return found.slice(0, 12).map(({ localRank, ...item }) => item);
 }
 
 function MapPanel({ pickup, destination, route, onLocate }) {
@@ -119,7 +123,7 @@ function MapPanel({ pickup, destination, route, onLocate }) {
         <TouchableOpacity style={st.mapControl} onPress={() => setZoom(v => Math.max(3, v - 1))}><Text style={st.mapControlText}>−</Text></TouchableOpacity>
       </View>
     </View>
-    <View style={st.mapLabel}><View style={st.liveDot}/><Text style={st.mapLabelText}>Кисловодск</Text></View>
+    <View style={st.mapLabel}><View style={st.liveDot}/><Text style={st.mapLabelText}>Карта поездки</Text></View>
   </View>;
 }
 
@@ -381,7 +385,7 @@ export default function LadyGoApp() {
       <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate}/>
       <ScrollView style={st.sheet} contentContainerStyle={st.sheetContent} keyboardShouldPersistTaps="handled">
         <View style={st.sheetHandle}/>
-        <View style={st.rowBetween}><Text style={st.heading}>Куда едем?</Text><View style={st.cityPill}><Text style={st.cityPillText}>Кисловодск</Text></View></View>
+        <View style={st.rowBetween}><Text style={st.heading}>Куда едем?</Text><View style={st.cityPill}><Text style={st.cityPillText}>Поиск по России</Text></View></View>
         <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('pickup'); setQuery(''); }}><Field label="ОТКУДА" value={pickupText} placeholder="Выберите место подачи" icon="●"/></TouchableOpacity>
         <View style={st.connector}/>
         <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('destination'); setQuery(''); }}><Field label="КУДА" value={destinationText} placeholder="Введите адрес назначения" icon="●"/></TouchableOpacity>
