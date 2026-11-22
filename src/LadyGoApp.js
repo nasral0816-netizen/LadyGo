@@ -204,6 +204,8 @@ export default function LadyGoApp() {
   const [driverPrices, setDriverPrices] = useState({});
   const [driverSection, setDriverSection] = useState('overview');
   const [driverLoading, setDriverLoading] = useState(false);
+  const [driverOnline, setDriverOnline] = useState(false);
+  const [driverPresenceLoading, setDriverPresenceLoading] = useState(false);
   const [driverLocation, setDriverLocation] = useState(null);
   const [driverVehicle, setDriverVehicle] = useState(null);
   const autoLocateStarted = useRef(false);
@@ -360,17 +362,64 @@ export default function LadyGoApp() {
     if (!session?.user || profile?.role !== 'driver' || !supabase) return;
     setDriverLoading(true);
     try {
-      const { data, error } = await supabase.from('orders').select('*')
-        .or('status.eq.new,driver_id.eq.' + session.user.id)
-        .order('created_at', { ascending: false }).limit(60);
+      let request = supabase.from('orders').select('*');
+      request = driverOnline
+        ? request.or('status.eq.new,driver_id.eq.' + session.user.id)
+        : request.eq('driver_id', session.user.id);
+      const { data, error } = await request.order('created_at', { ascending: false }).limit(60);
       if (error) throw error;
       setDriverOrders(data || []);
     } catch (e) {
       Alert.alert('Не удалось обновить заказы', translateError(e));
     } finally { setDriverLoading(false); }
-  }, [session, profile]);
+  }, [session, profile, driverOnline]);
 
-  useEffect(() => { if (profile?.role === 'driver') loadDriverOrders(); }, [profile, loadDriverOrders]);
+  useEffect(() => {
+    if (profile?.role !== 'driver' || !session?.user?.id || !supabase) {
+      setDriverOnline(false);
+      return;
+    }
+    let alive = true;
+    supabase.from('driver_presence').select('is_online')
+      .eq('driver_id', session.user.id).maybeSingle()
+      .then(({ data, error }) => {
+        if (alive && !error) setDriverOnline(Boolean(data?.is_online));
+      });
+    return () => { alive = false; };
+  }, [profile?.role, session?.user?.id]);
+
+  useEffect(() => {
+    if (profile?.role === 'driver') loadDriverOrders();
+  }, [profile, loadDriverOrders, driverOnline]);
+
+  const toggleDriverShift = async () => {
+    if (profile?.role !== 'driver' || !session?.user?.id || driverPresenceLoading) return;
+    if (driverOnline) {
+      const hasActive = driverOrders.some(o => o.driver_id === session.user.id && ['accepted','arrived','in_progress'].includes(o.status));
+      if (hasActive) {
+        Alert.alert('Сначала заверши поездку', 'Нельзя завершить смену, пока у тебя есть активная поездка.');
+        return;
+      }
+    }
+    const next = !driverOnline;
+    setDriverPresenceLoading(true);
+    try {
+      const { error } = await supabase.from('driver_presence').upsert({
+        driver_id: session.user.id,
+        is_online: next,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'driver_id' });
+      if (error) throw error;
+      setDriverOnline(next);
+      if (next) await loadDriverOrders();
+      else setDriverOrders(current => current.filter(o => o.driver_id === session.user.id));
+      Alert.alert(next ? 'Ты на линии' : 'Смена завершена', next ? 'Теперь тебе доступны новые заявки.' : 'Новые заявки больше не будут отображаться.');
+    } catch (e) {
+      Alert.alert('Не удалось изменить статус', translateError(e));
+    } finally {
+      setDriverPresenceLoading(false);
+    }
+  };
 
   const acceptDriverOrder = async order => {
     const price = Number(String(driverPrices[order.id] || order.estimated_price_rub || '').replace(',', '.'));
@@ -737,14 +786,21 @@ export default function LadyGoApp() {
             {driverLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.driverRefreshText}>↻</Text>}
           </TouchableOpacity>
         </View>
-        <View style={st.driverModeHint}>
+        <View style={[st.driverModeHint, !driverOnline && { backgroundColor: '#F7F5F6', borderColor: P.line }]}>
           <Text style={st.driverModeIcon}>🚘</Text>
           <View style={{flex:1}}>
-            <Text style={st.driverModeTitle}>Режим водителя включён</Text>
-            <Text style={st.driverModeSub}>Переключение на режим пассажира — в верхней панели</Text>
+            <Text style={st.driverModeTitle}>{driverOnline ? 'Ты на линии' : 'Ты не на линии'}</Text>
+            <Text style={st.driverModeSub}>{driverOnline ? 'Новые заявки доступны для принятия' : 'Включи смену, чтобы получать новые заявки'}</Text>
           </View>
-          <View style={st.driverOnlineDot}/>
+          <View style={[st.driverOnlineDot, !driverOnline && { backgroundColor: '#B8B0B5' }]}/>
         </View>
+        <TouchableOpacity
+          style={[st.shiftButton, driverOnline && st.shiftButtonOff, driverPresenceLoading && st.disabled]}
+          onPress={toggleDriverShift}
+          disabled={driverPresenceLoading}
+        >
+          {driverPresenceLoading ? <ActivityIndicator color={P.white}/> : <Text style={st.shiftButtonText}>{driverOnline ? 'Завершить смену' : 'Выйти на линию'}</Text>}
+        </TouchableOpacity>
         <View style={st.driverStatsGrid}>
           <View style={st.driverStatCard}>
             <Text style={st.driverStatValue}>{available.length}</Text>
@@ -872,6 +928,9 @@ const st = StyleSheet.create({
   driverModeTitle: { color: P.ink, fontSize: 13, fontWeight: '900' },
   driverModeSub: { color: P.muted, fontSize: 10, marginTop: 3 },
   driverOnlineDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: P.green },
+  shiftButton: { minHeight: 52, borderRadius: 16, backgroundColor: P.green, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  shiftButtonOff: { backgroundColor: P.pink },
+  shiftButtonText: { color: P.white, fontSize: 15, fontWeight: '900' },
   driverStatsGrid: { flexDirection: 'row', gap: 8 },
   driverStatCard: { flex: 1, backgroundColor: '#FAF7F9', borderWidth: 1, borderColor: P.line, borderRadius: 15, padding: 12, gap: 7 },
   driverStatValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
