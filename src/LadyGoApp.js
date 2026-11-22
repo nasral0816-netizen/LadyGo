@@ -2447,7 +2447,8 @@ function LadyGoAppContent() {
             {savedPlaces.slice(0, 4).map(place => <TouchableOpacity key={place.id} onPress={async () => {
               setPickup(place.address);
               const point = await geocodeAddress(place.address);
-              if (point) setCoords(point);
+              setCoords(point || null);
+              setRoute([]); setRouteInfo(null); setPriceQuote(null); setEstimatedPrice(null);
               else Alert.alert('Адрес сохранён', 'Координаты пока не найдены. Уточни точку перед заказом.');
             }} style={s.savedChip}><Text style={s.savedChipText}>{place.label || 'Избранное'}</Text></TouchableOpacity>)}
           </View>}
@@ -2485,6 +2486,7 @@ function LadyGoAppContent() {
                   {destinationMapPoint && <Marker coordinate={destinationMapPoint} title="Место подачи" pinColor={C.green} />}
                 </MapView>
               </View>
+              <Text style={[s.muted, { fontSize: 10 }]}>© OpenStreetMap contributors</Text>
               <Text style={s.muted}>{destinationMapPoint ? destinationMapAddress || 'Точка выбрана' : 'Нажми на карту, чтобы отметить место, где тебя забрать.'}</Text>
               <Button title="Выбрать это место подачи" disabled={!destinationMapPoint} onPress={async () => {
                 if (!destinationMapPoint) return;
@@ -2572,6 +2574,7 @@ function LadyGoAppContent() {
               setDestinationCoords(null);
               setRoute([]);
               setRouteInfo(null);
+              setPriceQuote(null); setEstimatedPrice(null);
               const point = await geocodeAddress(place.address);
               if (point) setDestinationCoords(point);
               else Alert.alert('Не удалось найти адрес', 'Выбери точную точку назначения через поиск адресов.');
@@ -2611,6 +2614,7 @@ function LadyGoAppContent() {
                   {destinationMapPoint && <Marker coordinate={destinationMapPoint} title="Пункт назначения" pinColor={C.pink} />}
                 </MapView>
               </View>
+              <Text style={[s.muted, { fontSize: 10 }]}>© OpenStreetMap contributors</Text>
               <Text style={s.muted}>{destinationMapPoint ? destinationMapAddress || 'Точка выбрана' : 'Передвинь карту и нажми на нужное место — появится метка.'}</Text>
               <Button title={destinationMapBusy ? 'Выбираем точку…' : 'Выбрать эту точку назначения'} disabled={!destinationMapPoint || destinationMapBusy} loading={destinationMapBusy} onPress={async () => {
                 if (!destinationMapPoint) return;
