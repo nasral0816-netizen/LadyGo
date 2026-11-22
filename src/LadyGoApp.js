@@ -275,6 +275,15 @@ export default function LadyGoApp() {
   const autoLocateStarted = useRef(false);
   const [adminOrders, setAdminOrders] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
+  const [adminApplications, setAdminApplications] = useState([]);
+  const [adminDrivers, setAdminDrivers] = useState([]);
+  const [adminSection, setAdminSection] = useState('applications');
+  const [application, setApplication] = useState({ full_name: '', phone: '', experience: '', vehicle_make: '', vehicle_model: '', vehicle_color: '', vehicle_plate: '', vehicle_year: '', license_info: '' });
+  const [applicationAdult, setApplicationAdult] = useState(false);
+  const [applicationAvatar, setApplicationAvatar] = useState('');
+  const [applicationVehiclePhoto, setApplicationVehiclePhoto] = useState('');
+  const [applicationSaving, setApplicationSaving] = useState(false);
+  const [myApplication, setMyApplication] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatDraft, setChatDraft] = useState('');
   const [chatSending, setChatSending] = useState(false);
@@ -414,6 +423,16 @@ export default function LadyGoApp() {
 
   useEffect(() => { if (session?.user) loadOrders(); }, [session, loadOrders]);
   useEffect(() => {
+    if (!session?.user?.id || profile?.role !== 'passenger' || !supabase) { setMyApplication(null); return; }
+    let alive = true;
+    supabase.from('driver_applications').select('id,status,created_at,review_note,admin_note')
+      .eq('user_id', session.user.id).order('created_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => { if (alive) setMyApplication(data || null); });
+    return () => { alive = false; };
+  }, [session?.user?.id, profile?.role]);
+
+
+  useEffect(() => {
     if (!query.trim() || query.trim().length < 2) { setSuggestions([]); return; }
     let alive = true;
     const timer = setTimeout(async () => {
@@ -438,6 +457,89 @@ export default function LadyGoApp() {
       setAdminLoading(false);
     }
   }, [profile?.role]);
+
+  const loadAdminApplications = useCallback(async () => {
+    if (profile?.role !== 'admin' || !supabase) return;
+    setAdminLoading(true);
+    try {
+      const { data, error } = await supabase.from('driver_applications').select('*').order('created_at', { ascending: false }).limit(100);
+      if (error) throw error;
+      setAdminApplications(data || []);
+    } catch (e) { Alert.alert('Не удалось загрузить заявки', translateError(e)); }
+    finally { setAdminLoading(false); }
+  }, [profile?.role]);
+
+  const loadAdminDrivers = useCallback(async () => {
+    if (profile?.role !== 'admin' || !supabase) return;
+    const { data, error } = await supabase.from('driver_profiles').select('driver_id,display_name,phone,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,avatar_url,vehicle_photo_url,updated_at').order('updated_at', { ascending: false }).limit(100);
+    if (error) { Alert.alert('Не удалось загрузить водителей', translateError(error)); return; }
+    setAdminDrivers(data || []);
+  }, [profile?.role]);
+
+  const reviewDriverApplication = async (item, status) => {
+    const label = status === 'approved' ? 'одобрить' : 'отклонить';
+    Alert.alert('Проверка заявки', `Точно ${label} заявку ${item.full_name}?`, [
+      { text: 'Отмена', style: 'cancel' },
+      { text: status === 'approved' ? 'Одобрить' : 'Отклонить', style: status === 'rejected' ? 'destructive' : 'default', onPress: async () => {
+        setAdminLoading(true);
+        try {
+          const { error } = await supabase.from('driver_applications').update({ status }).eq('id', item.id).eq('status', 'pending');
+          if (error) throw error;
+          await loadAdminApplications();
+          await loadAdminDrivers();
+          Alert.alert(status === 'approved' ? 'Заявка одобрена' : 'Заявка отклонена', status === 'approved' ? 'Аккаунт получил роль водителя.' : 'Заявка отмечена как отклонённая.');
+        } catch (e) { Alert.alert('Не удалось обработать заявку', translateError(e)); }
+        finally { setAdminLoading(false); }
+      }}
+    ]);
+  };
+
+  const uploadApplicationPhoto = async kind => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) { Alert.alert('Нужен доступ к фото', 'Разреши доступ к галерее.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: kind === 'avatar' ? [1,1] : [4,3], quality: 0.78, base64: true });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    try {
+      if (!asset.base64) throw new Error('Не удалось прочитать фото. Выбери его ещё раз.');
+      const mime = ['image/jpeg','image/png','image/webp'].includes(asset.mimeType) ? asset.mimeType : 'image/jpeg';
+      const bytes = decodeBase64Image(asset.base64);
+      if (!bytes.length) throw new Error('Фото пустое или повреждено.');
+      const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
+      const path = `${session.user.id}/application-${kind}-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('ladygo-driver-media').upload(path, bytes, { contentType: mime, upsert: false });
+      if (error) throw error;
+      const url = supabase.storage.from('ladygo-driver-media').getPublicUrl(path).data.publicUrl;
+      if (kind === 'avatar') setApplicationAvatar(url); else setApplicationVehiclePhoto(url);
+      Alert.alert('Фото добавлено', 'Фотография прикреплена к заявке.');
+    } catch (e) { Alert.alert('Не удалось загрузить фото', translateError(e)); }
+  };
+
+  const submitDriverApplication = async () => {
+    if (!session?.user?.id || applicationSaving) return;
+    if (!applicationAdult) { Alert.alert('Подтверди возраст', 'Подать заявку на работу водителем можно только с 18 лет.'); return; }
+    if (!application.full_name.trim() || !application.phone.trim() || !application.vehicle_make.trim() || !application.vehicle_model.trim()) {
+      Alert.alert('Заполни обязательные поля', 'Нужны ФИО, телефон, марка и модель автомобиля.'); return;
+    }
+    setApplicationSaving(true);
+    try {
+      const { error } = await supabase.from('driver_applications').insert({
+        user_id: session.user.id, full_name: application.full_name.trim(), phone: application.phone.trim(),
+        experience: application.experience.trim() || null, license_info: application.license_info.trim() || 'Документы будут проверены администратором лично.',
+        vehicle_make: application.vehicle_make.trim(), vehicle_model: application.vehicle_model.trim(),
+        vehicle_color: application.vehicle_color.trim() || null, vehicle_plate: application.vehicle_plate.trim() || null,
+        vehicle_year: application.vehicle_year.trim() ? Number(application.vehicle_year) : null,
+        avatar_url: applicationAvatar || null, vehicle_photo_url: applicationVehiclePhoto || null,
+        vehicle_class: 'economy', status: 'pending'
+      });
+      if (error) throw error;
+      const { data } = await supabase.from('driver_applications').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      setMyApplication(data || { status: 'pending' });
+      Alert.alert('Заявка отправлена', 'Она появится в панели администратора после обновления.');
+      setTab('profile');
+    } catch (e) { Alert.alert('Не удалось отправить заявку', translateError(e)); }
+    finally { setApplicationSaving(false); }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -883,7 +985,7 @@ export default function LadyGoApp() {
         <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>⌖  Пассажир</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>🚘  Водитель</Text></TouchableOpacity>
       </View>}
-      {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); }}>
+      {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); }}>
         <Text style={[st.adminTopButtonText, tab === 'admin' && st.adminTopButtonTextActive]}>⚙ Админ</Text>
       </TouchableOpacity>}
       <TouchableOpacity style={st.avatar} onPress={() => setTab('profile')}><Text style={st.avatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></TouchableOpacity>
@@ -957,24 +1059,71 @@ export default function LadyGoApp() {
         })}
     </ScrollView>}
     {tab === 'admin' && profile?.role === 'admin' && <ScrollView contentContainerStyle={st.pageContent}>
-      <View style={st.rowBetween}>
-        <View><Text style={st.pageTitle}>Панель администратора</Text><Text style={st.muted}>Управление и контроль LadyGo</Text></View>
-        <TouchableOpacity style={st.adminRefresh} onPress={loadAdminOrders}><Text style={st.adminRefreshText}>↻</Text></TouchableOpacity>
+      <View style={st.adminHero}>
+        <View style={{flex:1}}>
+          <Text style={st.adminEyebrow}>LADYGO CONTROL CENTER</Text>
+          <Text style={st.pageTitle}>Администрирование</Text>
+          <Text style={st.muted}>Заявки, водители и поездки — в одном месте</Text>
+        </View>
+        <TouchableOpacity style={st.adminRefresh} onPress={() => { loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); }}>
+          {adminLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.adminRefreshText}>↻</Text>}
+        </TouchableOpacity>
       </View>
       <View style={st.adminStats}>
-        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminOrders.length}</Text><Text style={st.adminStatLabel}>Всего заказов</Text></View>
-        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminOrders.filter(o => ['new','accepted','arrived','in_progress'].includes(o.status)).length}</Text><Text style={st.adminStatLabel}>Активные</Text></View>
-        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminOrders.filter(o => o.status === 'completed').length}</Text><Text style={st.adminStatLabel}>Завершено</Text></View>
+        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminApplications.filter(x=>x.status==='pending').length}</Text><Text style={st.adminStatLabel}>Новые заявки</Text></View>
+        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminDrivers.length}</Text><Text style={st.adminStatLabel}>Водители</Text></View>
+        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminOrders.filter(o=>['new','accepted','arrived','in_progress'].includes(o.status)).length}</Text><Text style={st.adminStatLabel}>Активные поездки</Text></View>
       </View>
-      <View style={st.rowBetween}><Text style={st.heading}>Последние заказы</Text>{adminLoading && <ActivityIndicator color={P.pink}/>}</View>
-      {adminOrders.length === 0 && !adminLoading ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⚙</Text><Text style={st.heading}>Заказов пока нет</Text><Text style={st.muted}>Новые заказы появятся здесь.</Text></View> :
-        adminOrders.map(o => <View key={o.id} style={st.orderCard}>
-          <View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status] || o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleString('ru-RU')}</Text></View>
-          <Text style={st.orderAddress}>●  {o.pickup_address || 'Место подачи не указано'}</Text>
-          <Text style={st.orderAddress}>●  {o.destination_address || 'Назначение не указано'}</Text>
-          <View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub ? fmt(o.price_rub) : o.estimated_price_rub ? fmt(o.estimated_price_rub) : 'Цена не указана'}</Text><Text style={st.muted}>{o.driver_id ? 'Водитель назначен' : 'Без водителя'}</Text></View>
+      <View style={st.adminTabs}>
+        {[
+          ['applications','Заявки',adminApplications.filter(x=>x.status==='pending').length],
+          ['drivers','Водители',adminDrivers.length],
+          ['orders','Заказы',adminOrders.length]
+        ].map(([id,label,count])=><TouchableOpacity key={id} onPress={()=>setAdminSection(id)} style={[st.adminTab,adminSection===id&&st.adminTabActive]}>
+          <Text style={[st.adminTabText,adminSection===id&&st.adminTabTextActive]}>{label} · {count}</Text>
+        </TouchableOpacity>)}
+      </View>
+      {adminSection==='applications' && <>
+        <View style={st.rowBetween}><Text style={st.heading}>Заявки на подключение</Text>{adminLoading&&<ActivityIndicator color={P.pink}/>}</View>
+        {adminApplications.length===0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>▤</Text><Text style={st.heading}>Заявок пока нет</Text><Text style={st.muted}>Новые анкеты кандидатов появятся здесь.</Text></View> :
+          adminApplications.map(item=><View key={item.id} style={st.adminApplicationCard}>
+            <View style={st.rowBetween}><Text style={st.adminApplicantName}>{item.full_name||'Без имени'}</Text><Text style={[st.adminStatus,item.status==='pending'?st.adminStatusPending:item.status==='approved'?st.adminStatusApproved:st.adminStatusRejected]}>{item.status==='pending'?'На проверке':item.status==='approved'?'Одобрена':'Отклонена'}</Text></View>
+            <Text style={st.adminDetail}>☎ {item.phone||'Телефон не указан'}</Text>
+            <Text style={st.adminDetail}>Стаж: {item.experience||'Не указан'}</Text>
+            <Text style={st.adminDetail}>Автомобиль: {[item.vehicle_make,item.vehicle_model,item.vehicle_color].filter(Boolean).join(' ')||'Не указан'}</Text>
+            <Text style={st.adminDetail}>Номер: {item.vehicle_plate||'Не указан'} {item.vehicle_year||''}</Text>
+            {item.license_info ? <Text style={st.adminDetail}>Документы: {item.license_info}</Text>:null}
+            <Text style={st.adminDate}>Подана: {new Date(item.created_at).toLocaleString('ru-RU')}</Text>
+            <View style={st.adminPhotoRow}>
+              {item.avatar_url?<Image source={{uri:item.avatar_url}} style={st.adminPhoto}/>:null}
+              {item.vehicle_photo_url?<Image source={{uri:item.vehicle_photo_url}} style={st.adminCarPhoto}/>:null}
+            </View>
+            {item.status==='pending' && <View style={st.adminActionRow}>
+              <TouchableOpacity style={st.adminApprove} onPress={()=>reviewDriverApplication(item,'approved')}><Text style={st.adminActionText}>✓ Одобрить</Text></TouchableOpacity>
+              <TouchableOpacity style={st.adminReject} onPress={()=>reviewDriverApplication(item,'rejected')}><Text style={st.adminRejectText}>Отклонить</Text></TouchableOpacity>
+            </View>}
+            {(item.review_note||item.admin_note)&&<Text style={st.adminDate}>Комментарий: {item.review_note||item.admin_note}</Text>}
+          </View>)}
+      </>}
+      {adminSection==='drivers' && <>
+        <View style={st.rowBetween}><Text style={st.heading}>Подключённые водители</Text></View>
+        {adminDrivers.length===0?<View style={st.emptyCard}><Text style={st.heading}>Водителей пока нет</Text></View>:adminDrivers.map(d=><View key={d.driver_id} style={st.adminApplicationCard}>
+          <Text style={st.adminApplicantName}>{d.display_name||'Водитель LadyGo'}</Text>
+          <Text style={st.adminDetail}>{d.phone||'Телефон не указан'}</Text>
+          <Text style={st.adminDetail}>{[d.vehicle_color,d.vehicle_make,d.vehicle_model].filter(Boolean).join(' ')||'Автомобиль не заполнен'}</Text>
+          <Text style={st.adminDetail}>{d.vehicle_plate||'Номер не указан'} {d.vehicle_year||''}</Text>
         </View>)}
-      <Text style={st.footnote}>Доступ к панели предоставляется только аккаунтам с ролью администратора.</Text>
+      </>}
+      {adminSection==='orders' && <>
+        <View style={st.rowBetween}><Text style={st.heading}>Последние заказы</Text></View>
+        {adminOrders.length===0?<View style={st.emptyCard}><Text style={st.heading}>Заказов пока нет</Text></View>:adminOrders.map(o=><View key={o.id} style={st.orderCard}>
+          <View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status]||o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleString('ru-RU')}</Text></View>
+          <Text style={st.orderAddress}>● {o.pickup_address||'Место подачи не указано'}</Text>
+          <Text style={st.orderAddress}>● {o.destination_address||'Назначение не указано'}</Text>
+          <View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub?fmt(o.price_rub):o.estimated_price_rub?fmt(o.estimated_price_rub):'Цена не указана'}</Text><Text style={st.muted}>{o.driver_id?'Водитель назначен':'Без водителя'}</Text></View>
+        </View>)}
+      </>}
+      <Text style={st.footnote}>Решение об одобрении принимается после личной проверки возраста, водительских документов и автомобиля.</Text>
     </ScrollView>}
     {tab === 'driver' && profile?.role === 'driver' && (() => {
       const mine = driverOrders.filter(o => o.driver_id === session.user.id);
@@ -1116,10 +1265,36 @@ export default function LadyGoApp() {
         <Text style={st.footnote}>Панель предназначена для совершеннолетних водителей, прошедших проверку LadyGo.</Text>
       </ScrollView>;
     })()}
+    {tab === 'apply' && profile?.role === 'passenger' && <ScrollView contentContainerStyle={st.pageContent} keyboardShouldPersistTaps="handled">
+      <Text style={st.pageTitle}>Анкета водителя</Text>
+      <Text style={st.muted}>Заполни данные. После отправки администратор проверит заявку лично.</Text>
+      <TextInput style={st.authInput} placeholder="ФИО полностью *" value={application.full_name} onChangeText={v=>setApplication(p=>({...p,full_name:v}))}/>
+      <TextInput style={st.authInput} placeholder="Телефон *" keyboardType="phone-pad" value={application.phone} onChangeText={v=>setApplication(p=>({...p,phone:v}))}/>
+      <TextInput style={st.authInput} placeholder="Стаж вождения" value={application.experience} onChangeText={v=>setApplication(p=>({...p,experience:v}))}/>
+      <Text style={st.sectionTitle}>Автомобиль</Text>
+      <TextInput style={st.authInput} placeholder="Марка *" value={application.vehicle_make} onChangeText={v=>setApplication(p=>({...p,vehicle_make:v}))}/>
+      <TextInput style={st.authInput} placeholder="Модель *" value={application.vehicle_model} onChangeText={v=>setApplication(p=>({...p,vehicle_model:v}))}/>
+      <TextInput style={st.authInput} placeholder="Цвет" value={application.vehicle_color} onChangeText={v=>setApplication(p=>({...p,vehicle_color:v}))}/>
+      <TextInput style={st.authInput} placeholder="Госномер" value={application.vehicle_plate} onChangeText={v=>setApplication(p=>({...p,vehicle_plate:v}))}/>
+      <TextInput style={st.authInput} placeholder="Год выпуска" keyboardType="numeric" value={application.vehicle_year} onChangeText={v=>setApplication(p=>({...p,vehicle_year:v}))}/>
+      <TextInput style={st.authInput} placeholder="Информация о водительских документах" value={application.license_info} onChangeText={v=>setApplication(p=>({...p,license_info:v}))}/>
+      <Text style={st.sectionTitle}>Фотографии</Text>
+      <View style={st.adminPhotoRow}>
+        <TouchableOpacity style={st.applicationPhotoButton} onPress={()=>uploadApplicationPhoto('avatar')}><Text style={st.applicationPhotoText}>{applicationAvatar?'✓ Фото профиля добавлено':'+ Фото профиля'}</Text></TouchableOpacity>
+        <TouchableOpacity style={st.applicationPhotoButton} onPress={()=>uploadApplicationPhoto('vehicle')}><Text style={st.applicationPhotoText}>{applicationVehiclePhoto?'✓ Фото машины добавлено':'+ Фото машины'}</Text></TouchableOpacity>
+      </View>
+      <TouchableOpacity style={st.adultConfirm} onPress={()=>setApplicationAdult(v=>!v)}><Text style={st.adultConfirmText}>{applicationAdult?'☑':'□'} Мне исполнилось 18 лет</Text></TouchableOpacity>
+      <TouchableOpacity style={[st.primaryBtn,(!applicationAdult||applicationSaving)&&st.disabled]} onPress={submitDriverApplication} disabled={!applicationAdult||applicationSaving}>
+        {applicationSaving?<ActivityIndicator color={P.white}/>:<Text style={st.primaryText}>Отправить анкету</Text>}
+      </TouchableOpacity>
+      <Text style={st.footnote}>К работе допускаются только совершеннолетние кандидаты после проверки документов администратором.</Text>
+    </ScrollView>}
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
       <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.email || session.user.email}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
       <TouchableOpacity style={st.profileRow} onPress={() => setTab('orders')}><Text style={st.profileRowIcon}>◷</Text><Text style={st.profileRowText}>История поездок</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
-      {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
+      {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
+      {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><Text style={st.profileRowIcon}>🚘</Text><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}
+
       <TouchableOpacity style={st.profileRow} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com')}><Text style={st.profileRowIcon}>?</Text><Text style={st.profileRowText}>Поддержка</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.profileRow} onPress={() => Linking.openURL('tel:+79911121227')}><Text style={st.profileRowIcon}>☎</Text><Text style={st.profileRowText}>Заказать по телефону</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.logout} onPress={signOut}><Text style={st.logoutText}>Выйти из аккаунта</Text></TouchableOpacity>
@@ -1166,6 +1341,35 @@ const st = StyleSheet.create({
   adminStat: { flex: 1, backgroundColor: '#FAF6F8', borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 13, gap: 5 },
   adminStatValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
   adminStatLabel: { color: P.muted, fontSize: 10, fontWeight: '800' },
+  adminHero: { flexDirection:'row', alignItems:'center', gap:12, backgroundColor:'#FFF5F8', borderWidth:1, borderColor:'#F5D8E3', borderRadius:20, padding:16 },
+  adminEyebrow: { color:P.pinkDark, fontSize:9, fontWeight:'900', letterSpacing:1.2, marginBottom:5 },
+  adminTabs: { flexDirection:'row', gap:7, flexWrap:'wrap' },
+  adminTab: { paddingHorizontal:12, paddingVertical:11, borderRadius:13, backgroundColor:'#F5F1F3', borderWidth:1, borderColor:P.line },
+  adminTabActive: { backgroundColor:P.pink, borderColor:P.pink },
+  adminTabText: { color:P.muted, fontSize:11, fontWeight:'800' },
+  adminTabTextActive: { color:P.white },
+  adminApplicationCard: { backgroundColor:P.white, borderWidth:1, borderColor:P.line, borderRadius:18, padding:15, gap:8 },
+  adminApplicantName: { color:P.ink, fontSize:16, fontWeight:'900', flexShrink:1 },
+  adminDetail: { color:P.ink, fontSize:12, lineHeight:17 },
+  adminDate: { color:P.muted, fontSize:10 },
+  adminStatus: { overflow:'hidden', borderRadius:20, paddingHorizontal:9, paddingVertical:6, fontSize:10, fontWeight:'900' },
+  adminStatusPending: { backgroundColor:'#FFF0D7', color:'#8A5A00' },
+  adminStatusApproved: { backgroundColor:'#E5F6EC', color:'#247448' },
+  adminStatusRejected: { backgroundColor:'#FCE8EC', color:'#A8324C' },
+  adminPhotoRow: { flexDirection:'row', gap:10, flexWrap:'wrap', alignItems:'center' },
+  adminPhoto: { width:64, height:64, borderRadius:15, backgroundColor:P.pale },
+  adminCarPhoto: { width:132, height:82, borderRadius:13, backgroundColor:P.pale },
+  adminActionRow: { flexDirection:'row', gap:9, marginTop:4 },
+  adminApprove: { flex:1, minHeight:44, borderRadius:13, backgroundColor:'#218653', alignItems:'center', justifyContent:'center' },
+  adminReject: { flex:1, minHeight:44, borderRadius:13, backgroundColor:'#FFF0F3', borderWidth:1, borderColor:'#F2C6D2', alignItems:'center', justifyContent:'center' },
+  adminActionText: { color:'#FFFFFF', fontWeight:'900', fontSize:12 },
+  adminRejectText: { color:'#B63254', fontWeight:'900', fontSize:12 },
+  applicationStatusCard: { backgroundColor:'#FFF5F8', borderRadius:16, padding:15, gap:6, borderWidth:1, borderColor:'#F5D8E3' },
+  applicationStatusTitle: { color:P.pinkDark, fontWeight:'900', fontSize:14 },
+  applicationPhotoButton: { flex:1, minHeight:52, padding:10, borderRadius:13, backgroundColor:P.pale, alignItems:'center', justifyContent:'center' },
+  applicationPhotoText: { color:P.pinkDark, fontSize:11, fontWeight:'900', textAlign:'center' },
+  adultConfirm: { padding:14, borderRadius:14, backgroundColor:'#F7F4F6', borderWidth:1, borderColor:P.line },
+  adultConfirmText: { color:P.ink, fontSize:13, fontWeight:'800' },
   driverHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   driverEyebrow: { color: P.pinkDark, fontSize: 9, fontWeight: '900', letterSpacing: 1.3, marginBottom: 5 },
   driverSubtitle: { color: P.muted, fontSize: 12, lineHeight: 17, marginTop: -2 },
