@@ -1,6 +1,6 @@
 {
   "name": "ladygo",
-  "version": "6.7.9.11",
+  "version": "6.7.9.12",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
