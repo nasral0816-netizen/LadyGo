@@ -40,14 +40,14 @@ jobs:
           YANDEX_MAPKIT_API_KEY: ${{ secrets.YANDEX_MAPKIT_API_KEY }}
         run: npx expo prebuild --platform android --non-interactive --clean
 
-      - name: Build debug APK
+      - name: Build standalone release APK
         working-directory: map-demo/android
-        run: chmod +x gradlew && ./gradlew --no-daemon assembleDebug
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
 
-      - name: Upload APK
+      - name: Upload standalone APK
         uses: actions/upload-artifact@v4
         with:
-          name: ladygo-map-demo-debug-apk
-          path: map-demo/android/app/build/outputs/apk/debug/app-debug.apk
+          name: ladygo-map-demo-release-apk
+          path: map-demo/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 7
