@@ -3,7 +3,7 @@ import {
   ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Platform, SafeAreaView, ScrollView,
   StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image
 } from 'react-native';
-import { Camera, GeoJSONSource, Layer, Map as MapLibreView } from '@maplibre/maplibre-react-native';
+import { YandexMapView, Marker, Polyline, geocodeAddress, findDrivingRoutes } from 'expo-yandex-mapkit';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from './supabase';
@@ -60,183 +60,106 @@ const translateError = error => {
 };
 
 async function findAddresses(q) {
-  const clean = String(q || '').replace(/\s+/g, ' ').trim();
+  const clean = String(q || '').replace(/\\s+/g, ' ').trim();
   if (clean.length < 2) return [];
-
-  const explicitCity = /краснодар|саратов|кисловодск|пятигорск|ессентуки|минеральн|черкесск|невинномысск|ставропол|георгиевск|железноводск|лермонтов|подкумок|карачаевск|домбай/i.test(clean);
-  const houseMatch = clean.match(/(?:^|\s|,)(\d+[а-яa-z]?(?:\/\d+[а-яa-z]?)?)(?:\s|$|,)/i);
-  const requestedHouse = houseMatch ? houseMatch[1].toLowerCase() : '';
-  const cities = [
-    'Кисловодск, Ставропольский край, Россия',
-    'Пятигорск, Ставропольский край, Россия',
-    'Ессентуки, Ставропольский край, Россия',
-    'Минеральные Воды, Ставропольский край, Россия',
-    'Черкесск, Карачаево-Черкесия, Россия'
-  ];
-  const searches = explicitCity
-    ? [...new Set([clean, clean + ', Россия'])]
-    : [...new Set([
-        ...cities.map(city => clean + ', ' + city),
-        clean,
-        clean + ', Россия'
-      ])];
-
-  const found = [];
-  const seen = new Set();
-  const localityOnly = new Set(['city', 'town', 'village', 'municipality', 'administrative']);
-  const addResult = (item, source, houseNumber) => {
-    const latitude = Number(item.latitude);
-    const longitude = Number(item.longitude);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
-        Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return;
-    const id = String(item.id || (latitude.toFixed(5) + ':' + longitude.toFixed(5)));
-    const key = latitude.toFixed(5) + ':' + longitude.toFixed(5);
-    if (seen.has(key)) return;
-    seen.add(key);
-    const detail = item.detail || 'Россия';
-    const label = item.label || clean;
-    const hasHouse = Boolean(houseNumber || /(?:^|,\s*)\d+[а-яa-z]?(?:\/\d+)?(?:,|$)/i.test(label));
-    const houseExact = requestedHouse && String(houseNumber || label.match(/(?:^|,\s*)(\d+[а-яa-z]?(?:\/\d+)?)(?:,|$)/i)?.[1] || '').toLowerCase() === requestedHouse;
-    found.push({
-      id, label, detail, latitude, longitude, source,
-      localRank: /кисловодск/i.test(detail) ? 0 :
-        /пятигорск|ессентуки|минеральные воды|ставропольский край|черкесск|карачаево-черкес/i.test(detail) ? 1 : 2,
-      houseRank: requestedHouse ? (houseExact ? 0 : hasHouse ? 1 : 3) : (hasHouse ? 0 : 1)
-    });
-  };
-
-  // Возвращаем проверенную схему: Photon обрабатывает запросы последовательно
-  // по городам КМВ, без обязательного слова «улица» и без геобайаса.
-  for (const search of searches) {
-    try {
-      const url = 'https://photon.komoot.io/api/?lang=ru&limit=12&q=' + encodeURIComponent(search);
-      const response = await fetch(url, { headers: { Accept: 'application/json' } });
-      if (!response.ok) continue;
-      const json = await response.json();
-      for (const feature of json.features || []) {
-        const p = feature.properties || {};
-        const coords = feature.geometry?.coordinates || [];
-        const placeKind = String(p.osm_value || '').toLowerCase();
-        const isLocality = String(p.osm_key || '').toLowerCase() === 'place' && localityOnly.has(placeKind);
-        if (isLocality && !explicitCity) continue;
-        if (!explicitCity && p.country && !/россия|russia/i.test(p.country)) continue;
-        const name = p.name || p.street || p.locality || p.city || clean;
-        const city = p.city || p.town || p.village || p.locality;
-        const label = [name, p.housenumber, city && city !== name ? city : null].filter(Boolean).join(', ');
-        const detail = [p.district, city, p.state, p.country].filter((v, i, arr) => v && arr.indexOf(v) === i).join(', ');
-        addResult({
-          id: String(p.osm_type || '') + ':' + String(p.osm_id || ''),
-          label, detail, latitude: coords[1], longitude: coords[0]
-        }, 'photon', p.housenumber);
-      }
-      // Если найден точный номер дома в Кисловодске, не тратим время на остальные города.
-      if (requestedHouse && found.some(x => x.houseRank === 0 && x.localRank === 0)) break;
-    } catch (_) {}
-  }
-
-  // Nominatim — не только аварийный ответ: проверяем его, если Photon не нашёл
-  // точный номер дома или дал слишком мало вариантов.
-  const needNominatim = found.length < 5 || (requestedHouse && !found.some(x => x.houseRank === 0));
-  if (needNominatim) {
-    const fallbackQueries = explicitCity
-      ? [clean, clean + ', Россия']
-      : [clean + ', Кисловодск, Россия', clean + ', Пятигорск, Россия', clean + ', Ессентуки, Россия', clean + ', Россия'];
-    for (const fallbackQuery of fallbackQueries) {
-      try {
-        const params = [
-          'format=jsonv2', 'addressdetails=1', 'namedetails=1', 'limit=12',
-          'countrycodes=ru', 'accept-language=ru',
-          'q=' + encodeURIComponent(fallbackQuery)
-        ].join('&');
-        const response = await fetch('https://nominatim.openstreetmap.org/search?' + params, {
-          headers: { Accept: 'application/json', 'Accept-Language': 'ru' }
-        });
-        if (!response.ok) continue;
-        const rows = await response.json();
-        for (const row of rows || []) {
-          const a = row.address || {};
-          const city = a.city || a.town || a.village || a.municipality || a.hamlet || '';
-          const street = a.road || a.pedestrian || a.residential || a.street || '';
-          const number = a.house_number || '';
-          const label = street
-            ? [street, number, city].filter(Boolean).join(', ')
-            : String(row.name || row.display_name || clean).split(',').slice(0, 2).join(', ');
-          const detail = [a.suburb, city, a.state, a.country].filter(Boolean).join(', ');
-          addResult({
-            id: 'nominatim:' + String(row.place_id || row.osm_id || row.lat + ':' + row.lon),
-            label, detail, latitude: row.lat, longitude: row.lon
-          }, 'nominatim', number);
-        }
-        if (found.some(x => x.houseRank === 0 && x.localRank === 0)) break;
-      } catch (_) {}
-    }
-  }
-
-  found.sort((a, b) =>
-    (requestedHouse ? a.houseRank - b.houseRank : 0) ||
-    a.localRank - b.localRank ||
-    (a.source === 'photon' ? -1 : 1)
-  );
-  return found.slice(0, 12).map(({ localRank, houseRank, source, ...item }) => item);
+  const results = await geocodeAddress(clean, {
+    userPosition: { latitude: 43.9052, longitude: 42.7168 },
+    resultPageSize: 12
+  });
+  return (results || []).filter(item => item.point &&
+    Number.isFinite(Number(item.point.latitude)) &&
+    Number.isFinite(Number(item.point.longitude))
+  ).map((item, index) => ({
+    id: String(item.name || clean) + ':' + index + ':' + item.point.latitude + ':' + item.point.longitude,
+    label: item.formattedAddress || item.name || clean,
+    detail: item.description || 'Яндекс Карты',
+    latitude: Number(item.point.latitude),
+    longitude: Number(item.point.longitude)
+  }));
 }
 
 function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, allowPickDestination = true }) {
   const cameraRef = useRef(null);
   const [zoom, setZoom] = useState(17);
   const [is3D, setIs3D] = useState(true);
-  const [focusPoint, setFocusPoint] = useState(null);
+  const [cameraPosition, setCameraPosition] = useState({
+    latitude: 43.9052, longitude: 42.7168, zoom: 13, tilt: 0
+  });
+
   useEffect(() => {
-    if (pickup && !focusPoint) {
-      setFocusPoint([pickup.longitude, pickup.latitude]);
-      setZoom(17);
-      setIs3D(true);
+    const target = driverLocation || pickup || destination;
+    if (target) {
+      setCameraPosition(current => ({
+        ...current,
+        latitude: Number(target.latitude),
+        longitude: Number(target.longitude),
+        zoom: Math.max(current.zoom || 0, 16),
+        tilt: is3D ? 45 : 0
+      }));
     }
-  }, [pickup, focusPoint]);
-  const points = [pickup && { ...pickup, label: 'А', color: P.green }, destination && { ...destination, label: 'Б', color: P.pink }].filter(Boolean);
-  const features = points.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] }, properties: { label: p.label, color: p.color } }));
-  const line = { type: 'Feature', geometry: { type: 'LineString', coordinates: route.map(p => [p.longitude, p.latitude]) }, properties: {} };
-  const carFeature = driverLocation ? { type: 'Feature', geometry: { type: 'Point', coordinates: [driverLocation.longitude, driverLocation.latitude] }, properties: {} } : null;
-  const coords = points.map(p => [p.longitude, p.latitude]).concat(route.map(p => [p.longitude, p.latitude]), driverLocation ? [[driverLocation.longitude, driverLocation.latitude]] : []);
-  const center = coords.length ? [coords.reduce((s,p)=>s+p[0],0)/coords.length, coords.reduce((s,p)=>s+p[1],0)/coords.length] : [42.7168,43.9052];
+  }, [pickup?.latitude, pickup?.longitude, destination?.latitude, destination?.longitude,
+      driverLocation?.latitude, driverLocation?.longitude, is3D]);
+
+  const handleLocate = async () => {
+    const point = await onLocate?.();
+    if (point?.latitude != null && point?.longitude != null) {
+      setCameraPosition(current => ({
+        ...current, latitude: Number(point.latitude), longitude: Number(point.longitude),
+        zoom: 17, tilt: is3D ? 45 : 0
+      }));
+    }
+  };
+
   return <View style={st.map}>
-    <MapLibreView style={{ flex: 1 }} mapStyle={P.map} androidView="texture" attribution logo={false} compass dragPan touchZoom doubleTapZoom
-      onPress={event => {
-        if (!pickingDestination || !onPickDestination) return;
-        const coordinates = event?.geometry?.coordinates || event?.nativeEvent?.geometry?.coordinates;
-        if (Array.isArray(coordinates) && coordinates.length >= 2) {
-          onPickDestination({ longitude: coordinates[0], latitude: coordinates[1] });
-        }
-      }}>
-      <Camera ref={cameraRef} center={focusPoint || center} zoom={zoom} pitch={is3D ? 55 : 0} easing="fly" duration={1500} />
-      {route.length > 1 && <GeoJSONSource id="route" data={line}>
-        <Layer id="route-outline" type="line" paint={{ 'line-color': '#FFFFFF', 'line-width': 9, 'line-cap': 'round', 'line-join': 'round' }} />
-        <Layer id="route-main" type="line" paint={{ 'line-color': P.pink, 'line-width': 5, 'line-cap': 'round', 'line-join': 'round' }} />
-      </GeoJSONSource>}
-      {features.length > 0 && <GeoJSONSource id="markers" data={{ type: 'FeatureCollection', features }}>
-        <Layer id="marker-circles" type="circle" paint={{ 'circle-radius': 9, 'circle-color': ['get','color'], 'circle-stroke-color': '#FFFFFF', 'circle-stroke-width': 3 }} />
-      </GeoJSONSource>}
-      {carFeature && <GeoJSONSource id="driver-car" data={{ type: 'FeatureCollection', features: [carFeature] }}>
-        <Layer id="driver-car-symbol" type="symbol" layout={{ 'text-field': '🚘', 'text-size': 30, 'text-allow-overlap': true, 'text-ignore-placement': true }} />
-      </GeoJSONSource>}
-    </MapLibreView>
+    <YandexMapView
+      ref={cameraRef}
+      style={{ flex: 1 }}
+      mapType="map"
+      cameraPosition={cameraPosition}
+      showUserPosition={false}
+      onMapPress={({ nativeEvent }) => {
+        if (!allowPickDestination || !pickingDestination || !onPickDestination) return;
+        const point = nativeEvent?.point;
+        if (point?.latitude != null && point?.longitude != null) onPickDestination(point);
+      }}
+    >
+      {pickup && <Marker point={{ latitude: Number(pickup.latitude), longitude: Number(pickup.longitude) }}>
+        <View style={{ backgroundColor: P.green, borderColor: '#FFFFFF', borderWidth: 2, borderRadius: 16, minWidth: 30, height: 30, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7 }}>
+          <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>А</Text>
+        </View>
+      </Marker>}
+      {destination && <Marker point={{ latitude: Number(destination.latitude), longitude: Number(destination.longitude) }}>
+        <View style={{ backgroundColor: P.pink, borderColor: '#FFFFFF', borderWidth: 2, borderRadius: 16, minWidth: 30, height: 30, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7 }}>
+          <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>Б</Text>
+        </View>
+      </Marker>}
+      {route?.length > 1 && <Polyline points={route} strokeColor={P.pink} strokeWidth={5} outlineColor="#FFFFFF" outlineWidth={2} />}
+      {driverLocation && <Marker point={{ latitude: Number(driverLocation.latitude), longitude: Number(driverLocation.longitude) }}>
+        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 2, borderColor: P.pink, padding: 5 }}>
+          <Text style={{ fontSize: 20 }}>🚘</Text>
+        </View>
+      </Marker>}
+    </YandexMapView>
     <View style={st.mapControls}>
-      <TouchableOpacity style={st.locateButton} onPress={async () => {
-        const point = await onLocate();
-        if (point) {
-          setFocusPoint([point.longitude, point.latitude]);
-          setZoom(17);
-          setIs3D(true);
-        }
-      }}>
+      <TouchableOpacity style={st.locateButton} onPress={handleLocate}>
         <Text style={st.locateButtonText}>◎  Определить местоположение</Text>
       </TouchableOpacity>
       <View style={st.mapControlRow}>
-        <TouchableOpacity style={[st.mapControl, is3D && st.mapControlActive]} onPress={() => setIs3D(v => !v)}><Text style={[st.mapControlText, is3D && st.mapControlTextActive]}>3D</Text></TouchableOpacity>
-        <TouchableOpacity style={st.mapControl} onPress={() => setZoom(v => Math.min(19, v + 1))}><Text style={st.mapControlText}>＋</Text></TouchableOpacity>
-        <TouchableOpacity style={st.mapControl} onPress={() => setZoom(v => Math.max(3, v - 1))}><Text style={st.mapControlText}>−</Text></TouchableOpacity>
+        <TouchableOpacity style={[st.mapControl, is3D && st.mapControlActive]} onPress={() => {
+          setIs3D(v => !v);
+          setCameraPosition(current => ({ ...current, tilt: is3D ? 0 : 45 }));
+        }}><Text style={[st.mapControlText, is3D && st.mapControlTextActive]}>3D</Text></TouchableOpacity>
+        <TouchableOpacity style={st.mapControl} onPress={() => {
+          const next = Math.min(20, zoom + 1); setZoom(next);
+          setCameraPosition(current => ({ ...current, zoom: next }));
+        }}><Text style={st.mapControlText}>＋</Text></TouchableOpacity>
+        <TouchableOpacity style={st.mapControl} onPress={() => {
+          const next = Math.max(3, zoom - 1); setZoom(next);
+          setCameraPosition(current => ({ ...current, zoom: next }));
+        }}><Text style={st.mapControlText}>−</Text></TouchableOpacity>
       </View>
     </View>
-    <View style={st.mapLabel}><View style={st.liveDot}/><Text style={st.mapLabelText}>{pickingDestination ? 'Нажми на карту, чтобы выбрать точку' : 'Карта поездки'}</Text></View>
+    <View style={st.mapLabel}><View style={st.liveDot}/><Text style={st.mapLabelText}>{pickingDestination ? 'Нажми на карту, чтобы выбрать точку' : 'Яндекс Карты'}</Text></View>
   </View>;
 }
 
@@ -891,13 +814,16 @@ export default function LadyGoApp() {
     const build = async () => {
       if (!pickup || !destination) { setRoute([]); setRouteInfo(null); setQuote(null); return; }
       try {
-        const url = 'https://router.project-osrm.org/route/v1/driving/' + pickup.longitude + ',' + pickup.latitude + ';' + destination.longitude + ',' + destination.latitude + '?overview=full&geometries=geojson';
-        const response = await fetch(url);
-        const json = await response.json();
-        const r = json.routes?.[0];
-        if (!r) throw new Error('Маршрут не найден');
-        const points = r.geometry.coordinates.map(c => ({ longitude: c[0], latitude: c[1] }));
-        if (alive) { setRoute(points); setRouteInfo({ km: (r.distance / 1000).toFixed(1), minutes: Math.max(1, Math.round(r.duration / 60)) }); }
+        const routes = await findDrivingRoutes([pickup, destination], { vehicleType: 'taxi' });
+        const r = routes?.[0];
+        if (!r || !Array.isArray(r.points) || r.points.length < 2) throw new Error('Маршрут не найден');
+        const points = r.points.map(p => ({ latitude: Number(p.latitude), longitude: Number(p.longitude) }));
+        const durationText = r.timeWithTraffic || r.time || '';
+        const minutes = Math.max(1, parseInt(String(durationText).match(/\\d+/)?.[0] || '1', 10));
+        if (alive) {
+          setRoute(points);
+          setRouteInfo({ km: (Number(r.distance || 0) / 1000).toFixed(1), minutes });
+        }
       } catch (_) { if (alive) { setRoute([]); setRouteInfo(null); } }
     };
     build();
