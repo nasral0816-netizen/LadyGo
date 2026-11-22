@@ -212,6 +212,9 @@ export default function LadyGoApp() {
   const [vehicleForm, setVehicleForm] = useState({ display_name: '', vehicle_make: '', vehicle_model: '', vehicle_color: '', vehicle_plate: '', vehicle_year: '' });
   const [vehiclePhotoPath, setVehiclePhotoPath] = useState('');
   const [vehiclePhotoPreview, setVehiclePhotoPreview] = useState('');
+  const [driverPhotoPath, setDriverPhotoPath] = useState('');
+  const [driverPhotoPreview, setDriverPhotoPreview] = useState('');
+  const [driverPhotoUploading, setDriverPhotoUploading] = useState(false);
   const [vehicleSaving, setVehicleSaving] = useState(false);
   const [vehicleUploading, setVehicleUploading] = useState(false);
   const autoLocateStarted = useRef(false);
@@ -249,11 +252,12 @@ export default function LadyGoApp() {
     const active = orderRows.find(o => ['new','accepted','arrived','in_progress'].includes(o.status)) || null;
     setActiveOrder(active);
     if (active?.driver_id && ['accepted','arrived','in_progress'].includes(active.status)) {
-      const { data: vehicle } = await supabase.from('driver_profiles').select('display_name,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,vehicle_photo_url').eq('driver_id', active.driver_id).maybeSingle();
-      if (vehicle?.vehicle_photo_url) {
-        const { data: signed } = await supabase.storage.from('ladygo-driver-media').createSignedUrl(vehicle.vehicle_photo_url, 3600);
-        setDriverVehicle({ ...vehicle, vehicle_photo_signed_url: signed?.signedUrl || null });
-      } else setDriverVehicle(vehicle || null);
+      const { data: vehicle } = await supabase.from('driver_profiles').select('display_name,avatar_url,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,vehicle_photo_url').eq('driver_id', active.driver_id).maybeSingle();
+      const [vehicleSigned, driverSigned] = await Promise.all([
+        vehicle?.vehicle_photo_url ? supabase.storage.from('ladygo-driver-media').createSignedUrl(vehicle.vehicle_photo_url, 3600) : Promise.resolve({ data: null }),
+        vehicle?.avatar_url ? supabase.storage.from('ladygo-driver-media').createSignedUrl(vehicle.avatar_url, 3600) : Promise.resolve({ data: null })
+      ]);
+      setDriverVehicle(vehicle ? { ...vehicle, vehicle_photo_signed_url: vehicleSigned.data?.signedUrl || null, driver_photo_signed_url: driverSigned.data?.signedUrl || null } : null);
     } else { setDriverVehicle(null); setDriverLocation(null); }
   }, [session]);
 
@@ -384,10 +388,15 @@ export default function LadyGoApp() {
     let alive = true;
     if (profile?.role !== 'driver' || !session?.user?.id || !supabase) return () => { alive = false; };
     (async () => {
-      const { data } = await supabase.from('driver_profiles').select('display_name,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,vehicle_photo_url').eq('driver_id', session.user.id).maybeSingle();
+      const { data } = await supabase.from('driver_profiles').select('display_name,avatar_url,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,vehicle_photo_url').eq('driver_id', session.user.id).maybeSingle();
       if (!alive) return;
       setVehicleForm({ display_name: data?.display_name || '', vehicle_make: data?.vehicle_make || '', vehicle_model: data?.vehicle_model || '', vehicle_color: data?.vehicle_color || '', vehicle_plate: data?.vehicle_plate || '', vehicle_year: data?.vehicle_year ? String(data.vehicle_year) : '' });
       setVehiclePhotoPath(data?.vehicle_photo_url || '');
+      setDriverPhotoPath(data?.avatar_url || '');
+      if (data?.avatar_url) {
+        const { data: signedAvatar } = await supabase.storage.from('ladygo-driver-media').createSignedUrl(data.avatar_url, 3600);
+        if (alive) setDriverPhotoPreview(signedAvatar?.signedUrl || '');
+      } else if (alive) setDriverPhotoPreview('');
       if (data?.vehicle_photo_url) {
         const { data: signed } = await supabase.storage.from('ladygo-driver-media').createSignedUrl(data.vehicle_photo_url, 3600);
         if (alive) setVehiclePhotoPreview(signed?.signedUrl || '');
@@ -419,6 +428,29 @@ export default function LadyGoApp() {
     finally { setVehicleUploading(false); }
   };
 
+  const chooseDriverPhoto = async () => {
+    if (driverPhotoUploading || !session?.user?.id) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) { Alert.alert('Нужен доступ к фото', 'Разреши доступ к галерее, чтобы добавить фотографию профиля водителя.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.82 });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setDriverPhotoUploading(true);
+    try {
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      const mime = asset.mimeType || 'image/jpeg';
+      const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
+      const path = `${session.user.id}/avatar-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('ladygo-driver-media').upload(path, blob, { contentType: mime, upsert: false });
+      if (error) throw error;
+      const { data: signed } = await supabase.storage.from('ladygo-driver-media').createSignedUrl(path, 3600);
+      setDriverPhotoPath(path);
+      setDriverPhotoPreview(signed?.signedUrl || asset.uri);
+    } catch (e) { Alert.alert('Не удалось загрузить фото', translateError(e)); }
+    finally { setDriverPhotoUploading(false); }
+  };
+
   const saveVehicleProfile = async () => {
     if (!session?.user?.id || vehicleSaving) return;
     if (!vehicleForm.vehicle_make.trim() || !vehicleForm.vehicle_model.trim()) { Alert.alert('Заполни данные машины', 'Укажи марку и модель автомобиля.'); return; }
@@ -427,7 +459,7 @@ export default function LadyGoApp() {
     setVehicleSaving(true);
     try {
       const { error } = await supabase.from('driver_profiles').upsert({
-        driver_id: session.user.id, display_name: vehicleForm.display_name.trim(),
+        driver_id: session.user.id, display_name: vehicleForm.display_name.trim(), avatar_url: driverPhotoPath || null,
         vehicle_make: vehicleForm.vehicle_make.trim(), vehicle_model: vehicleForm.vehicle_model.trim(),
         vehicle_color: vehicleForm.vehicle_color.trim() || null, vehicle_plate: vehicleForm.vehicle_plate.trim() || null,
         vehicle_year: year, vehicle_photo_url: vehiclePhotoPath || null, updated_at: new Date().toISOString()
@@ -834,6 +866,13 @@ export default function LadyGoApp() {
           destination={activeOrder.destination_lat && activeOrder.destination_lng ? { latitude: activeOrder.destination_lat, longitude: activeOrder.destination_lng } : null}
           route={[]} driverLocation={driverLocation} onLocate={async () => driverLocation} allowPickDestination={false}/>
         <View style={st.orderCard}>
+          <View style={st.passengerDriverRow}>
+            {driverVehicle?.driver_photo_signed_url ? <Image source={{ uri: driverVehicle.driver_photo_signed_url }} style={st.passengerDriverPhoto} /> : <View style={st.passengerDriverPlaceholder}><Text style={st.passengerDriverInitial}>{(driverVehicle?.display_name || 'В').slice(0,1).toUpperCase()}</Text></View>}
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={st.heading}>{driverVehicle?.display_name || 'Ваш водитель'}</Text>
+              <Text style={st.passengerDriverRating}>★ {driverRatingStats[activeOrder.driver_id]?.average_rating ? Number(driverRatingStats[activeOrder.driver_id].average_rating).toFixed(1) : 'Новый'} · {driverRatingStats[activeOrder.driver_id]?.rating_count || 0} оценок</Text>
+            </View>
+          </View>
           {driverVehicle?.vehicle_photo_signed_url && <Image source={{ uri: driverVehicle.vehicle_photo_signed_url }} style={st.passengerVehiclePhoto} resizeMode="cover" />}
           <Text style={st.heading}>{[driverVehicle?.vehicle_color, driverVehicle?.vehicle_make, driverVehicle?.vehicle_model].filter(Boolean).join(' ') || 'Автомобиль водителя'}</Text>
           <Text style={st.orderAddress}>{driverVehicle?.vehicle_plate || 'Номер автомобиля не указан'}{driverVehicle?.vehicle_year ? ' · ' + driverVehicle.vehicle_year : ''}</Text>
@@ -942,6 +981,18 @@ export default function LadyGoApp() {
             <Text style={st.driverEarningsNote}>По данным завершённых заказов</Text>
           </View>
           <Text style={st.driverEarningsIcon}>₽</Text>
+        </View>
+        <View style={st.vehicleEditorCard}>
+          <View style={st.rowBetween}><Text style={st.heading}>Фото водителя</Text><Text style={st.vehicleEditorHint}>Для карточки поездки</Text></View>
+          <View style={st.driverPhotoEditorRow}>
+            {driverPhotoPreview ? <Image source={{ uri: driverPhotoPreview }} style={st.driverPhotoPreview} /> : <View style={st.driverPhotoPlaceholder}><Text style={st.driverPhotoPlaceholderText}>👤</Text></View>}
+            <View style={{ flex: 1, gap: 8 }}>
+              <Text style={st.vehicleEditorHint}>Пассажир увидит это фото вместе с именем и рейтингом водителя</Text>
+              <TouchableOpacity style={st.vehiclePhotoButton} onPress={chooseDriverPhoto} disabled={driverPhotoUploading}>
+                {driverPhotoUploading ? <ActivityIndicator color={P.pinkDark}/> : <Text style={st.vehiclePhotoButtonText}>{driverPhotoPreview ? 'Изменить фото водителя' : 'Добавить фото водителя'}</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
         <View style={st.vehicleEditorCard}>
           <View style={st.rowBetween}><Text style={st.heading}>Мой автомобиль</Text><Text style={st.vehicleEditorHint}>Данные для пассажира</Text></View>
@@ -1226,5 +1277,14 @@ const st = StyleSheet.create({
   vehicleInputRow: { flexDirection: 'row', gap: 8 },
   vehicleSaveButton: { backgroundColor: P.pink, borderRadius: 13, padding: 14, alignItems: 'center' },
   vehicleSaveText: { color: P.white, fontSize: 13, fontWeight: '900' },
+  passengerDriverRow: { flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 12 },
+  passengerDriverPhoto: { width: 62, height: 62, borderRadius: 31, backgroundColor: P.pale },
+  passengerDriverPlaceholder: { width: 62, height: 62, borderRadius: 31, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
+  passengerDriverInitial: { color: P.pinkDark, fontSize: 25, fontWeight: '900' },
+  passengerDriverRating: { color: '#C17A18', fontSize: 13, fontWeight: '900' },
+  driverPhotoEditorRow: { flexDirection: 'row', alignItems: 'center', gap: 13 },
+  driverPhotoPreview: { width: 92, height: 92, borderRadius: 46, backgroundColor: P.pale },
+  driverPhotoPlaceholder: { width: 92, height: 92, borderRadius: 46, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
+  driverPhotoPlaceholderText: { fontSize: 34 },
   passengerVehiclePhoto: { width: '100%', height: 180, borderRadius: 14, marginBottom: 10, backgroundColor: P.pale }
 });
