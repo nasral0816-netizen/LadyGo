@@ -1893,8 +1893,7 @@ function LadyGoAppContent() {
       if (!start || !Number.isFinite(Number(start.latitude)) || !Number.isFinite(Number(start.longitude))) {
         throw new Error('Не удалось точно определить адрес подачи. Укажи адрес ещё раз или выбери своё местоположение.');
       }
-      const stopAddresses = stopsText.split(/
-+/).map(x => x.trim()).filter(Boolean);
+      const stopAddresses = stopsText.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
       if (stopAddresses.length > 20) throw new Error('Можно добавить не больше 20 промежуточных точек.');
       const structuredStops = [];
       for (let i = 0; i < stopAddresses.length; i++) {
