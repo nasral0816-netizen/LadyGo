@@ -1,18 +1,21 @@
 {
   "name": "ladygo-yandex-map-demo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
+    "check:expo": "expo install --check",
     "build:apk": "eas build --platform android --profile preview"
   },
   "dependencies": {
     "expo": "~57.0.33",
-    "expo-yandex-mapkit": "^2.23.0",
+    "expo-yandex-mapkit": "2.23.0",
     "react": "19.2.3",
     "react-native": "0.86.3"
-  },
-  "devDependencies": {}
+  }
 }
