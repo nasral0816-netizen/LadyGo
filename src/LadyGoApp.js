@@ -143,9 +143,6 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
       </GeoJSONSource>}
     </MapLibreView>
     <View style={st.mapControls}>
-      {allowPickDestination && <TouchableOpacity style={[st.locateButton, pickingDestination && { backgroundColor: P.pink }]} onPress={() => onPickDestination?.(null)}>
-        <Text style={st.locateButtonText}>{pickingDestination ? 'Выбери точку на карте…' : '⌖  Указать место на карте'}</Text>
-      </TouchableOpacity>}
       <TouchableOpacity style={st.locateButton} onPress={async () => {
         const point = await onLocate();
         if (point) {
