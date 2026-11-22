@@ -444,6 +444,23 @@ export default function LadyGoApp() {
     finally { setBusy(false); }
   };
 
+  const submitDriverRating = async order => {
+    if (!session?.user?.id || !order?.driver_id || order.status !== 'completed' || ratingValue < 1 || ratingValue > 5 || ratingSaving) return;
+    setRatingSaving(true);
+    try {
+      const { error } = await supabase.from('order_ratings').insert({ order_id: order.id, passenger_id: session.user.id, driver_id: order.driver_id, rating: ratingValue });
+      if (error) throw error;
+      setRatedOrderIds(current => [...current, order.id]);
+      setRatingOrderId(null);
+      setRatingValue(0);
+      await loadOrders();
+      Alert.alert('Спасибо за оценку!', 'Твоя оценка сохранена и повлияет на рейтинг водителя.');
+    } catch (e) {
+      const duplicate = /duplicate|unique/i.test(String(e?.message || ''));
+      Alert.alert('Не удалось сохранить оценку', duplicate ? 'Эта поездка уже оценена.' : translateError(e));
+      if (duplicate) setRatedOrderIds(current => [...new Set([...current, order.id])]);
+    } finally { setRatingSaving(false); }
+  };
   const signIn = async () => {
     if (!email.trim() || password.length < 6) return Alert.alert('Проверь данные', 'Введи email и пароль не короче 6 символов.');
     setBusy(true);
