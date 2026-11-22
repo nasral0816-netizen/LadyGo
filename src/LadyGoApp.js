@@ -60,8 +60,7 @@ function Field({ label, value, onChangeText, placeholder, onFocus, icon, autoCap
     <Text style={st.fieldIcon}>{icon}</Text>
     <View style={{ flex: 1 }}>
       <Text style={st.fieldLabel}>{label}</Text>
-      <TextInput value={value} onChangeText={onChangeText} onFocus={onFocus} placeholder={placeholder}
-        placeholderTextColor="#A9A2A7" style={st.fieldInput} autoCapitalize={autoCapitalize} returnKeyType="search" />
+      <Text numberOfLines={1} style={[st.fieldInput, !value && { color: "#A9A2A7" }]}>{value || placeholder}</Text>
     </View>
   </View>;
 }
@@ -318,7 +317,7 @@ const st = StyleSheet.create({
   logo: { color: P.pink, fontSize: 42, fontWeight: '900', letterSpacing: -2 },
   tagline: { color: P.muted, fontSize: 15, marginTop: 4 },
   authCard: { gap: 14 },
-  heading: { color: P.ink, fontSize: 22, fontWeight: '850', letterSpacing: -0.4 },
+  heading: { color: P.ink, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 },
   authInput: { borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 17, fontSize: 16, color: P.ink, backgroundColor: '#FBFAFB' },
   primaryBtn: { backgroundColor: P.pink, minHeight: 56, borderRadius: 17, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, marginTop: 8 },
   primaryText: { color: P.white, fontSize: 16, fontWeight: '800' },
@@ -351,7 +350,7 @@ const st = StyleSheet.create({
   locateRowText: { color: P.pinkDark, fontSize: 13, fontWeight: '700' },
   routeMeta: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#F8F6F7', padding: 11, borderRadius: 12 },
   routeMetaText: { color: P.muted, fontSize: 12, fontWeight: '700' },
-  sectionTitle: { color: P.ink, fontSize: 15, fontWeight: '850', marginTop: 6 },
+  sectionTitle: { color: P.ink, fontSize: 15, fontWeight: '800', marginTop: 6 },
   tariffs: { flexDirection: 'row', gap: 8 },
   tariff: { flex: 1, minHeight: 80, borderWidth: 1, borderColor: P.line, borderRadius: 14, alignItems: 'center', justifyContent: 'center', padding: 7, gap: 5, backgroundColor: P.white },
   tariffSelected: { borderColor: P.pink, backgroundColor: P.pale },
@@ -381,7 +380,7 @@ const st = StyleSheet.create({
   clear: { color: P.muted, fontSize: 26, paddingHorizontal: 5 },
   suggestion: { flexDirection: 'row', gap: 12, alignItems: 'center', paddingHorizontal: 17, paddingVertical: 15, borderBottomWidth: 1, borderColor: '#F3EFF1' },
   suggestionIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
-  suggestionTitle: { color: P.ink, fontSize: 15, fontWeight: '750' },
+  suggestionTitle: { color: P.ink, fontSize: 15, fontWeight: '700' },
   suggestionSub: { color: P.muted, fontSize: 12, marginTop: 3 },
   empty: { color: P.muted, textAlign: 'center', padding: 25, lineHeight: 21 },
   pageContent: { padding: 18, gap: 13, paddingBottom: 28 },
