@@ -431,13 +431,21 @@ const errorText = error => {
   return m || 'Не удалось выполнить действие. Попробуй ещё раз.';
 };
 
-function Button({ title, onPress, secondary, danger, disabled, compact }) {
-  return <TouchableOpacity activeOpacity={0.76} disabled={disabled} onPress={onPress}
-    accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled: !!disabled }}
-    hitSlop={4}
+function Button({ title, onPress, secondary, danger, disabled, compact, loading = false, accessibilityHint }) {
+  const blocked = !!disabled || !!loading;
+  return <TouchableOpacity activeOpacity={0.82} disabled={blocked} onPress={blocked ? undefined : onPress}
+    accessibilityRole="button" accessibilityLabel={title} accessibilityHint={accessibilityHint}
+    accessibilityState={{ disabled: blocked, busy: !!loading }}
+    hitSlop={6}
+    android_ripple={Platform.OS === 'android' ? { color: secondary ? '#F5DCE6' : '#FFFFFF35', borderless: false } : undefined}
     style={[s.button, secondary && s.buttonSecondary, danger && s.buttonDanger,
-      disabled && s.buttonDisabled, compact && { paddingVertical: 11, minHeight: 42 }]}>
-    <Text style={[s.buttonText, secondary && { color: C.pinkDark }, danger && { color: C.red }]}>{title}</Text>
+      blocked && s.buttonDisabled, compact && { paddingVertical: 11, minHeight: 44 }]}>
+    {loading
+      ? <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 }}>
+          <ActivityIndicator size="small" color={secondary || danger ? C.pinkDark : C.white} />
+          <Text style={[s.buttonText, secondary && { color: C.pinkDark }, danger && { color: C.red }]}>{title}</Text>
+        </View>
+      : <Text style={[s.buttonText, secondary && { color: C.pinkDark }, danger && { color: C.red }]}>{title}</Text>}
   </TouchableOpacity>;
 }
 function Input({ label, value, onChangeText, placeholder, keyboardType, secureTextEntry, multiline }) {
@@ -445,9 +453,10 @@ function Input({ label, value, onChangeText, placeholder, keyboardType, secureTe
     {label ? <Text style={s.label}>{label}</Text> : null}
     <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder || label}
       placeholderTextColor="#A99DA3" keyboardType={keyboardType} secureTextEntry={secureTextEntry}
-      multiline={multiline} autoCapitalize="none" selectionColor={C.pink}
+      multiline={multiline} autoCapitalize="none" autoCorrect={false} selectionColor={C.pink}
       accessibilityLabel={label || placeholder || 'Поле ввода'}
-      style={[s.input, multiline && { minHeight: 88, textAlignVertical: 'top' }]} />
+      accessibilityHint={multiline ? 'Можно ввести несколько строк' : undefined}
+      style={[s.input, multiline && { minHeight: 96, textAlignVertical: 'top' }]} />
   </View>;
 }
 function Pill({ children, color = C.pink }) {
@@ -1219,10 +1228,16 @@ function LadyGoAppContent() {
   }, [loadOrders, loadApplications, loadSavedPlaces, loadNotifications, loadRatings, loadTariffRates, loadFixedPrices, loadSupportTickets, loadDriverProfile]);
 
   const onRefresh = useCallback(async () => {
+    if (refreshing) return;
     setRefreshing(true);
-    await refreshAll();
-    setRefreshing(false);
-  }, [refreshAll]);
+    try {
+      await refreshAll();
+    } catch (error) {
+      Alert.alert('Не удалось обновить', errorText(error));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshAll, refreshing]);
 
   useEffect(() => {
     const handleAuthUrl = async url => {
@@ -1846,8 +1861,11 @@ function LadyGoAppContent() {
       Alert.alert('Заказ отправлен', 'Ищем водителя. Стоимость поездки согласуется с водителем перед принятием заказа.');
       setTab('ride');
       await loadOrders();
-    } catch (e) { Alert.alert('Не удалось заказать поездку', errorText(e)); }
-    setBusy(false);
+    } catch (e) {
+      Alert.alert('Не удалось заказать поездку', errorText(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const submitSupportTicket = async () => {
@@ -2055,13 +2073,19 @@ function LadyGoAppContent() {
     { text: 'Оставить', style: 'cancel' },
     { text: 'Подтвердить отмену', style: 'destructive', onPress: async () => {
       setBusy(true);
-      const { error } = await supabase.rpc('ladygo_cancel_active_order', {
-        p_order_id: order.id,
-        p_reason: isDriver ? 'Отмена водителем' : 'Отмена пассажиром',
-      });
-      setBusy(false);
-      if (error) Alert.alert('Не удалось отменить', errorText(error));
-      else { await loadOrders(); Alert.alert('Поездка отменена', 'Участники поездки получат уведомление.'); }
+      try {
+        const { error } = await supabase.rpc('ladygo_cancel_active_order', {
+          p_order_id: order.id,
+          p_reason: isDriver ? 'Отмена водителем' : 'Отмена пассажиром',
+        });
+        if (error) throw error;
+        await loadOrders();
+        Alert.alert('Поездка отменена', 'Участники поездки получат уведомление.');
+      } catch (error) {
+        Alert.alert('Не удалось отменить', errorText(error));
+      } finally {
+        setBusy(false);
+      }
     } },
   ]);
 
