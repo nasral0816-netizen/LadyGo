@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, Keyboard, Linking, Platform, SafeAreaView, ScrollView,
   StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View
@@ -34,6 +34,9 @@ async function findAddresses(q) {
 }
 
 function MapPanel({ pickup, destination, route, onLocate }) {
+  const cameraRef = useRef(null);
+  const [zoom, setZoom] = useState(13);
+  const [is3D, setIs3D] = useState(false);
   const points = [pickup && { ...pickup, label: 'А', color: P.green }, destination && { ...destination, label: 'Б', color: P.pink }].filter(Boolean);
   const features = points.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] }, properties: { label: p.label, color: p.color } }));
   const line = { type: 'Feature', geometry: { type: 'LineString', coordinates: route.map(p => [p.longitude, p.latitude]) }, properties: {} };
@@ -41,7 +44,7 @@ function MapPanel({ pickup, destination, route, onLocate }) {
   const center = coords.length ? [coords.reduce((s,p)=>s+p[0],0)/coords.length, coords.reduce((s,p)=>s+p[1],0)/coords.length] : [42.7168,43.9052];
   return <View style={st.map}>
     <MapLibreView style={{ flex: 1 }} mapStyle={P.map} androidView="texture" attribution logo={false} compass dragPan touchZoom doubleTapZoom>
-      <Camera centerCoordinate={center} zoomLevel={coords.length > 1 ? 12 : 13} animationMode="flyTo" animationDuration={500} />
+      <Camera ref={cameraRef} centerCoordinate={center} zoomLevel={zoom} pitch={is3D ? 55 : 0} animationMode="flyTo" animationDuration={500} />
       {route.length > 1 && <GeoJSONSource id="route" data={line}>
         <Layer id="route-outline" type="line" paint={{ 'line-color': '#FFFFFF', 'line-width': 9, 'line-cap': 'round', 'line-join': 'round' }} />
         <Layer id="route-main" type="line" paint={{ 'line-color': P.pink, 'line-width': 5, 'line-cap': 'round', 'line-join': 'round' }} />
@@ -50,7 +53,12 @@ function MapPanel({ pickup, destination, route, onLocate }) {
         <Layer id="marker-circles" type="circle" paint={{ 'circle-radius': 9, 'circle-color': ['get','color'], 'circle-stroke-color': '#FFFFFF', 'circle-stroke-width': 3 }} />
       </GeoJSONSource>}
     </MapLibreView>
-    <TouchableOpacity style={st.locate} onPress={onLocate}><Text style={st.locateText}>◎</Text></TouchableOpacity>
+    <View style={st.mapControls}>
+      <TouchableOpacity style={[st.mapControl, is3D && st.mapControlActive]} onPress={() => setIs3D(v => !v)}><Text style={[st.mapControlText, is3D && st.mapControlTextActive]}>3D</Text></TouchableOpacity>
+      <TouchableOpacity style={st.mapControl} onPress={() => { const next = Math.min(19, zoom + 1); setZoom(next); cameraRef.current?.setCamera({ zoomLevel: next, animationDuration: 250 }); }}><Text style={st.mapControlText}>＋</Text></TouchableOpacity>
+      <TouchableOpacity style={st.mapControl} onPress={() => { const next = Math.max(3, zoom - 1); setZoom(next); cameraRef.current?.setCamera({ zoomLevel: next, animationDuration: 250 }); }}><Text style={st.mapControlText}>−</Text></TouchableOpacity>
+      <TouchableOpacity style={st.mapControl} onPress={async () => { const point = await onLocate(); if (point) { setZoom(16); cameraRef.current?.setCamera({ centerCoordinate: [point.longitude, point.latitude], zoomLevel: 16, animationDuration: 650, animationMode: 'flyTo' }); } }}><Text style={st.locateText}>◎</Text></TouchableOpacity>
+    </View>
     <View style={st.mapLabel}><View style={st.liveDot}/><Text style={st.mapLabelText}>Кисловодск</Text></View>
   </View>;
 }
@@ -192,6 +200,7 @@ export default function LadyGoApp() {
       const places = await Location.reverseGeocodeAsync(point).catch(() => []);
       const p = places?.[0] || {};
       setPickupText([p.street, p.streetNumber, p.city || p.subregion].filter(Boolean).join(', ') || 'Моё местоположение');
+      return point;
     } catch (_) { Alert.alert('Не удалось определить место', 'Попробуй ещё раз или введи адрес вручную.'); }
   };
 
@@ -381,8 +390,12 @@ const st = StyleSheet.create({
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: P.pinkDark, fontWeight: '900', fontSize: 16 },
   map: { height: 280, backgroundColor: '#E9E7E3' },
-  locate: { position: 'absolute', right: 14, bottom: 14, width: 44, height: 44, borderRadius: 15, backgroundColor: P.white, alignItems: 'center', justifyContent: 'center', elevation: 4 },
-  locateText: { color: P.pink, fontSize: 27, fontWeight: '700' },
+  mapControls: { position: 'absolute', left: 9, bottom: 12, gap: 6, alignItems: 'center' },
+  mapControl: { width: 34, height: 34, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.96)', alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
+  mapControlActive: { backgroundColor: P.pink },
+  mapControlText: { color: P.ink, fontSize: 19, fontWeight: '800', lineHeight: 23 },
+  mapControlTextActive: { color: P.white },
+  locateText: { color: P.pink, fontSize: 22, fontWeight: '800' },
   mapLabel: { position: 'absolute', top: 12, left: 12, flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: P.white, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, elevation: 2 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: P.green },
   mapLabelText: { color: P.ink, fontSize: 12, fontWeight: '700' },
