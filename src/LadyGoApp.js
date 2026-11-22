@@ -45,7 +45,7 @@ const translateError = error => {
   const raw = String(error?.message || error || '').trim();
   const message = raw.toLowerCase();
   if (!raw) return 'Произошла ошибка. Попробуй ещё раз.';
-  if (/invalid login credentials|invalid email or password/.test(message)) return 'Неверная почта или пароль.';
+  if (/invalid login credentials|invalid email or password/.test(message)) return 'Неверный номер телефона/email или пароль.';
   if (/email not confirmed/.test(message)) return 'Подтверди адрес электронной почты по ссылке в письме.';
   if (/user already registered|already been registered/.test(message)) return 'Этот адрес электронной почты уже зарегистрирован. Войди в аккаунт.';
   if (/password.*(at least|minimum)|weak password/.test(message)) return 'Пароль слишком простой или короткий. Придумай другой пароль.';
@@ -256,7 +256,6 @@ export default function LadyGoApp() {
   const [boot, setBoot] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [registrationPhone, setRegistrationPhone] = useState('');
   const [register, setRegister] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState('ride');
@@ -798,22 +797,30 @@ export default function LadyGoApp() {
     } finally { setRatingSaving(false); }
   };
   const signIn = async () => {
-    if (!email.trim() || password.length < 6) return Alert.alert('Проверь данные', 'Введи email и пароль не короче 6 символов.');
-    const normalizedPhone = registrationPhone.trim();
-    const phoneDigits = normalizedPhone.replace(/\\D/g, '');
-    if (register && (!normalizedPhone || phoneDigits.length < 10 || phoneDigits.length > 15)) {
-      return Alert.alert('Нужен номер телефона', 'При регистрации обязательно укажи действующий номер телефона (от 10 до 15 цифр).');
+    const identifier = email.trim();
+    const phoneDigits = identifier.replace(/\D/g, '');
+    const isEmail = identifier.includes('@');
+    if (!identifier || password.length < 6) return Alert.alert('Проверь данные', 'Введи номер телефона и пароль не короче 6 символов.');
+    if (register && (isEmail || phoneDigits.length < 10 || phoneDigits.length > 15)) {
+      return Alert.alert('Проверь номер', 'Укажи номер телефона в международном формате, например +79991234567.');
     }
+    if (!register && !isEmail && (phoneDigits.length < 10 || phoneDigits.length > 15)) {
+      return Alert.alert('Проверь номер', 'Укажи номер телефона в международном формате.');
+    }
+    // Временная схема без SMS: телефон преобразуется в технический email для Supabase Auth.
+    // Вход по email оставлен для существующего аккаунта администратора.
+    const authEmail = isEmail && !register ? identifier.toLowerCase() : 'phone-' + phoneDigits + '@auth.ladygo.app';
     setBusy(true);
     try {
       const result = register
-        ? await supabase.auth.signUp({ email: email.trim(), password, options: { data: { phone: normalizedPhone } } })
-        : await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        ? await supabase.auth.signUp({ email: authEmail, password, options: { data: { phone: phoneDigits } } })
+        : await supabase.auth.signInWithPassword({ email: authEmail, password });
       if (result.error) throw result.error;
-      if (register && result.data.user && result.data.session) {
-        await supabase.from('profiles').upsert({ id: result.data.user.id, email: email.trim(), phone: normalizedPhone }, { onConflict: 'id' });
+      if (register && result.data.user) {
+        const { error: profileError } = await supabase.from('profiles').upsert({ id: result.data.user.id, email: null, phone: phoneDigits }, { onConflict: 'id' });
+        if (profileError) throw profileError;
       }
-      if (register && !result.data.session) Alert.alert('Почти готово', 'Подтверди email по письму, затем войди в LadyGo. Номер телефона сохранён.');
+      if (register && !result.data.session) Alert.alert('Требуется настройка', 'В Supabase включено подтверждение email. Для этого временного способа его нужно отключить; SMS-подтверждения пока нет.');
     } catch (e) { Alert.alert('Не удалось войти', translateError(e)); }
     finally { setBusy(false); }
   };
@@ -1028,8 +1035,7 @@ export default function LadyGoApp() {
   if (!session) return <SafeAreaView style={st.auth}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
     <View style={st.authLogo}><Text style={st.logo}>LadyGo</Text><Text style={st.tagline}>Поездки с заботой</Text></View>
     <View style={st.authCard}><Text style={st.heading}>{register ? 'Создать аккаунт' : 'С возвращением'}</Text>
-      <TextInput style={st.authInput} value={email} onChangeText={setEmail} placeholder="Электронная почта" autoCapitalize="none" keyboardType="email-address"/>
-      {register ? <TextInput style={st.authInput} value={registrationPhone} onChangeText={setRegistrationPhone} placeholder="Номер телефона *" keyboardType="phone-pad" textContentType="telephoneNumber"/> : null}
+      <TextInput style={st.authInput} value={email} onChangeText={setEmail} placeholder={register ? "Номер телефона" : "Номер телефона или email администратора"} autoCapitalize="none" keyboardType={register || !email.includes("@") ? "phone-pad" : "email-address"} textContentType="telephoneNumber"/>
       <TextInput style={st.authInput} value={password} onChangeText={setPassword} placeholder="Пароль" secureTextEntry/>
       <TouchableOpacity style={st.primaryBtn} onPress={signIn} disabled={busy}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>{register ? 'Зарегистрироваться' : 'Войти'}</Text>}</TouchableOpacity>
       <TouchableOpacity onPress={() => setRegister(!register)}><Text style={st.switchText}>{register ? 'Уже есть аккаунт? Войти' : 'Создать новый аккаунт'}</Text></TouchableOpacity>
@@ -1369,7 +1375,7 @@ export default function LadyGoApp() {
     </ScrollView>}
     {tab === 'preview' && <LadyGoPreview onBack={() => setTab('profile')} />}
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
-      <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.email || session.user.email}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
+      <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.phone || profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.phone || profile?.email || 'Аккаунт LadyGo'}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
       <TouchableOpacity style={st.profileRow} onPress={() => setTab('orders')}><Text style={st.profileRowIcon}>◷</Text><Text style={st.profileRowText}>История поездок</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
       {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><Text style={st.profileRowIcon}>🚘</Text><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}
