@@ -514,7 +514,6 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
       )
     : 0.04;
   const initialZoom = Math.max(10, Math.min(16, Math.log2(360 / spread) - 1));
-  useEffect(() => { setZoom(initialZoom); }, [initialZoom]);
   useEffect(() => {
     if (!following || !followPoint || !Number.isFinite(Number(followPoint.latitude)) || !Number.isFinite(Number(followPoint.longitude))) return;
     cameraRef.current?.easeTo({
@@ -524,6 +523,10 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
     });
   }, [following, followPoint?.latitude, followPoint?.longitude]);
   const moveToFollowPoint = () => {
+    if (following) {
+      setFollowing(false);
+      return;
+    }
     if (!followPoint || !Number.isFinite(Number(followPoint.latitude)) || !Number.isFinite(Number(followPoint.longitude))) return;
     setFollowing(true);
     setZoom(Math.max(14, zoom));
