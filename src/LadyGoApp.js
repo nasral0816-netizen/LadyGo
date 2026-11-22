@@ -41,7 +41,7 @@ const translateError = error => {
 };
 
 async function findAddresses(q) {
-  const clean = String(q || '').replace(/\\s+/g, ' ').trim();
+  const clean = String(q || '').replace(/\s+/g, ' ').trim();
   if (clean.length < 2) return [];
 
   const explicitCity = /краснодар|саратов|кисловодск|пятигорск|ессентуки|минеральн|черкесск|невинномысск|ставропол|георгиевск|железноводск|лермонтов|подкумок|карачаевск|домбай/i.test(clean);
