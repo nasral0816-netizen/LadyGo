@@ -1118,6 +1118,8 @@ function LadyGoAppContent() {
   const locationWatch = useRef(null);
   const driverSoundPrompted = useRef(false);
   const authProfileTimer = useRef(null);
+  const profileLoadSeq = useRef(0);
+  const activeAuthUserId = useRef(null);
   const mapRef = useRef(null);
 
   useEffect(() => {
@@ -1162,9 +1164,13 @@ function LadyGoAppContent() {
 
   const loadProfile = useCallback(async currentUser => {
     if (!currentUser || !supabase) return null;
+    const requestSeq = ++profileLoadSeq.current;
     const { data, error } = await supabase.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
     if (error) throw error;
-    setProfile(data || null);
+    // Ignore a slower response belonging to an account that has already been switched.
+    if (requestSeq === profileLoadSeq.current && activeAuthUserId.current === currentUser.id) {
+      setProfile(data || null);
+    }
     return data || null;
   }, []);
 
@@ -1344,17 +1350,33 @@ function LadyGoAppContent() {
       if (error) throw error;
       if (!mounted) return;
       setSession(data.session);
+      activeAuthUserId.current = data.session?.user?.id || null;
       if (data.session?.user) await loadProfile(data.session.user);
       setBooting(false);
     }).catch(e => { if (mounted) { setBooting(false); Alert.alert('Ошибка запуска', errorText(e)); } });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      const nextUserId = nextSession?.user?.id || null;
+      const accountChanged = activeAuthUserId.current !== nextUserId;
       setSession(nextSession);
-      if (!nextSession) {
-        if (authProfileTimer.current) clearTimeout(authProfileTimer.current);
-        authProfileTimer.current = null;
+      if (accountChanged) {
+        // A role/account switch must never keep the previous account's screen or data.
+        activeAuthUserId.current = nextUserId;
+        profileLoadSeq.current += 1;
         setProfile(null);
         setOrders([]);
         setHistoryOrders([]);
+        setNotifications([]);
+        setDriverProfile(null);
+        setAssignedDriver(null);
+        setDriverLocation(null);
+        setDriverNavigationOrder(null);
+        setExternalNavMapOpen(false);
+        setMode('passenger');
+        setTab('ride');
+      }
+      if (!nextSession) {
+        if (authProfileTimer.current) clearTimeout(authProfileTimer.current);
+        authProfileTimer.current = null;
       } else {
         // Defer profile queries until the auth callback releases Supabase's internal auth lock.
         if (authProfileTimer.current) clearTimeout(authProfileTimer.current);
@@ -1384,7 +1406,7 @@ function LadyGoAppContent() {
     }])));
   }, [tariffRates]);
   useEffect(() => { const id = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(id); }, []);
-  useEffect(() => { if (isDriver) setMode('driver'); else if (isAdmin) setMode('admin'); else setMode('passenger'); }, [isDriver, isAdmin]);
+  useEffect(() => { setMode(isDriver ? 'driver' : isAdmin ? 'admin' : 'passenger'); setTab('ride'); }, [user?.id, role, isDriver, isAdmin]);
 
   const registerDriverPush = useCallback(async () => {
     if (!user || !supabase || !Device.isDevice) return;
