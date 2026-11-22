@@ -318,6 +318,21 @@ export default function LadyGoApp() {
     if (!quote?.price_token || !quote?.expires_at || new Date(quote.expires_at).getTime() <= Date.now()) return Alert.alert('Обновляем стоимость', 'Подожди расчёт цены и попробуй ещё раз.');
     setBusy(true);
     try {
+      // Do not create a second active trip: check the database before insert.
+      const { data: existing, error: checkError } = await supabase.from('orders')
+        .select('id,status')
+        .eq('passenger_id', session.user.id)
+        .in('status', ['new', 'accepted', 'arrived', 'in_progress'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (checkError) throw checkError;
+      if (existing) {
+        await loadOrders();
+        setTab('orders');
+        Alert.alert('У тебя уже есть активный заказ', 'Сначала открой текущий заказ во вкладке «Мои поездки». Второй заказ можно будет оформить после завершения или отмены первого.');
+        return;
+      }
       const payload = {
         passenger_id: session.user.id, pickup_address: pickupText, destination_address: destinationText,
         requested_for: 'Как можно скорее', passenger_phone: phone.trim() || null,
@@ -331,7 +346,16 @@ export default function LadyGoApp() {
       if (error) throw error;
       Alert.alert('Заказ создан', 'LadyGo ищет водителя. Стоимость и детали поездки будут доступны в заказе.');
       setTab('orders'); await loadOrders();
-    } catch (e) { Alert.alert('Не удалось оформить заказ', e.message || 'Попробуй ещё раз.'); }
+    } catch (e) {
+      const message = String(e?.message || '');
+      if (e?.code === '23505' || message.includes('orders_one_active_per_passenger_idx')) {
+        await loadOrders();
+        setTab('orders');
+        Alert.alert('У тебя уже есть активный заказ', 'Открой вкладку «Мои поездки»: предыдущий заказ ещё не завершён. Отмени его или дождись завершения, затем оформи новый.');
+      } else {
+        Alert.alert('Не удалось оформить заказ', message || 'Попробуй ещё раз.');
+      }
+    }
     finally { setBusy(false); }
   };
 
