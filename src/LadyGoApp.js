@@ -364,7 +364,7 @@ export default function LadyGoApp() {
     Alert.alert('Отменить заказ?', 'Водитель ещё не должен был принять поездку.', [
       { text: 'Не отменять', style: 'cancel' },
       { text: 'Отменить', style: 'destructive', onPress: async () => {
-        const { error } = await supabase.rpc('cancel_my_order', { p_order_id: order.id });
+        const { error } = await supabase.rpc('cancel_my_order', { order_id: order.id });
         if (error) Alert.alert('Не удалось отменить', error.message);
         else loadOrders();
       }}
