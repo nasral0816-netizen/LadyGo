@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.9.7';
+const APP_VERSION = '6.7.9.8';
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
 const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
 const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
@@ -67,7 +67,7 @@ const TARIFFS = [
   { id: 'comfort', name: 'Комфорт', detail: 'Больше пространства' },
   { id: 'comfort_plus', name: 'Комфорт+', detail: 'Максимум пространства' },
 ];
-const PRICE_OPTIONS = [
+const detectVehicleClass = (make, model) => {\n  const v = (String(make || '') + ' ' + String(model || '')).toLowerCase();\n  if (/(mercedes|мерседес|bmw|бмв|audi|ауди|lexus|лексус|genesis|генезис|volvo|вольво|cadillac|кадиллак|porsche|порше|jaguar|ягуар|infiniti|инфинити|tesla|тесла|range rover|land rover|escalade|s.?class|e.?class|7.?series|5.?series|a8|a6|gle|gls|glc|x[34567]|q[578])/.test(v)) return 'comfort_plus';\n  if (/(toyota|тойота|camry|камри|rav4|highlander|skoda|шкода|octavia|superb|volkswagen|фольксваген|passat|tiguan|kia|киа|k5|optima|sorento|hyundai|хендай|sonata|santa fe|nissan|ниссан|teana|x-trail|mazda|мазда|cx.?5|honda|хонда|accord|cr.?v|ford|форд|mondeo|chevrolet|шевроле|malibu|cruze|mitsubishi|митсубиси|outlander|subaru|субару|legacy|peugeot|пежо|508|citroen|ситроен|c5)/.test(v)) return 'comfort';\n  return 'economy';\n};\nconst vehicleClassName = value => value === 'comfort_plus' ? 'Комфорт+' : value === 'comfort' ? 'Комфорт' : 'Эконом';\nconst PRICE_OPTIONS = [
   { id: 'child_seat', label: 'Детское кресло / бустер', price: 45 },
   { id: 'pet', label: 'Перевозка домашнего животного', price: 35 },
   { id: 'bulky_luggage', label: 'Крупный багаж / лыжи / сноуборд', price: 35 },
@@ -2771,7 +2771,7 @@ function LadyGoAppContent() {
       <Text style={s.title}>Панель администратора</Text>
       <View style={s.stats}><Card style={s.stat}><Text style={s.statNum}>{orders.length}</Text><Text style={s.muted}>Заказов</Text></Card><Card style={s.stat}><Text style={s.statNum}>{applications.filter(a => a.status === 'pending').length}</Text><Text style={s.muted}>Заявок</Text></Card></View>
       <Text style={s.section}>Заявки водителей</Text>
-      {applications.map(a => <Card key={a.id}>{a.avatar_url ? <Image source={{ uri: a.avatar_url }} style={s.driverAvatar} /> : null}<Text style={s.tariffName}>{a.full_name || 'Водитель'}</Text><Text style={s.muted}>{a.phone}</Text>{a.vehicle_photo_url ? <Image source={{ uri: a.vehicle_photo_url }} style={s.vehiclePhoto} resizeMode="cover" /> : null}<Text style={s.muted}>{[a.vehicle_make, a.vehicle_model, a.vehicle_color, a.vehicle_year, a.vehicle_plate].filter(Boolean).join(' · ')}</Text><Text style={s.muted}>{a.experience}</Text><Pill color={a.status === 'approved' ? C.green : a.status === 'rejected' ? C.red : C.pink}>{a.status}</Pill>
+      {applications.map(a => <Card key={a.id}>{a.avatar_url ? <Image source={{ uri: a.avatar_url }} style={s.driverAvatar} /> : null}<Text style={s.tariffName}>{a.full_name || 'Водитель'}</Text><Text style={s.muted}>{a.phone}</Text>{a.vehicle_photo_url ? <Image source={{ uri: a.vehicle_photo_url }} style={s.vehiclePhoto} resizeMode="cover" /> : null}<Text style={s.muted}>{[a.vehicle_make, a.vehicle_model, a.vehicle_color, a.vehicle_year, a.vehicle_plate].filter(Boolean).join(' · ')}</Text><Pill color={C.green}>Автотариф: {vehicleClassName(a.vehicle_class || detectVehicleClass(a.vehicle_make, a.vehicle_model))}</Pill><Text style={s.muted}>{a.experience}</Text><Pill color={a.status === 'approved' ? C.green : a.status === 'rejected' ? C.red : C.pink}>{a.status}</Pill>
         {a.status === 'pending' && <View style={s.row}><View style={{ flex: 1 }}><Button title="Одобрить" onPress={() => reviewApplication(a, true)} /></View><View style={{ flex: 1 }}><Button title="Отклонить" secondary danger onPress={() => reviewApplication(a, false)} /></View></View>}
       </Card>)}
       <Text style={s.section}>Обращения в поддержку</Text>
@@ -2825,7 +2825,7 @@ function LadyGoAppContent() {
         <Input label="Телефон" value={driverProfileDraft.phone || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, phone: value }))} keyboardType="phone-pad" />
         <Input label="Опыт" value={driverProfileDraft.experience || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, experience: value }))} />
         <Input label="Марка автомобиля" value={driverProfileDraft.vehicle_make || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_make: value }))} />
-        <Input label="Модель автомобиля" value={driverProfileDraft.vehicle_model || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_model: value }))} />
+        <Input label="Модель автомобиля" value={driverProfileDraft.vehicle_model || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_model: value }))} />\n        <Pill color={C.green}>Автоматически определённый класс: {vehicleClassName(detectVehicleClass(driverProfileDraft.vehicle_make, driverProfileDraft.vehicle_model))}</Pill>\n        <Text style={s.muted}>Класс определяется по марке и модели. Администратор проверяет автомобиль перед допуском к заказам.</Text>
         <Input label="Цвет автомобиля" value={driverProfileDraft.vehicle_color || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_color: value }))} />
         <Input label="Государственный номер" value={driverProfileDraft.vehicle_plate || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_plate: value }))} />
         <Input label="Год выпуска" value={driverProfileDraft.vehicle_year || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_year: value }))} keyboardType="number-pad" />
@@ -2843,7 +2843,7 @@ function LadyGoAppContent() {
         <Button title={applicationAvatarUri ? 'Изменить фотографию' : 'Добавить фотографию'} secondary compact onPress={() => chooseProfilePhoto(setApplicationAvatarUri)} />
         <Text style={s.section}>Автомобиль</Text>
         <Input label="Марка" value={applicationVehicleMake} onChangeText={setApplicationVehicleMake} placeholder="Например, Kia" />
-        <Input label="Модель" value={applicationVehicleModel} onChangeText={setApplicationVehicleModel} placeholder="Например, Rio" />
+        <Input label="Модель" value={applicationVehicleModel} onChangeText={setApplicationVehicleModel} placeholder="Например, Rio" />\n        <Pill color={C.green}>Предварительный тариф автомобиля: {vehicleClassName(detectVehicleClass(applicationVehicleMake, applicationVehicleModel))}</Pill>\n        <Text style={s.muted}>Класс определится автоматически по марке и модели, а администратор подтвердит его при проверке заявки.</Text>
         <Input label="Цвет" value={applicationVehicleColor} onChangeText={setApplicationVehicleColor} />
         <Input label="Государственный номер" value={applicationVehiclePlate} onChangeText={setApplicationVehiclePlate} />
         <Input label="Год выпуска" value={applicationVehicleYear} onChangeText={setApplicationVehicleYear} keyboardType="number-pad" />
@@ -2910,7 +2910,7 @@ function LadyGoAppContent() {
           </View>
           <Button title={busy ? 'Обрабатываем…' : '✓  Принять заказ'} disabled={busy} onPress={() => acceptOfferedOrder(incomingOffer)} />
           <Button title="Отказать" secondary danger disabled={busy} onPress={() => skipOfferedOrder(incomingOffer)} />
-          <Text style={[s.muted, { textAlign: 'center' }]}>Если не ответить за 30 секунд, предложение перейдёт следующему водителю.</Text>
+          {incomingOffer.tariff_id === 'economy' && driverProfile?.vehicle_class !== 'economy' && <Text style={[s.muted, { color: C.green, textAlign: 'center' }]}>Заказ «Эконом»: твой автомобиль предложен по цене «Эконом», потому что рядом нет свободных машин этого класса.</Text>}\n          <Text style={[s.muted, { textAlign: 'center' }]}>Если не ответить за 30 секунд, предложение перейдёт следующему водителю.</Text>
         </View>
       </View>
     </Modal>}
