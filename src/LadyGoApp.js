@@ -2032,11 +2032,27 @@ function LadyGoAppContent() {
 
   const updateOrder = async (order, status) => {
     setBusy(true);
-    const { data, error } = await supabase.rpc('ladygo_update_trip_status', { p_order_id: order.id, p_status: status });
-    setBusy(false);
-    if (error) return Alert.alert('Ошибка заказа', errorText(error));
-    if (!data) return Alert.alert('Статус не изменён', 'Обнови список заказов.');
-    await loadOrders();
+    try {
+      if (status === 'in_progress' && order?.arrived_at && order?.pickup_lat != null && order?.destination_lat != null) {
+        const points = [
+          { latitude: Number(order.pickup_lat), longitude: Number(order.pickup_lng) },
+          ...(Array.isArray(order.stops) ? order.stops.map(point => ({ latitude: Number(point.latitude), longitude: Number(point.longitude) })) : []),
+          { latitude: Number(order.destination_lat), longitude: Number(order.destination_lng) },
+        ];
+        const { error: pricingError } = await supabase.functions.invoke('pricing-service', {
+          body: { action: 'recalculate_wait', order_id: order.id, city_id: 'kislovodsk', tariff_id: order.tariff_id || 'economy', points, options: order.pricing_breakdown?.options || [] },
+        });
+        if (pricingError) throw pricingError;
+      }
+      const { data, error } = await supabase.rpc('ladygo_update_trip_status', { p_order_id: order.id, p_status: status });
+      if (error) throw error;
+      if (!data) throw new Error('Обнови список заказов.');
+      await loadOrders();
+    } catch (error) {
+      Alert.alert('Ошибка заказа', errorText(error));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const setDriverAvailability = async nextOnline => {
