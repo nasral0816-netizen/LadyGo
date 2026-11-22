@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.9.0';
+const APP_VERSION = '6.7.9.1';
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
 const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
 const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
@@ -766,7 +766,8 @@ const startExternalDriverNavigation = async () => {
     Alert.alert('Навигатор', 'Сначала введи адрес назначения.');
     return;
   }
-
+  if (externalNavStarting) return;
+  setExternalNavStarting(true);
   try {
     let destinationPoint = externalNavSelected &&
       Number.isFinite(Number(externalNavSelected.latitude)) &&
@@ -782,34 +783,45 @@ const startExternalDriverNavigation = async () => {
     }
 
     if (destinationPoint) {
-      let routeUrl = null;
+      const target = destinationPoint.latitude + ',' + destinationPoint.longitude;
+      let origin = null;
       try {
         const current = await getPositionWithFallback();
-        const origin = Number(current.coords.latitude) + ',' + Number(current.coords.longitude);
-        const target = destinationPoint.latitude + ',' + destinationPoint.longitude;
-        routeUrl = 'https://yandex.ru/maps/?rtext=' + encodeURIComponent(origin + '~' + target) + '&rtt=auto';
+        origin = Number(current.coords.latitude) + ',' + Number(current.coords.longitude);
       } catch (_) {
-        const target = destinationPoint.latitude + ',' + destinationPoint.longitude;
-        routeUrl = 'https://yandex.ru/maps/?ll=' + encodeURIComponent(destinationPoint.longitude + ',' + destinationPoint.latitude) + '&text=' + encodeURIComponent(address) + '&z=16';
+        // Навигация до выбранной точки всё равно доступна без GPS-старта.
       }
 
+      const googleNavigationUrl = 'google.navigation:q=' + encodeURIComponent(target) + '&mode=d';
+      const googleWebUrl = origin
+        ? 'https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(origin) +
+          '&destination=' + encodeURIComponent(target) + '&travelmode=driving'
+        : 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(target) + '&travelmode=driving';
+      const yandexUrl = origin
+        ? 'https://yandex.ru/maps/?rtext=' + encodeURIComponent(origin + '~' + target) + '&rtt=auto'
+        : 'https://yandex.ru/maps/?ll=' + encodeURIComponent(destinationPoint.longitude + ',' + destinationPoint.latitude) +
+          '&text=' + encodeURIComponent(address) + '&z=16';
+
       try {
-        await Linking.openURL(routeUrl);
+        await Linking.openURL(googleNavigationUrl);
         return;
       } catch (_) {
-        const fallback = 'https://www.google.com/maps/dir/?api=1&destination=' +
-          encodeURIComponent(destinationPoint.latitude + ',' + destinationPoint.longitude) + '&travelmode=driving';
-        await Linking.openURL(fallback);
-        return;
+        try {
+          await Linking.openURL(googleWebUrl);
+          return;
+        } catch (_) {
+          await Linking.openURL(yandexUrl);
+          return;
+        }
       }
     }
 
-    await Linking.openURL('https://yandex.ru/maps/?text=' + encodeURIComponent(address));
+    const searchUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(address);
+    await Linking.openURL(searchUrl);
   } catch (error) {
-    Alert.alert(
-      'Не удалось открыть навигатор',
-      'Проверь интернет и разрешение на открытие ссылок. Можно также выбрать адрес из подсказок и повторить.'
-    );
+    Alert.alert('Не удалось открыть навигатор', 'Не получилось открыть Google Карты или Яндекс Карты. Проверь интернет и попробуй ещё раз.');
+  } finally {
+    setExternalNavStarting(false);
   }
 };
 
@@ -860,6 +872,8 @@ function LadyGoAppContent() {
   const [externalNavSuggestions, setExternalNavSuggestions] = useState([]);
   const [externalNavSelected, setExternalNavSelected] = useState(null);
   const [externalNavLoading, setExternalNavLoading] = useState(false);
+  const [externalNavMapOpen, setExternalNavMapOpen] = useState(false);
+  const [externalNavStarting, setExternalNavStarting] = useState(false);
   const [phone, setPhone] = useState('');
   const [comment, setComment] = useState('');
   const [requestedFor, setRequestedFor] = useState('Как можно скорее');
@@ -2470,14 +2484,43 @@ function LadyGoAppContent() {
             <Text style={s.address}>{item.display_name || item.name || 'Адрес'}</Text>
           </TouchableOpacity>
         ))}
-        {externalNavSelected ? <Text style={{ color: C.green, fontSize: 12, fontWeight: '700' }}>✓ Адрес выбран точно по карте</Text> : null}
+        {externalNavSelected ? <Text style={{ color: C.green, fontSize: 12, fontWeight: '700' }}>✓ Точка выбрана · можно проверить на карте</Text> : null}
+        {externalNavSelected ? <Button title="Показать точку на карте" secondary onPress={() => setExternalNavMapOpen(true)} /> : null}
         <Button
-          title="Начать навигацию"
+          title={externalNavStarting ? 'Открываем навигатор…' : 'Начать навигацию'}
           onPress={startExternalDriverNavigation}
-          disabled={!externalNavQuery.trim()}
+          disabled={!externalNavQuery.trim() || externalNavStarting}
         />
-        <Text style={s.disclaimer}>Маршрут и голосовые подсказки откроются в Google Картах. LadyGo не отслеживает такой внешний заказ.</Text>
+        <Text style={s.disclaimer}>Откроется автомобильная навигация Google Карт; если приложение недоступно, попробуем веб-карты и Яндекс Карты.</Text>
       </Card>
+      <Modal visible={externalNavMapOpen} transparent animationType="slide" onRequestClose={() => setExternalNavMapOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(25,17,22,0.55)', justifyContent: 'center', padding: 16 }}>
+          <View style={{ backgroundColor: C.white, borderRadius: 22, padding: 16, gap: 12, overflow: 'hidden' }}>
+            <View style={s.rowBetween}>
+              <Text style={s.heading}>Проверка адреса</Text>
+              <TouchableOpacity onPress={() => setExternalNavMapOpen(false)} accessibilityRole="button" accessibilityLabel="Закрыть карту">
+                <Text style={{ color: C.pinkDark, fontSize: 22, fontWeight: '800' }}>×</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={s.muted}>{externalNavSelected?.address || externalNavQuery}</Text>
+            {externalNavSelected && Number.isFinite(Number(externalNavSelected.latitude)) && Number.isFinite(Number(externalNavSelected.longitude)) ? (
+              <View style={{ height: 330, borderRadius: 16, overflow: 'hidden' }}>
+                <MapView
+                  style={{ flex: 1 }}
+                  initialRegion={{ latitude: Number(externalNavSelected.latitude), longitude: Number(externalNavSelected.longitude), latitudeDelta: 0.012, longitudeDelta: 0.012 }}
+                  region={{ latitude: Number(externalNavSelected.latitude), longitude: Number(externalNavSelected.longitude), latitudeDelta: 0.012, longitudeDelta: 0.012 }}
+                  showsUserLocation
+                  showsMyLocationButton
+                >
+                  <Marker coordinate={{ latitude: Number(externalNavSelected.latitude), longitude: Number(externalNavSelected.longitude) }} title="Пункт назначения" description={externalNavSelected.address || externalNavQuery} pinColor={C.pink} />
+                </MapView>
+              </View>
+            ) : <Text style={s.muted}>Сначала выбери адрес из подсказок, чтобы показать точку на карте.</Text>}
+            <Button title={externalNavStarting ? 'Открываем…' : 'Построить маршрут'} disabled={!externalNavSelected || externalNavStarting} onPress={async () => { setExternalNavMapOpen(false); await startExternalDriverNavigation(); }} />
+            <Button title="Закрыть" secondary onPress={() => setExternalNavMapOpen(false)} />
+          </View>
+        </View>
+      </Modal>
 
       {orders.filter(o => o.status === 'new' && !o.driver_id).map(o => <Card key={o.id}>
         <View style={s.rowBetween}><Pill>Новый заказ</Pill><Text style={s.price}>{Math.max(0, 30 - Math.floor((clock - new Date(offerTimes[o.id] || o.created_at).getTime()) / 1000))} сек.</Text></View><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text>
