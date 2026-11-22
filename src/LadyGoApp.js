@@ -1854,8 +1854,7 @@ function LadyGoAppContent() {
     setDestination(order.destination_address || '');
     setServiceType(order.service_type === 'courier' ? 'courier' : 'ride');
     setDoorToDoor(Boolean(order.door_to_door));
-    setStopsText(Array.isArray(order.stops) ? order.stops.map(stop => stop.address).filter(Boolean).join('
-') : '');
+    setStopsText(Array.isArray(order.stops) ? order.stops.map(stop => stop.address).filter(Boolean).join('\\n') : '');
     setTariff(TARIFFS.some(item => item.id === order.tariff_id) ? order.tariff_id : 'economy');
     setPaymentMethod(order.payment_method || 'cash');
     setPhone('');
@@ -2618,9 +2617,7 @@ function LadyGoAppContent() {
             return <TouchableOpacity key={note} onPress={() => setComment(current => {
               const lines = current.split('
 ').map(line => line.trim()).filter(Boolean);
-              return selected ? lines.filter(line => line !== note).join('
-') : [...lines, note].join('
-');
+              return selected ? lines.filter(line => line !== note).join('\\n') : [...lines, note].join('\\n');
             })} style={[s.savedChip, selected && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
               <Text style={s.savedChipText}>{selected ? '✓ ' : '+ '}{note}</Text>
             </TouchableOpacity>;
