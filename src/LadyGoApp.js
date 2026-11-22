@@ -214,6 +214,11 @@ export default function LadyGoApp() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatDraft, setChatDraft] = useState('');
   const [chatSending, setChatSending] = useState(false);
+  const [ratedOrderIds, setRatedOrderIds] = useState([]);
+  const [ratingOrderId, setRatingOrderId] = useState(null);
+  const [ratingValue, setRatingValue] = useState(0);
+  const [ratingSaving, setRatingSaving] = useState(false);
+  const [driverRatingStats, setDriverRatingStats] = useState({});
 
   const loadProfile = useCallback(async u => {
     if (!u || !supabase) return;
@@ -227,7 +232,15 @@ export default function LadyGoApp() {
     const { data, error } = await supabase.from('orders').select('*').eq('passenger_id', session.user.id).order('created_at', { ascending: false }).limit(30);
     if (error) return;
     setOrders(data || []);
-    const active = (data || []).find(o => ['new','accepted','arrived','in_progress'].includes(o.status)) || null;
+    const orderRows = data || [];
+    const { data: ownRatings } = await supabase.from('order_ratings').select('order_id').eq('passenger_id', session.user.id);
+    setRatedOrderIds((ownRatings || []).map(r => r.order_id));
+    const driverIds = [...new Set(orderRows.map(o => o.driver_id).filter(Boolean))];
+    if (driverIds.length) {
+      const { data: stats } = await supabase.from('driver_rating_stats').select('driver_id,average_rating,rating_count').in('driver_id', driverIds);
+      setDriverRatingStats(current => ({ ...current, ...Object.fromEntries((stats || []).map(s => [s.driver_id, s])) }));
+    }
+    const active = orderRows.find(o => ['new','accepted','arrived','in_progress'].includes(o.status)) || null;
     setActiveOrder(active);
     if (active?.driver_id && ['accepted','arrived','in_progress'].includes(active.status)) {
       const { data: vehicle } = await supabase.from('driver_profiles').select('display_name,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year').eq('driver_id', active.driver_id).maybeSingle();
@@ -369,6 +382,8 @@ export default function LadyGoApp() {
       const { data, error } = await request.order('created_at', { ascending: false }).limit(60);
       if (error) throw error;
       setDriverOrders(data || []);
+      const { data: stats } = await supabase.from('driver_rating_stats').select('driver_id,average_rating,rating_count').eq('driver_id', session.user.id).maybeSingle();
+      if (stats) setDriverRatingStats(current => ({ ...current, [session.user.id]: stats }));
     } catch (e) {
       Alert.alert('Не удалось обновить заказы', translateError(e));
     } finally { setDriverLoading(false); }
@@ -759,7 +774,23 @@ export default function LadyGoApp() {
         {renderTripChat()}
       </>}
       {orders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет поездок</Text><Text style={st.muted}>Оформленные заказы появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Заказать поездку</Text></TouchableOpacity></View> :
-        orders.map(o => <View key={o.id} style={st.orderCard}><View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status] || o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleDateString('ru-RU')}</Text></View><Text style={st.orderAddress}>●  {o.pickup_address}</Text><Text style={st.orderAddress}>●  {o.destination_address}</Text><View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub ? fmt(o.price_rub) : 'Цена уточняется'}</Text>{o.status === 'new' && <TouchableOpacity onPress={() => cancelOrder(o)}><Text style={st.cancelText}>Отменить</Text></TouchableOpacity>}</View></View>)}
+        orders.map(o => {
+          const driverStats = o.driver_id ? driverRatingStats[o.driver_id] : null;
+          const canRate = o.status === 'completed' && o.driver_id && !ratedOrderIds.includes(o.id);
+          return <View key={o.id} style={st.orderCard}>
+            <View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status] || o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleDateString('ru-RU')}</Text></View>
+            <Text style={st.orderAddress}>●  {o.pickup_address}</Text>
+            <Text style={st.orderAddress}>●  {o.destination_address}</Text>
+            <View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub ? fmt(o.price_rub) : 'Цена уточняется'}</Text>{o.status === 'new' && <TouchableOpacity onPress={() => cancelOrder(o)}><Text style={st.cancelText}>Отменить</Text></TouchableOpacity>}</View>
+            {o.driver_id && o.status === 'completed' && <Text style={st.ratingSummary}>Оценка водителя: ★ {driverStats?.average_rating ? Number(driverStats.average_rating).toFixed(1) : '—'} {driverStats?.rating_count ? '(' + driverStats.rating_count + ')' : ''}</Text>}
+            {canRate && <View style={st.rateBox}>
+              <Text style={st.rateTitle}>Оцени поездку</Text>
+              <View style={st.rateStars}>{[1,2,3,4,5].map(value => <TouchableOpacity key={value} onPress={() => { setRatingOrderId(o.id); setRatingValue(value); }}><Text style={[st.rateStar, (ratingOrderId === o.id && ratingValue >= value) && st.rateStarActive]}>★</Text></TouchableOpacity>)}</View>
+              {ratingOrderId === o.id && ratingValue > 0 && <TouchableOpacity style={st.rateSubmit} onPress={() => submitDriverRating(o)} disabled={ratingSaving}><Text style={st.rateSubmitText}>{ratingSaving ? 'Сохраняем…' : 'Отправить оценку'}</Text></TouchableOpacity>}
+            </View>}
+            {o.status === 'completed' && ratedOrderIds.includes(o.id) && <Text style={st.ratingThanks}>✓ Спасибо, поездка оценена</Text>}
+          </View>;
+        })
     </ScrollView>}
     {tab === 'admin' && profile?.role === 'admin' && <ScrollView contentContainerStyle={st.pageContent}>
       <View style={st.rowBetween}>
@@ -831,6 +862,10 @@ export default function LadyGoApp() {
             <Text style={st.driverStatValue}>{history.filter(o=>o.status==='completed').length}</Text>
             <Text style={st.driverStatLabel}>Завершено</Text>
           </View>
+        </View>
+        <View style={st.ratingDriverCard}>
+          <Text style={st.ratingDriverLabel}>ТВОЙ РЕЙТИНГ</Text>
+          <View style={st.rowBetween}><Text style={st.ratingDriverValue}>★ {driverRatingStats[session.user.id]?.average_rating ? Number(driverRatingStats[session.user.id].average_rating).toFixed(2) : '—'}</Text><Text style={st.ratingDriverCount}>{driverRatingStats[session.user.id]?.rating_count || 0} оценок</Text></View>
         </View>
         <View style={st.driverEarningsCard}>
           <View style={{flex:1}}>
@@ -1078,5 +1113,18 @@ const st = StyleSheet.create({
   chevron: { color: P.muted, fontSize: 22 },
   logout: { alignItems: 'center', padding: 16, marginTop: 8 },
   logoutText: { color: '#C23F5B', fontSize: 14, fontWeight: '800' },
-  refreshText: { color: P.pinkDark, fontSize: 13, fontWeight: '800', marginBottom: 10 }
+  refreshText: { color: P.pinkDark, fontSize: 13, fontWeight: '800', marginBottom: 10 },
+  ratingSummary: { color: P.pinkDark, fontSize: 12, fontWeight: '800' },
+  rateBox: { backgroundColor: '#FFF5F8', borderWidth: 1, borderColor: '#F5D6E2', borderRadius: 14, padding: 12, gap: 8 },
+  rateTitle: { color: P.ink, fontSize: 13, fontWeight: '800' },
+  rateStars: { flexDirection: 'row', gap: 10 },
+  rateStar: { color: '#D8CFD4', fontSize: 30 },
+  rateStarActive: { color: '#F3A72F' },
+  rateSubmit: { backgroundColor: P.pink, paddingVertical: 11, borderRadius: 12, alignItems: 'center' },
+  rateSubmitText: { color: P.white, fontSize: 13, fontWeight: '900' },
+  ratingThanks: { color: P.green, fontSize: 12, fontWeight: '800' },
+  ratingDriverCard: { backgroundColor: '#FFF5F8', borderColor: '#F5D6E2', borderWidth: 1, borderRadius: 16, padding: 14, gap: 5 },
+  ratingDriverLabel: { color: P.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  ratingDriverValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
+  ratingDriverCount: { color: P.muted, fontSize: 12, fontWeight: '700' }
 });
