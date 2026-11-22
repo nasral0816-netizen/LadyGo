@@ -964,6 +964,7 @@ function LadyGoAppContent() {
   const [selectedOptions, setSelectedOptions] = useState([]);
   const [priceQuote, setPriceQuote] = useState(null);
   const [priceLoading, setPriceLoading] = useState(false);
+  const [priceRefreshTick, setPriceRefreshTick] = useState(0);
   const [priceDetailsOpen, setPriceDetailsOpen] = useState(false);
   const [serviceType, setServiceType] = useState('ride');
   const [doorToDoor, setDoorToDoor] = useState(false);
@@ -1142,7 +1143,7 @@ function LadyGoAppContent() {
     };
     loadQuote();
     return () => { active = false; };
-  }, [routeInfo, coords, destinationCoords, stopCoords, tariff, selectedOptions]);
+  }, [routeInfo, coords, destinationCoords, stopCoords, tariff, selectedOptions, priceRefreshTick]);
 
   const loadProfile = useCallback(async currentUser => {
     if (!currentUser || !supabase) return null;
@@ -2571,8 +2572,9 @@ function LadyGoAppContent() {
         {routeInfo && <Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text>}
         <View style={{ gap: 4, paddingTop: 7 }}>
           <View style={s.rowBetween}><Text style={s.routeInfo}>{priceLoading ? 'Рассчитываем стоимость…' : estimatedPrice != null ? 'Предварительная стоимость' : 'Стоимость появится после маршрута'}</Text><Text style={s.price}>{estimatedPrice != null ? money(estimatedPrice) : '—'}</Text></View>
-          {priceQuote && <TouchableOpacity onPress={() => setPriceDetailsOpen(true)} style={[s.savedChip, { alignSelf: 'flex-start', borderWidth: 1, borderColor: C.pink }]}><Text style={s.savedChipText}>ⓘ Подробнее о цене</Text></TouchableOpacity>}
+          {priceQuote && <TouchableOpacity onPress={() => setPriceDetailsOpen(true)} style={[s.savedChip, { alignSelf: 'flex-start', borderWidth: 1, borderColor: C.pink }]}><Text style={s.savedChipText}>₽  Подробнее о цене</Text></TouchableOpacity>}
           {priceQuote?.expires_at && <Text style={s.muted}>Цена зафиксирована на 4 минуты · до {new Date(priceQuote.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>}
+          {routeInfo && <TouchableOpacity onPress={() => setPriceRefreshTick(value => value + 1)} style={[s.savedChip, { alignSelf: 'flex-start' }]}><Text style={s.savedChipText}>↻ Обновить расчёт</Text></TouchableOpacity>}
           <Text style={s.muted}>Расчёт учитывает километраж и время по дорожному маршруту. Итог может измениться при изменении маршрута или платном ожидании.</Text>
           {serviceType === 'courier' && <Text style={s.muted}>Стоимость доставки согласуется с водителем до принятия заказа. Алкоголь и табачные изделия не принимаются.</Text>}
         </View>
