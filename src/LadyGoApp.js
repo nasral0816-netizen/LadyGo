@@ -1873,7 +1873,6 @@ function LadyGoAppContent() {
       return Alert.alert('Уточни адрес назначения', 'Выбери точный адрес из подсказок. Так LadyGo сохранит правильную точку на карте и построит маршрут без догадок.');
     }
     if (activeOrder) return Alert.alert('У тебя уже есть активный заказ', 'Заверши или отмени текущую поездку перед новым заказом.');
-    if (!priceQuote?.price_token || !priceQuote?.expires_at || new Date(priceQuote.expires_at).getTime() <= Date.now()) return Alert.alert('Цена устарела', 'Обнови маршрут или дождись нового расчёта цены.');
     if (!priceQuote?.price_token || !priceQuote?.expires_at || new Date(priceQuote.expires_at).getTime() <= Date.now()) return Alert.alert('Цена устарела', 'Обнови расчёт стоимости перед оформлением заказа.');
     setBusy(true);
     try {
@@ -1926,7 +1925,7 @@ function LadyGoAppContent() {
       };
       const { error } = await supabase.from('orders').insert(payload);
       if (error) throw error;
-      Alert.alert('Заказ отправлен', 'Ищем водителя. Стоимость поездки согласуется с водителем перед принятием заказа.');
+      Alert.alert('Заказ отправлен', 'Ищем водителя. Предварительная стоимость зафиксирована на 4 минуты.');
       setTab('ride');
       await loadOrders();
     } catch (e) {
