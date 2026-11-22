@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Keyboard, Linking, Platform, SafeAreaView, ScrollView,
+  ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Platform, SafeAreaView, ScrollView,
   StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from 'react-native';
 import { Camera, GeoJSONSource, Layer, Map as MapLibreView } from '@maplibre/maplibre-react-native';
@@ -212,6 +212,33 @@ export default function LadyGoApp() {
     }) || { data: { subscription: null } };
     return () => { alive = false; listener?.subscription?.unsubscribe(); };
   }, [loadProfile]);
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Сначала закрываем экран поиска адреса.
+      if (searchField) {
+        setSearchField('');
+        setSuggestions([]);
+        setQuery('');
+        Keyboard.dismiss();
+        return true;
+      }
+
+      // Из внутренних разделов возвращаемся на главный экран заказа.
+      if (tab !== 'ride') {
+        setTab('ride');
+        return true;
+      }
+
+      // На главном экране не закрываем приложение случайным нажатием.
+      Alert.alert('Выйти из LadyGo?', 'Приложение останется открытым, если выбрать «Остаться».', [
+        { text: 'Остаться', style: 'cancel' },
+        { text: 'Выйти', style: 'destructive', onPress: () => BackHandler.exitApp() }
+      ]);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [searchField, tab]);
 
   useEffect(() => { if (session?.user) loadOrders(); }, [session, loadOrders]);
   useEffect(() => {
