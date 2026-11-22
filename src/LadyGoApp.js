@@ -13,9 +13,10 @@ const P = {
   map: 'https://tiles.openfreemap.org/styles/liberty'
 };
 const TARIFFS = [
-  { id: 'economy', name: 'Эконом', sub: 'Выгодно на каждый день', icon: '↗' },
-  { id: 'comfort', name: 'Комфорт', sub: 'Больше пространства', icon: '✦' },
-  { id: 'comfort_plus', name: 'Комфорт+', sub: 'Максимум комфорта', icon: '✧' }
+  // Сохраняем тарифные ID для совместимости с действующим сервисом расчёта цены.
+  { id: 'economy', name: 'Женский', sub: 'Поездки для женщин', icon: '♀' },
+  { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '♡' },
+  { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '⌂' }
 ];
 const STATUS = { new: 'Ищем водителя', accepted: 'Водитель назначен', arrived: 'Водитель на месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' ₽';
@@ -513,7 +514,7 @@ export default function LadyGoApp() {
       const payload = {
         passenger_id: session.user.id, pickup_address: pickupText, destination_address: destinationText,
         requested_for: 'Как можно скорее', passenger_phone: phone.trim() || null,
-        notes: 'Тариф: ' + (TARIFFS.find(t => t.id === tariff)?.name || 'Эконом') + ' · Оплата: ' + (payment === 'cash' ? 'Наличные' : 'Перевод водителю'),
+        notes: 'Услуга: ' + (TARIFFS.find(t => t.id === tariff)?.name || 'Женский') + ' · Оплата: ' + (payment === 'cash' ? 'Наличные' : 'Перевод водителю'),
         status: 'new', payment_method: payment, tariff_id: tariff,
         pickup_lat: pickup.latitude, pickup_lng: pickup.longitude,
         destination_lat: destination.latitude, destination_lng: destination.longitude,
