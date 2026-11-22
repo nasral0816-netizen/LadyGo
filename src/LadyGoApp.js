@@ -297,6 +297,7 @@ export default function LadyGoApp() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminApplications, setAdminApplications] = useState([]);
   const [adminDrivers, setAdminDrivers] = useState([]);
+  const [adminSelectedDriverId, setAdminSelectedDriverId] = useState(null);
   const [adminSection, setAdminSection] = useState('applications');
   const [application, setApplication] = useState({ full_name: '', phone: '', experience: '', vehicle_make: '', vehicle_model: '', vehicle_color: '', vehicle_plate: '', vehicle_year: '', license_info: '' });
   const [applicationAdult, setApplicationAdult] = useState(false);
@@ -533,9 +534,21 @@ export default function LadyGoApp() {
 
   const loadAdminDrivers = useCallback(async () => {
     if (profile?.role !== 'admin' || !supabase) return;
-    const { data, error } = await supabase.from('driver_profiles').select('driver_id,display_name,phone,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,avatar_url,vehicle_photo_url,updated_at').order('updated_at', { ascending: false }).limit(100);
-    if (error) { Alert.alert('Не удалось загрузить водителей', translateError(error)); return; }
-    setAdminDrivers(data || []);
+    try {
+      const allDrivers = [];
+      const pageSize = 500;
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase.from('driver_profiles')
+          .select('driver_id,display_name,phone,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,avatar_url,vehicle_photo_url,updated_at')
+          .order('updated_at', { ascending: false }).range(from, from + pageSize - 1);
+        if (error) throw error;
+        allDrivers.push(...(data || []));
+        if (!data || data.length < pageSize) break;
+      }
+      setAdminDrivers(allDrivers);
+    } catch (e) {
+      Alert.alert('Не удалось загрузить водителей', translateError(e));
+    }
   }, [profile?.role]);
 
   const reviewDriverApplication = async (item, status) => {
@@ -1184,13 +1197,38 @@ export default function LadyGoApp() {
           </View>)}
       </>}
       {adminSection==='drivers' && <>
-        <View style={st.rowBetween}><Text style={st.heading}>Подключённые водители</Text></View>
-        {adminDrivers.length===0?<View style={st.emptyCard}><Text style={st.heading}>Водителей пока нет</Text></View>:adminDrivers.map(d=><View key={d.driver_id} style={st.adminApplicationCard}>
-          <Text style={st.adminApplicantName}>{d.display_name||'Водитель LadyGo'}</Text>
-          <Text style={st.adminDetail}>{d.phone||'Телефон не указан'}</Text>
-          <Text style={st.adminDetail}>{[d.vehicle_color,d.vehicle_make,d.vehicle_model].filter(Boolean).join(' ')||'Автомобиль не заполнен'}</Text>
-          <Text style={st.adminDetail}>{d.vehicle_plate||'Номер не указан'} {d.vehicle_year||''}</Text>
-        </View>)}
+        <View style={st.rowBetween}><Text style={st.heading}>Водители и их история поездок</Text><Text style={st.muted}>{adminDrivers.length} всего</Text></View>
+        {adminDrivers.length===0?<View style={st.emptyCard}><Text style={st.heading}>Водителей пока нет</Text></View>:adminDrivers.map(d=>{
+          const driverTrips = adminOrders.filter(o => o.driver_id === d.driver_id);
+          const expanded = adminSelectedDriverId === d.driver_id;
+          return <View key={d.driver_id} style={st.adminApplicationCard}>
+            <TouchableOpacity activeOpacity={0.8} onPress={()=>setAdminSelectedDriverId(expanded ? null : d.driver_id)}>
+              <View style={st.rowBetween}>
+                <Text style={st.adminApplicantName}>{d.display_name||'Водитель LadyGo'}</Text>
+                <Text style={st.adminTabText}>{expanded ? 'Скрыть ▲' : 'История ▼'}</Text>
+              </View>
+              <Text style={st.adminDetail}>{d.phone||'Телефон не указан'}</Text>
+              <Text style={st.adminDetail}>{[d.vehicle_color,d.vehicle_make,d.vehicle_model].filter(Boolean).join(' ')||'Автомобиль не заполнен'}</Text>
+              <Text style={st.adminDetail}>{d.vehicle_plate||'Номер не указан'} {d.vehicle_year||''}</Text>
+              <Text style={[st.adminDetail,{marginTop:6,fontWeight:'700',color:P.pink}]}>Поездок: {driverTrips.length} · Нажмите, чтобы открыть историю</Text>
+            </TouchableOpacity>
+            {expanded && <View style={{marginTop:12,gap:10}}>
+              {driverTrips.length===0 ? <Text style={st.muted}>У этого водителя пока нет назначенных поездок.</Text> : driverTrips.map(o=><View key={o.id} style={{backgroundColor:P.pale,borderRadius:12,padding:11,gap:5}}>
+                <View style={st.rowBetween}>
+                  <Text style={st.orderStatus}>{STATUS[o.status]||o.status}</Text>
+                  <Text style={st.orderDate}>{o.created_at ? new Date(o.created_at).toLocaleString('ru-RU') : 'Дата не указана'}</Text>
+                </View>
+                <Text style={st.orderAddress}>● {o.pickup_address||'Место подачи не указано'}</Text>
+                <Text style={st.orderAddress}>● {o.destination_address||'Назначение не указано'}</Text>
+                {o.passenger_phone ? <Text style={st.adminDetail}>Телефон пассажира: {o.passenger_phone}</Text> : null}
+                <View style={st.rowBetween}>
+                  <Text style={st.orderPrice}>{o.price_rub?fmt(o.price_rub):o.estimated_price_rub?fmt(o.estimated_price_rub):'Цена не указана'}</Text>
+                  <Text style={st.muted}>ID: {String(o.id).slice(0,8)}</Text>
+                </View>
+              </View>)}
+            </View>}
+          </View>;
+        })}
       </>}
       {adminSection==='orders' && <>
         <View style={st.rowBetween}><Text style={st.heading}>История всех поездок</Text><Text style={st.muted}>{adminOrders.length} всего</Text></View>
