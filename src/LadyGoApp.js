@@ -781,15 +781,13 @@ function TripChat({ order, userId }) {
 
 const shareTripDetails = async order => {
   const tariffName = TARIFFS.find(item => item.id === order.tariff_id)?.name || 'Поездка';
-  const stops = Array.isArray(order.stops) ? order.stops.map((stop, index) => (index + 1) + '. ' + stop.address).join('
-') : '';
+  const stops = Array.isArray(order.stops) ? order.stops.map((stop, index) => (index + 1) + '. ' + stop.address).join('\\n') : '';
   const details = [
     'LadyGo — детали поездки',
     'Номер заказа: ' + order.id,
     'Дата: ' + new Date(order.created_at).toLocaleString(),
     'Откуда: ' + order.pickup_address,
-    stops ? 'Остановки:
-' + stops : '',
+    stops ? 'Остановки:\\n' + stops : '',
     'Куда: ' + order.destination_address,
     'Услуга: ' + (order.service_type === 'courier' ? 'Курьерская доставка' : 'Поездка'),
     order.door_to_door ? 'От двери до двери' : '',
@@ -797,8 +795,7 @@ const shareTripDetails = async order => {
     'Стоимость: ' + money(order.price_rub),
     'Оплата: ' + (order.payment_method === 'transfer_to_driver' ? 'Перевод водителю' : 'Наличными'),
     'Статус: ' + (STATUS[order.status] || order.status),
-  ].filter(Boolean).join('
-');
+  ].filter(Boolean).join('\\n');
   try {
     await Share.share({ message: details });
   } catch (_) {
