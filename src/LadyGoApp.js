@@ -201,6 +201,8 @@ export default function LadyGoApp() {
   const [phone, setPhone] = useState('');
   const [driverOrders, setDriverOrders] = useState([]);
   const [driverPrices, setDriverPrices] = useState({});
+  const [driverSection, setDriverSection] = useState('overview');
+  const [driverLoading, setDriverLoading] = useState(false);
   const [driverLocation, setDriverLocation] = useState(null);
   const [driverVehicle, setDriverVehicle] = useState(null);
   const autoLocateStarted = useRef(false);
@@ -355,10 +357,16 @@ export default function LadyGoApp() {
 
   const loadDriverOrders = useCallback(async () => {
     if (!session?.user || profile?.role !== 'driver' || !supabase) return;
-    const { data, error } = await supabase.from('orders').select('*')
-      .or('status.eq.new,driver_id.eq.' + session.user.id)
-      .order('created_at', { ascending: false }).limit(40);
-    if (!error) setDriverOrders(data || []);
+    setDriverLoading(true);
+    try {
+      const { data, error } = await supabase.from('orders').select('*')
+        .or('status.eq.new,driver_id.eq.' + session.user.id)
+        .order('created_at', { ascending: false }).limit(60);
+      if (error) throw error;
+      setDriverOrders(data || []);
+    } catch (e) {
+      Alert.alert('Не удалось обновить заказы', translateError(e));
+    } finally { setDriverLoading(false); }
   }, [session, profile]);
 
   useEffect(() => { if (profile?.role === 'driver') loadDriverOrders(); }, [profile, loadDriverOrders]);
@@ -706,24 +714,103 @@ export default function LadyGoApp() {
         </View>)}
       <Text style={st.footnote}>Доступ к панели предоставляется только аккаунтам с ролью администратора.</Text>
     </ScrollView>}
-    {tab === 'driver' && profile?.role === 'driver' && <ScrollView contentContainerStyle={st.pageContent}>
-      <View style={st.rowBetween}><Text style={st.pageTitle}>Заказы водителя</Text><TouchableOpacity onPress={loadDriverOrders}><Text style={st.refreshText}>↻ Обновить</Text></TouchableOpacity></View>
-      {driverOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет заказов</Text><Text style={st.muted}>Новые заявки появятся здесь.</Text></View> :
-        driverOrders.map(o => <View key={o.id} style={st.orderCard}>
-          <View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status] || o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'})}</Text></View>
-          <Text style={st.orderAddress}>●  {o.pickup_address}</Text><Text style={st.orderAddress}>●  {o.destination_address}</Text>
-          {o.status === 'new' && !o.driver_id ? <View style={{gap:8}}>
-            <TextInput style={st.phoneInput} keyboardType="numeric" placeholder="Стоимость поездки, ₽" value={driverPrices[o.id] || String(o.estimated_price_rub || '')} onChangeText={v=>setDriverPrices(p=>({...p,[o.id]:v}))}/>
-            <TouchableOpacity style={st.primaryBtn} onPress={()=>acceptDriverOrder(o)} disabled={busy}><Text style={st.primaryText}>Принять заказ</Text></TouchableOpacity>
-          </View> : o.driver_id === session.user.id && <View style={{gap:8}}>
-            <Text style={st.orderPrice}>{o.price_rub ? fmt(o.price_rub) : 'Стоимость не указана'}</Text>
-            {o.status === 'accepted' && <TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'arrived')}><Text style={st.primaryText}>Я на месте</Text></TouchableOpacity>}
-            {o.status === 'arrived' && <TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'in_progress')}><Text style={st.primaryText}>Начать поездку</Text></TouchableOpacity>}
-            {o.status === 'in_progress' && <TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'completed')}><Text style={st.primaryText}>Завершить поездку</Text></TouchableOpacity>}
+    {tab === 'driver' && profile?.role === 'driver' && (() => {
+      const mine = driverOrders.filter(o => o.driver_id === session.user.id);
+      const active = mine.filter(o => ['accepted','arrived','in_progress'].includes(o.status));
+      const available = driverOrders.filter(o => o.status === 'new' && !o.driver_id);
+      const history = mine.filter(o => ['completed','cancelled','declined'].includes(o.status));
+      const earnings = history.filter(o => o.status === 'completed').reduce((sum,o) => sum + Number(o.price_rub || 0), 0);
+      const shown = driverSection === 'available' ? available
+        : driverSection === 'active' ? active
+        : driverSection === 'history' ? history
+        : [...active, ...available];
+      const tabs = [['overview','Обзор'],['available','Новые'],['active','Активные'],['history','История']];
+      return <ScrollView contentContainerStyle={st.pageContent}>
+        <View style={st.driverHeader}>
+          <View style={{flex:1}}>
+            <Text style={st.driverEyebrow}>РАБОЧЕЕ ПРОСТРАНСТВО</Text>
+            <Text style={st.pageTitle}>Панель водителя</Text>
+            <Text style={st.driverSubtitle}>Все поездки и рабочие показатели в одном месте</Text>
+          </View>
+          <TouchableOpacity style={st.driverRefresh} onPress={loadDriverOrders} disabled={driverLoading}>
+            {driverLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.driverRefreshText}>↻</Text>}
+          </TouchableOpacity>
+        </View>
+        <View style={st.driverModeHint}>
+          <Text style={st.driverModeIcon}>🚘</Text>
+          <View style={{flex:1}}>
+            <Text style={st.driverModeTitle}>Режим водителя включён</Text>
+            <Text style={st.driverModeSub}>Переключение на режим пассажира — в верхней панели</Text>
+          </View>
+          <View style={st.driverOnlineDot}/>
+        </View>
+        <View style={st.driverStatsGrid}>
+          <View style={st.driverStatCard}>
+            <Text style={st.driverStatValue}>{available.length}</Text>
+            <Text style={st.driverStatLabel}>Новые заявки</Text>
+          </View>
+          <View style={st.driverStatCard}>
+            <Text style={st.driverStatValue}>{active.length}</Text>
+            <Text style={st.driverStatLabel}>Активные поездки</Text>
+          </View>
+          <View style={st.driverStatCard}>
+            <Text style={st.driverStatValue}>{history.filter(o=>o.status==='completed').length}</Text>
+            <Text style={st.driverStatLabel}>Завершено</Text>
+          </View>
+        </View>
+        <View style={st.driverEarningsCard}>
+          <View style={{flex:1}}>
+            <Text style={st.driverEarningsLabel}>ЗАВЕРШЁННЫЕ ПОЕЗДКИ · СУММА</Text>
+            <Text style={st.driverEarningsValue}>{fmt(earnings)}</Text>
+            <Text style={st.driverEarningsNote}>По данным завершённых заказов</Text>
+          </View>
+          <Text style={st.driverEarningsIcon}>₽</Text>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.driverTabs}>
+          {tabs.map(([id,label]) => <TouchableOpacity key={id} onPress={()=>setDriverSection(id)} style={[st.driverTab,driverSection===id&&st.driverTabActive]}>
+            <Text style={[st.driverTabText,driverSection===id&&st.driverTabTextActive]}>{label}{id==='available'&&available.length>0?'  '+available.length:''}</Text>
+          </TouchableOpacity>)}
+        </ScrollView>
+        <View style={st.rowBetween}>
+          <Text style={st.heading}>{driverSection==='available'?'Новые заявки':driverSection==='active'?'Мои активные поездки':driverSection==='history'?'История поездок':'Ближайшие действия'}</Text>
+          {driverLoading && <ActivityIndicator color={P.pink}/>}
+        </View>
+        {shown.length===0 ? <View style={st.emptyCard}>
+          <Text style={st.emptyIcon}>{driverSection==='history'?'◷':'⌁'}</Text>
+          <Text style={st.heading}>{driverSection==='available'?'Новых заявок пока нет':driverSection==='active'?'Активных поездок нет':driverSection==='history'?'История пока пуста':'Всё спокойно'}</Text>
+          <Text style={st.muted}>{driverSection==='available'?'Когда появится новая заявка, она отобразится здесь.':driverSection==='active'?'Принятые поездки будут собраны в этом разделе.':driverSection==='history'?'Завершённые поездки появятся здесь.':'Новые заявки и активные поездки будут показаны в этой панели.'}</Text>
+          <TouchableOpacity style={st.driverSecondaryBtn} onPress={loadDriverOrders}><Text style={st.driverSecondaryText}>Обновить список</Text></TouchableOpacity>
+        </View> : shown.map(o => <View key={o.id} style={st.driverOrderCard}>
+          <View style={st.rowBetween}>
+            <View style={[st.driverStatusPill, o.status==='new'?st.driverStatusNew:o.status==='completed'?st.driverStatusDone:st.driverStatusActive]}>
+              <Text style={st.driverStatusText}>{STATUS[o.status]||o.status}</Text>
+            </View>
+            <Text style={st.orderDate}>{new Date(o.created_at).toLocaleString('ru-RU',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</Text>
+          </View>
+          <View style={st.driverRouteBlock}>
+            <View style={st.driverRouteRail}><View style={st.driverRouteDotStart}/><View style={st.driverRouteLine}/><View style={st.driverRouteDotEnd}/></View>
+            <View style={{flex:1,gap:12}}>
+              <View><Text style={st.driverRouteCaption}>ОТКУДА</Text><Text style={st.driverRouteAddress}>{o.pickup_address||'Адрес подачи не указан'}</Text></View>
+              <View><Text style={st.driverRouteCaption}>КУДА</Text><Text style={st.driverRouteAddress}>{o.destination_address||'Адрес назначения не указан'}</Text></View>
+            </View>
+          </View>
+          <View style={st.driverOrderMeta}>
+            <View><Text style={st.driverRouteCaption}>СТОИМОСТЬ</Text><Text style={st.driverOrderPrice}>{o.price_rub?fmt(o.price_rub):o.estimated_price_rub?fmt(o.estimated_price_rub):'Уточняется'}</Text></View>
+            <View style={{alignItems:'flex-end'}}><Text style={st.driverRouteCaption}>ОПЛАТА</Text><Text style={st.driverOrderPayment}>{o.payment_method==='cash'?'Наличные':o.payment_method?'Перевод':'По договорённости'}</Text></View>
+          </View>
+          {o.status==='new'&&!o.driver_id ? <View style={st.driverActions}>
+            <TextInput style={st.phoneInput} keyboardType="numeric" placeholder="Согласованная стоимость, ₽" value={driverPrices[o.id]||String(o.estimated_price_rub||'')} onChangeText={v=>setDriverPrices(p=>({...p,[o.id]:v}))}/>
+            <TouchableOpacity style={st.primaryBtn} onPress={()=>acceptDriverOrder(o)} disabled={busy}><Text style={st.primaryText}>{busy?'Обработка…':'Принять заявку'}</Text></TouchableOpacity>
+          </View> : o.driver_id===session.user.id && <View style={st.driverActions}>
+            {o.status==='accepted'&&<TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'arrived')} disabled={busy}><Text style={st.primaryText}>Отметить прибытие</Text></TouchableOpacity>}
+            {o.status==='arrived'&&<TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'in_progress')} disabled={busy}><Text style={st.primaryText}>Начать поездку</Text></TouchableOpacity>}
+            {o.status==='in_progress'&&<TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'completed')} disabled={busy}><Text style={st.primaryText}>Завершить поездку</Text></TouchableOpacity>}
+            {chatOrder?.id===o.id&&renderTripChat()}
           </View>}
-          {chatOrder?.id === o.id && renderTripChat()}
         </View>)}
-    </ScrollView>}
+        <Text style={st.footnote}>Панель предназначена для совершеннолетних водителей, прошедших проверку LadyGo.</Text>
+      </ScrollView>;
+    })()}
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
       <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.email || session.user.email}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
       <TouchableOpacity style={st.profileRow} onPress={() => setTab('orders')}><Text style={st.profileRowIcon}>◷</Text><Text style={st.profileRowText}>История поездок</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
@@ -759,8 +846,8 @@ const st = StyleSheet.create({
   logoSmall: { color: P.pink, fontSize: 25, fontWeight: '900', letterSpacing: -1 },
   topSub: { color: P.muted, fontSize: 10, marginTop: -2 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
-  modeSwitch: { flexDirection: 'row', backgroundColor: '#F3EEF1', borderRadius: 16, padding: 4, gap: 3, borderWidth: 1, borderColor: '#EDE5E9' },
-  modeOption: { paddingHorizontal: 10, paddingVertical: 9, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  modeSwitch: { flexDirection: 'row', backgroundColor: '#F3EEF1', borderRadius: 16, padding: 4, gap: 3, borderWidth: 1, borderColor: '#EDE5E9', flexShrink: 1 },
+  modeOption: { paddingHorizontal: 9, paddingVertical: 9, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   modeOptionActive: { backgroundColor: P.pink, elevation: 2, shadowColor: P.pinkDark, shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
   modeText: { color: P.muted, fontSize: 10, fontWeight: '900' },
   modeTextActive: { color: P.white },
@@ -774,6 +861,49 @@ const st = StyleSheet.create({
   adminStat: { flex: 1, backgroundColor: '#FAF6F8', borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 13, gap: 5 },
   adminStatValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
   adminStatLabel: { color: P.muted, fontSize: 10, fontWeight: '800' },
+  driverHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  driverEyebrow: { color: P.pinkDark, fontSize: 9, fontWeight: '900', letterSpacing: 1.3, marginBottom: 5 },
+  driverSubtitle: { color: P.muted, fontSize: 12, lineHeight: 17, marginTop: -2 },
+  driverRefresh: { width: 44, height: 44, borderRadius: 15, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
+  driverRefreshText: { color: P.pinkDark, fontSize: 26, fontWeight: '900' },
+  driverModeHint: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, borderRadius: 17, backgroundColor: '#FFF5F8', borderWidth: 1, borderColor: '#F6D8E3' },
+  driverModeIcon: { fontSize: 24 },
+  driverModeTitle: { color: P.ink, fontSize: 13, fontWeight: '900' },
+  driverModeSub: { color: P.muted, fontSize: 10, marginTop: 3 },
+  driverOnlineDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: P.green },
+  driverStatsGrid: { flexDirection: 'row', gap: 8 },
+  driverStatCard: { flex: 1, backgroundColor: '#FAF7F9', borderWidth: 1, borderColor: P.line, borderRadius: 15, padding: 12, gap: 7 },
+  driverStatValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
+  driverStatLabel: { color: P.muted, fontSize: 9, fontWeight: '800', lineHeight: 13 },
+  driverEarningsCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#211B20', borderRadius: 18, padding: 16 },
+  driverEarningsLabel: { color: '#E9DDE3', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  driverEarningsValue: { color: P.white, fontSize: 25, fontWeight: '900', marginTop: 5 },
+  driverEarningsNote: { color: '#C5B8C0', fontSize: 10, marginTop: 2 },
+  driverEarningsIcon: { color: '#F6A9C5', fontSize: 36, fontWeight: '900', paddingHorizontal: 8 },
+  driverTabs: { gap: 7, paddingVertical: 2 },
+  driverTab: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 13, backgroundColor: '#F6F3F5', borderWidth: 1, borderColor: '#EEE8EC' },
+  driverTabActive: { backgroundColor: P.pink, borderColor: P.pink },
+  driverTabText: { color: P.muted, fontSize: 11, fontWeight: '800' },
+  driverTabTextActive: { color: P.white },
+  driverSecondaryBtn: { paddingHorizontal: 17, paddingVertical: 11, borderRadius: 13, backgroundColor: P.pale, marginTop: 5 },
+  driverSecondaryText: { color: P.pinkDark, fontSize: 12, fontWeight: '900' },
+  driverOrderCard: { borderWidth: 1, borderColor: P.line, borderRadius: 19, padding: 15, gap: 13, backgroundColor: P.white },
+  driverStatusPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
+  driverStatusNew: { backgroundColor: '#FFF1D9' },
+  driverStatusActive: { backgroundColor: '#FCE5EE' },
+  driverStatusDone: { backgroundColor: '#E6F5EE' },
+  driverStatusText: { color: P.ink, fontSize: 10, fontWeight: '900' },
+  driverRouteBlock: { flexDirection: 'row', gap: 12, paddingVertical: 3 },
+  driverRouteRail: { width: 12, alignItems: 'center', paddingVertical: 3 },
+  driverRouteDotStart: { width: 9, height: 9, borderRadius: 5, backgroundColor: P.green },
+  driverRouteLine: { width: 1, height: 24, backgroundColor: '#D8CFD5' },
+  driverRouteDotEnd: { width: 9, height: 9, borderRadius: 5, backgroundColor: P.pink },
+  driverRouteCaption: { color: P.muted, fontSize: 9, fontWeight: '900', letterSpacing: 0.8, marginBottom: 3 },
+  driverRouteAddress: { color: P.ink, fontSize: 13, lineHeight: 19, fontWeight: '600' },
+  driverOrderMeta: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderColor: '#F1EDF0', paddingTop: 11 },
+  driverOrderPrice: { color: P.pinkDark, fontSize: 17, fontWeight: '900' },
+  driverOrderPayment: { color: P.ink, fontSize: 12, fontWeight: '800' },
+  driverActions: { gap: 8 },
   chatCard: { backgroundColor: '#FFFAFC', borderWidth: 1, borderColor: '#F4DCE6', borderRadius: 18, padding: 13, gap: 10 },
   chatHint: { color: P.muted, fontSize: 10, fontWeight: '700' },
   chatMessages: { maxHeight: 230, minHeight: 90 },
