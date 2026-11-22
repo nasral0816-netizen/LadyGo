@@ -483,7 +483,10 @@ function TripProgress({ status }) {
 function Card({ children, style }) { return <View style={[s.card, style]}>{children}</View>; }
 
 
-function MapLibreMap({ points = [], route = [], height = 245 }) {
+function MapLibreMap({ points = [], route = [], height = 245, followPoint = null, followLabel = 'Моё местоположение' }) {
+  const cameraRef = useRef(null);
+  const [zoom, setZoom] = useState(13);
+  const [following, setFollowing] = useState(false);
   const validPoints = points.filter(point =>
     Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude))
   ).map(point => ({
@@ -494,19 +497,9 @@ function MapLibreMap({ points = [], route = [], height = 245 }) {
   const validRoute = route.filter(point =>
     Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude))
   ).map(point => [Number(point.longitude), Number(point.latitude)]);
-  const pointData = {
-    type: 'FeatureCollection',
-    features: validPoints,
-  };
-  const routeData = {
-    type: 'Feature',
-    geometry: { type: 'LineString', coordinates: validRoute },
-    properties: {},
-  };
-  const allCoordinates = [
-    ...validPoints.map(feature => feature.geometry.coordinates),
-    ...validRoute,
-  ];
+  const pointData = { type: 'FeatureCollection', features: validPoints };
+  const routeData = { type: 'Feature', geometry: { type: 'LineString', coordinates: validRoute }, properties: {} };
+  const allCoordinates = [...validPoints.map(feature => feature.geometry.coordinates), ...validRoute];
   const center = allCoordinates.length
     ? [
         (Math.min(...allCoordinates.map(point => point[0])) + Math.max(...allCoordinates.map(point => point[0]))) / 2,
@@ -520,7 +513,32 @@ function MapLibreMap({ points = [], route = [], height = 245 }) {
         0.008
       )
     : 0.04;
-  const zoom = Math.max(10, Math.min(16, Math.log2(360 / spread) - 1));
+  const initialZoom = Math.max(10, Math.min(16, Math.log2(360 / spread) - 1));
+  useEffect(() => { setZoom(initialZoom); }, [initialZoom]);
+  useEffect(() => {
+    if (!following || !followPoint || !Number.isFinite(Number(followPoint.latitude)) || !Number.isFinite(Number(followPoint.longitude))) return;
+    cameraRef.current?.easeTo({
+      center: [Number(followPoint.longitude), Number(followPoint.latitude)],
+      zoom: Math.max(14, zoom),
+      duration: 650,
+    });
+  }, [following, followPoint?.latitude, followPoint?.longitude]);
+  const moveToFollowPoint = () => {
+    if (!followPoint || !Number.isFinite(Number(followPoint.latitude)) || !Number.isFinite(Number(followPoint.longitude))) return;
+    setFollowing(true);
+    setZoom(Math.max(14, zoom));
+    cameraRef.current?.easeTo({
+      center: [Number(followPoint.longitude), Number(followPoint.latitude)],
+      zoom: Math.max(14, zoom),
+      duration: 650,
+    });
+  };
+  const changeZoom = delta => {
+    const next = Math.max(3, Math.min(19, zoom + delta));
+    setZoom(next);
+    setFollowing(false);
+    cameraRef.current?.easeTo({ zoom: next, duration: 250 });
+  };
   return <View style={{ height, borderRadius: 15, overflow: 'hidden', backgroundColor: C.map }}>
     <MapLibreView
       style={{ flex: 1 }}
@@ -528,82 +546,51 @@ function MapLibreMap({ points = [], route = [], height = 245 }) {
       androidView="texture"
       attribution
       logo={false}
-      compass={false}
+      compass
+      dragPan
+      touchZoom
+      doubleTapZoom
+      doubleTapHoldZoom
+      touchRotate={false}
+      touchPitch={false}
     >
-      <Camera initialViewState={{ center, zoom }} />
+      <Camera ref={cameraRef} initialViewState={{ center, zoom: initialZoom }} minZoom={3} maxZoom={19} />
       {validRoute.length > 1 && <GeoJSONSource id="ladygo-route-source" data={routeData}>
-        <Layer
-          id="ladygo-route-casing"
-          type="line"
-          paint={{ 'line-color': '#FFFFFF', 'line-width': 10, 'line-opacity': 0.98, 'line-cap': 'round', 'line-join': 'round' }}
-        />
-        <Layer
-          id="ladygo-route-line"
-          type="line"
-          paint={{ 'line-color': C.pink, 'line-width': 6, 'line-opacity': 1, 'line-cap': 'round', 'line-join': 'round' }}
-        />
+        <Layer id="ladygo-route-casing" type="line"
+          paint={{ 'line-color': '#FFFFFF', 'line-width': 10, 'line-opacity': 0.98, 'line-cap': 'round', 'line-join': 'round' }} />
+        <Layer id="ladygo-route-line" type="line"
+          paint={{ 'line-color': C.pink, 'line-width': 6, 'line-opacity': 1, 'line-cap': 'round', 'line-join': 'round' }} />
       </GeoJSONSource>}
       {validPoints.length > 0 && <GeoJSONSource id="ladygo-points-source" data={pointData}>
-        <Layer
-          id="ladygo-points-circles"
-          type="circle"
-          filter={['!=', ['get', 'markerType'], 'you']}
-          paint={{
-            'circle-radius': 8,
-            'circle-color': ['get', 'color'],
-            'circle-stroke-color': '#FFFFFF',
-            'circle-stroke-width': 2,
-          }}
-        />
-        <Layer
-          id="ladygo-you-halo"
-          type="circle"
-          filter={['==', ['get', 'markerType'], 'you']}
-          paint={{ 'circle-radius': 15, 'circle-color': '#2F80ED', 'circle-opacity': 0.18 }}
-        />
-        <Layer
-          id="ladygo-you-ring"
-          type="circle"
-          filter={['==', ['get', 'markerType'], 'you']}
-          paint={{ 'circle-radius': 9, 'circle-color': '#FFFFFF', 'circle-stroke-color': '#2F80ED', 'circle-stroke-width': 3 }}
-        />
-        <Layer
-          id="ladygo-you-dot"
-          type="circle"
-          filter={['==', ['get', 'markerType'], 'you']}
-          paint={{ 'circle-radius': 4, 'circle-color': '#2F80ED' }}
-        />
-        <Layer
-          id="ladygo-points-labels"
-          type="symbol"
-          filter={['!=', ['get', 'markerType'], 'vehicle']}
-          layout={{
-            'text-field': ['get', 'label'],
-            'text-size': 11,
-            'text-offset': [0, 1.35],
-            'text-anchor': 'top',
-            'text-allow-overlap': true,
-          }}
-          paint={{
-            'text-color': '#282329',
-            'text-halo-color': '#FFFFFF',
-            'text-halo-width': 1.5,
-          }}
-        />
-        <Layer
-          id="ladygo-moving-car"
-          type="symbol"
-          filter={['==', ['get', 'markerType'], 'vehicle']}
-          layout={{
-            'text-field': '🚘',
-            'text-size': 25,
-            'text-allow-overlap': true,
-            'text-rotate': ['get', 'heading'],
-            'text-rotation-alignment': 'map',
-          }}
-        />
+        <Layer id="ladygo-points-circles" type="circle" filter={['!=', ['get', 'markerType'], 'you']}
+          paint={{ 'circle-radius': 8, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#FFFFFF', 'circle-stroke-width': 2 }} />
+        <Layer id="ladygo-you-halo" type="circle" filter={['==', ['get', 'markerType'], 'you']}
+          paint={{ 'circle-radius': 15, 'circle-color': '#2F80ED', 'circle-opacity': 0.18 }} />
+        <Layer id="ladygo-you-ring" type="circle" filter={['==', ['get', 'markerType'], 'you']}
+          paint={{ 'circle-radius': 9, 'circle-color': '#FFFFFF', 'circle-stroke-color': '#2F80ED', 'circle-stroke-width': 3 }} />
+        <Layer id="ladygo-you-dot" type="circle" filter={['==', ['get', 'markerType'], 'you']}
+          paint={{ 'circle-radius': 4, 'circle-color': '#2F80ED' }} />
+        <Layer id="ladygo-points-labels" type="symbol" filter={['!=', ['get', 'markerType'], 'vehicle']}
+          layout={{ 'text-field': ['get', 'label'], 'text-size': 11, 'text-offset': [0, 1.35], 'text-anchor': 'top', 'text-allow-overlap': true }}
+          paint={{ 'text-color': '#282329', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.5 }} />
+        <Layer id="ladygo-moving-car" type="symbol" filter={['==', ['get', 'markerType'], 'vehicle']}
+          layout={{ 'text-field': '🚘', 'text-size': 25, 'text-allow-overlap': true, 'text-rotate': ['get', 'heading'], 'text-rotation-alignment': 'map' }} />
       </GeoJSONSource>}
     </MapLibreView>
+    <View pointerEvents="box-none" style={{ position: 'absolute', right: 10, top: 10, gap: 7 }}>
+      <TouchableOpacity accessibilityLabel="Приблизить карту" onPress={() => changeZoom(1)}
+        style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', elevation: 3 }}>
+        <Text style={{ color: C.ink, fontSize: 26, fontWeight: '700' }}>＋</Text>
+      </TouchableOpacity>
+      <TouchableOpacity accessibilityLabel="Отдалить карту" onPress={() => changeZoom(-1)}
+        style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', elevation: 3 }}>
+        <Text style={{ color: C.ink, fontSize: 26, fontWeight: '700' }}>−</Text>
+      </TouchableOpacity>
+      {followPoint && <TouchableOpacity accessibilityLabel={followLabel} onPress={moveToFollowPoint}
+        style={{ minWidth: 42, height: 42, paddingHorizontal: 10, borderRadius: 13, backgroundColor: following ? C.pale : '#FFFFFF', alignItems: 'center', justifyContent: 'center', elevation: 3 }}>
+        <Text style={{ color: following ? C.pinkDark : C.ink, fontSize: 18, fontWeight: '800' }}>◎</Text>
+      </TouchableOpacity>}
+    </View>
   </View>;
 }
 
@@ -651,7 +638,7 @@ function TripMap({ order, driverLocation, assignedDriver }) {
 
   if (!hasCoords) return null;
   return <View style={{ gap: 7 }}>
-    {Platform.OS === 'android' ? <MapLibreMap key={'trip-map-' + order.id} height={190} points={[
+    {Platform.OS === 'android' ? <MapLibreMap key={'trip-map-' + order.id} height={190} followPoint={driverLocation} followLabel="Следить за водителем" points={[
       { latitude: start.latitude, longitude: start.longitude, label: 'Подача', color: C.pink },
       ...stops.map((point, index) => ({ ...point, label: point.address || ('Остановка ' + (index + 1)), color: '#D69A35' })),
       { latitude: end.latitude, longitude: end.longitude, label: 'Назначение', color: C.blue },
@@ -1506,6 +1493,31 @@ function LadyGoAppContent() {
   }, [mode, activeOrder?.id, activeOrder?.driver_id, activeOrder?.status]);
 
   useEffect(() => {
+    if (mode !== 'passenger') return;
+    let active = true;
+    let subscription = null;
+    (async () => {
+      try {
+        const permission = await Location.getForegroundPermissionsAsync();
+        if (!active || permission.status !== 'granted') return;
+        subscription = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, timeInterval: 6000, distanceInterval: 4 },
+          location => {
+            if (!active || !location?.coords) return;
+            setCoords({ latitude: location.coords.latitude, longitude: location.coords.longitude });
+          }
+        );
+      } catch (error) {
+        console.warn('LadyGo passenger location:', error?.message || error);
+      }
+    })();
+    return () => {
+      active = false;
+      subscription?.remove?.();
+    };
+  }, [mode]);
+
+  useEffect(() => {
     if (mode !== 'passenger' || !activeOrder?.driver_id) { setDriverLocation(null); return; }
     let alive = true;
     const driverId = activeOrder.driver_id;
@@ -2242,7 +2254,7 @@ function LadyGoAppContent() {
           onPress={() => submitRating(order)} />
       </Card>)}
       <View style={s.mapWrap}>
-        {Platform.OS === 'android' ? <MapLibreMap key={'booking-map-' + [coords?.latitude, coords?.longitude, destinationCoords?.latitude, destinationCoords?.longitude, route.length].join('-')} height={245} points={[
+        {Platform.OS === 'android' ? <MapLibreMap height={245} followPoint={activeOrder?.driver_id ? driverLocation : coords} followLabel={activeOrder?.driver_id ? 'Следить за водителем' : 'Следить за мной'} points={[
           ...(coords ? [{ ...coords, label: 'Вы здесь · подача', color: '#2F80ED', markerType: 'you' }] : []),
           ...stopCoords.map((point, index) => ({ ...point, label: 'Остановка ' + (index + 1), color: '#D69A35' })),
           ...(destinationCoords ? [{ ...destinationCoords, label: 'Назначение', color: C.blue }] : []),
