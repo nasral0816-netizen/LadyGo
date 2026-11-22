@@ -858,7 +858,7 @@ export default function LadyGoApp() {
             </View>}
             {o.status === 'completed' && ratedOrderIds.includes(o.id) && <Text style={st.ratingThanks}>✓ Спасибо, поездка оценена</Text>}
           </View>;
-        })
+        })}
     </ScrollView>}
     {tab === 'admin' && profile?.role === 'admin' && <ScrollView contentContainerStyle={st.pageContent}>
       <View style={st.rowBetween}>
