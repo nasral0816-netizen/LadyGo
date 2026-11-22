@@ -93,7 +93,7 @@ function MapPanel({ pickup, destination, route, onLocate }) {
   const center = coords.length ? [coords.reduce((s,p)=>s+p[0],0)/coords.length, coords.reduce((s,p)=>s+p[1],0)/coords.length] : [42.7168,43.9052];
   return <View style={st.map}>
     <MapLibreView style={{ flex: 1 }} mapStyle={P.map} androidView="texture" attribution logo={false} compass dragPan touchZoom doubleTapZoom>
-      <Camera ref={cameraRef} centerCoordinate={focusPoint || center} zoomLevel={zoom} pitch={is3D ? 55 : 0} animationMode="flyTo" animationDuration={500} />
+      <Camera ref={cameraRef} center={focusPoint || center} zoom={zoom} pitch={is3D ? 55 : 0} easing="fly" duration={500} />
       {route.length > 1 && <GeoJSONSource id="route" data={line}>
         <Layer id="route-outline" type="line" paint={{ 'line-color': '#FFFFFF', 'line-width': 9, 'line-cap': 'round', 'line-join': 'round' }} />
         <Layer id="route-main" type="line" paint={{ 'line-color': P.pink, 'line-width': 5, 'line-cap': 'round', 'line-join': 'round' }} />
@@ -104,9 +104,9 @@ function MapPanel({ pickup, destination, route, onLocate }) {
     </MapLibreView>
     <View style={st.mapControls}>
       <TouchableOpacity style={[st.mapControl, is3D && st.mapControlActive]} onPress={() => setIs3D(v => !v)}><Text style={[st.mapControlText, is3D && st.mapControlTextActive]}>3D</Text></TouchableOpacity>
-      <TouchableOpacity style={st.mapControl} onPress={() => setZoom(v => Math.min(19, v + 1))}><Text style={st.mapControlText}>＋</Text></TouchableOpacity>
-      <TouchableOpacity style={st.mapControl} onPress={() => setZoom(v => Math.max(3, v - 1))}><Text style={st.mapControlText}>−</Text></TouchableOpacity>
-      <TouchableOpacity style={st.mapControl} onPress={async () => { const point = await onLocate(); if (point) { setFocusPoint([point.longitude, point.latitude]); setZoom(16); } }}><Text style={st.locateText}>◎</Text></TouchableOpacity>
+      <TouchableOpacity style={st.mapControl} onPress={() => { const next = Math.min(19, zoom + 1); setZoom(next); cameraRef.current?.zoomTo(next, { duration: 250 }); }}><Text style={st.mapControlText}>＋</Text></TouchableOpacity>
+      <TouchableOpacity style={st.mapControl} onPress={() => { const next = Math.max(3, zoom - 1); setZoom(next); cameraRef.current?.zoomTo(next, { duration: 250 }); }}><Text style={st.mapControlText}>−</Text></TouchableOpacity>
+      <TouchableOpacity style={st.mapControl} onPress={async () => { const point = await onLocate(); if (point) { const target = [point.longitude, point.latitude]; setFocusPoint(target); setZoom(16); cameraRef.current?.flyTo({ center: target, zoom: 16, duration: 650 }); } }}><Text style={st.locateText}>◎</Text></TouchableOpacity>
     </View>
     <View style={st.mapLabel}><View style={st.liveDot}/><Text style={st.mapLabelText}>Кисловодск</Text></View>
   </View>;
