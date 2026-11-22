@@ -90,6 +90,8 @@ export default function LadyGoApp() {
   const [orders, setOrders] = useState([]);
   const [activeOrder, setActiveOrder] = useState(null);
   const [phone, setPhone] = useState('');
+  const [driverOrders, setDriverOrders] = useState([]);
+  const [driverPrices, setDriverPrices] = useState({});
 
   const loadProfile = useCallback(async u => {
     if (!u || !supabase) return;
@@ -133,6 +135,39 @@ export default function LadyGoApp() {
     }, 400);
     return () => { alive = false; clearTimeout(timer); };
   }, [query]);
+
+  const loadDriverOrders = useCallback(async () => {
+    if (!session?.user || profile?.role !== 'driver' || !supabase) return;
+    const { data, error } = await supabase.from('orders').select('*')
+      .or('status.eq.new,driver_id.eq.' + session.user.id)
+      .order('created_at', { ascending: false }).limit(40);
+    if (!error) setDriverOrders(data || []);
+  }, [session, profile]);
+
+  useEffect(() => { if (profile?.role === 'driver') loadDriverOrders(); }, [profile, loadDriverOrders]);
+
+  const acceptDriverOrder = async order => {
+    const price = Number(String(driverPrices[order.id] || order.estimated_price_rub || '').replace(',', '.'));
+    if (!Number.isFinite(price) || price <= 0) return Alert.alert('Укажи стоимость', 'Введи согласованную стоимость поездки в рублях.');
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc('ladygo_accept_order', { p_order_id: order.id, p_price: price });
+      if (error) throw error;
+      await loadDriverOrders();
+      Alert.alert('Заказ принят', 'Поездка добавлена в твои активные заказы.');
+    } catch (e) { Alert.alert('Не удалось принять заказ', e.message || 'Обнови список и попробуй ещё раз.'); }
+    finally { setBusy(false); }
+  };
+
+  const updateDriverStatus = async (order, status) => {
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc('ladygo_update_trip_status', { p_order_id: order.id, p_status: status });
+      if (error) throw error;
+      await loadDriverOrders();
+    } catch (e) { Alert.alert('Не удалось обновить поездку', e.message || 'Попробуй ещё раз.'); }
+    finally { setBusy(false); }
+  };
 
   const signIn = async () => {
     if (!email.trim() || password.length < 6) return Alert.alert('Проверь данные', 'Введи email и пароль не короче 6 символов.');
@@ -295,6 +330,23 @@ export default function LadyGoApp() {
       {orders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет поездок</Text><Text style={st.muted}>Оформленные заказы появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Заказать поездку</Text></TouchableOpacity></View> :
         orders.map(o => <View key={o.id} style={st.orderCard}><View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status] || o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleDateString('ru-RU')}</Text></View><Text style={st.orderAddress}>●  {o.pickup_address}</Text><Text style={st.orderAddress}>●  {o.destination_address}</Text><View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub ? fmt(o.price_rub) : 'Цена уточняется'}</Text>{o.status === 'new' && <TouchableOpacity onPress={() => cancelOrder(o)}><Text style={st.cancelText}>Отменить</Text></TouchableOpacity>}</View></View>)}
     </ScrollView>}
+    {tab === 'driver' && profile?.role === 'driver' && <ScrollView contentContainerStyle={st.pageContent}>
+      <View style={st.rowBetween}><Text style={st.pageTitle}>Заказы водителя</Text><TouchableOpacity onPress={loadDriverOrders}><Text style={st.refreshText}>↻ Обновить</Text></TouchableOpacity></View>
+      {driverOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет заказов</Text><Text style={st.muted}>Новые заявки появятся здесь.</Text></View> :
+        driverOrders.map(o => <View key={o.id} style={st.orderCard}>
+          <View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status] || o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'})}</Text></View>
+          <Text style={st.orderAddress}>●  {o.pickup_address}</Text><Text style={st.orderAddress}>●  {o.destination_address}</Text>
+          {o.status === 'new' && !o.driver_id ? <View style={{gap:8}}>
+            <TextInput style={st.phoneInput} keyboardType="numeric" placeholder="Стоимость поездки, ₽" value={driverPrices[o.id] || String(o.estimated_price_rub || '')} onChangeText={v=>setDriverPrices(p=>({...p,[o.id]:v}))}/>
+            <TouchableOpacity style={st.primaryBtn} onPress={()=>acceptDriverOrder(o)} disabled={busy}><Text style={st.primaryText}>Принять заказ</Text></TouchableOpacity>
+          </View> : o.driver_id === session.user.id && <View style={{gap:8}}>
+            <Text style={st.orderPrice}>{o.price_rub ? fmt(o.price_rub) : 'Стоимость не указана'}</Text>
+            {o.status === 'accepted' && <TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'arrived')}><Text style={st.primaryText}>Я на месте</Text></TouchableOpacity>}
+            {o.status === 'arrived' && <TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'in_progress')}><Text style={st.primaryText}>Начать поездку</Text></TouchableOpacity>}
+            {o.status === 'in_progress' && <TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'completed')}><Text style={st.primaryText}>Завершить поездку</Text></TouchableOpacity>}
+          </View>}
+        </View>)}
+    </ScrollView>}
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
       <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.email || session.user.email}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
       <TouchableOpacity style={st.profileRow} onPress={() => setTab('orders')}><Text style={st.profileRowIcon}>◷</Text><Text style={st.profileRowText}>История поездок</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
@@ -304,7 +356,7 @@ export default function LadyGoApp() {
       <Text style={st.footnote}>LadyGo · 6.8.0 · Создано независимым автором @acyma</Text>
     </ScrollView>}
     <View style={st.bottomNav}>
-      {[['ride','⌖','Заказать'],['orders','◷','Поездки'],['profile','○','Профиль']].map(([id,icon,label]) => <TouchableOpacity key={id} style={st.navItem} onPress={() => setTab(id)}><Text style={[st.navIcon, tab === id && st.navActive]}>{icon}</Text><Text style={[st.navLabel, tab === id && st.navActive]}>{label}</Text></TouchableOpacity>)}
+      {([['ride','⌖','Заказать'],['orders','◷','Поездки'],...(profile?.role === 'driver' ? [['driver','▣','Водитель']] : []),['profile','○','Профиль']]).map(([id,icon,label]) => <TouchableOpacity key={id} style={st.navItem} onPress={() => setTab(id)}><Text style={[st.navIcon, tab === id && st.navActive]}>{icon}</Text><Text style={[st.navLabel, tab === id && st.navActive]}>{label}</Text></TouchableOpacity>)}
     </View>
   </SafeAreaView>;
 }
@@ -402,5 +454,6 @@ const st = StyleSheet.create({
   profileRowText: { flex: 1, color: P.ink, fontSize: 14, fontWeight: '700' },
   chevron: { color: P.muted, fontSize: 22 },
   logout: { alignItems: 'center', padding: 16, marginTop: 8 },
-  logoutText: { color: '#C23F5B', fontSize: 14, fontWeight: '800' }
+  logoutText: { color: '#C23F5B', fontSize: 14, fontWeight: '800' },
+  refreshText: { color: P.pinkDark, fontSize: 13, fontWeight: '800', marginBottom: 10 }
 });
