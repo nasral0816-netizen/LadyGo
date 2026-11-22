@@ -104,9 +104,9 @@ function MapPanel({ pickup, destination, route, onLocate }) {
     </MapLibreView>
     <View style={st.mapControls}>
       <TouchableOpacity style={[st.mapControl, is3D && st.mapControlActive]} onPress={() => setIs3D(v => !v)}><Text style={[st.mapControlText, is3D && st.mapControlTextActive]}>3D</Text></TouchableOpacity>
-      <TouchableOpacity style={st.mapControl} onPress={() => { const next = Math.min(19, zoom + 1); setZoom(next); cameraRef.current?.setCamera({ zoomLevel: next, animationDuration: 250 }); }}><Text style={st.mapControlText}>＋</Text></TouchableOpacity>
-      <TouchableOpacity style={st.mapControl} onPress={() => { const next = Math.max(3, zoom - 1); setZoom(next); cameraRef.current?.setCamera({ zoomLevel: next, animationDuration: 250 }); }}><Text style={st.mapControlText}>−</Text></TouchableOpacity>
-      <TouchableOpacity style={st.mapControl} onPress={async () => { const point = await onLocate(); if (point) { const target = [point.longitude, point.latitude]; setFocusPoint(target); setZoom(16); cameraRef.current?.setCamera({ centerCoordinate: target, zoomLevel: 16, animationDuration: 650, animationMode: 'flyTo' }); } }}><Text style={st.locateText}>◎</Text></TouchableOpacity>
+      <TouchableOpacity style={st.mapControl} onPress={() => setZoom(v => Math.min(19, v + 1))}><Text style={st.mapControlText}>＋</Text></TouchableOpacity>
+      <TouchableOpacity style={st.mapControl} onPress={() => setZoom(v => Math.max(3, v - 1))}><Text style={st.mapControlText}>−</Text></TouchableOpacity>
+      <TouchableOpacity style={st.mapControl} onPress={async () => { const point = await onLocate(); if (point) { setFocusPoint([point.longitude, point.latitude]); setZoom(16); } }}><Text style={st.locateText}>◎</Text></TouchableOpacity>
     </View>
     <View style={st.mapLabel}><View style={st.liveDot}/><Text style={st.mapLabelText}>Кисловодск</Text></View>
   </View>;
@@ -357,6 +357,10 @@ export default function LadyGoApp() {
 
   return <SafeAreaView style={st.screen}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
     <View style={st.topbar}><View><Text style={st.logoSmall}>LadyGo</Text><Text style={st.topSub}>Поездки с заботой</Text></View>
+      {profile?.role === 'driver' && <View style={st.modeSwitch}>
+        <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>Пассажир</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>Водитель</Text></TouchableOpacity>
+      </View>}
       <TouchableOpacity style={st.avatar} onPress={() => setTab('profile')}><Text style={st.avatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></TouchableOpacity>
     </View>
     {tab === 'ride' && <View style={{ flex: 1 }}>
@@ -414,7 +418,7 @@ export default function LadyGoApp() {
       <Text style={st.footnote}>LadyGo · 6.8.0 · Создано независимым автором @acyma</Text>
     </ScrollView>}
     <View style={st.bottomNav}>
-      {([['ride','⌖','Заказать'],['orders','◷','Поездки'],...(profile?.role === 'driver' ? [['driver','▣','Водитель']] : []),['profile','○','Профиль']]).map(([id,icon,label]) => <TouchableOpacity key={id} style={st.navItem} onPress={() => setTab(id)}><Text style={[st.navIcon, tab === id && st.navActive]}>{icon}</Text><Text style={[st.navLabel, tab === id && st.navActive]}>{label}</Text></TouchableOpacity>)}
+      {([['ride','⌖','Заказать'],['orders','◷','Поездки'],['profile','○','Профиль']]).map(([id,icon,label]) => <TouchableOpacity key={id} style={st.navItem} onPress={() => setTab(id)}><Text style={[st.navIcon, tab === id && st.navActive]}>{icon}</Text><Text style={[st.navLabel, tab === id && st.navActive]}>{label}</Text></TouchableOpacity>)}
     </View>
   </SafeAreaView>;
 }
@@ -437,6 +441,11 @@ const st = StyleSheet.create({
   logoSmall: { color: P.pink, fontSize: 25, fontWeight: '900', letterSpacing: -1 },
   topSub: { color: P.muted, fontSize: 10, marginTop: -2 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
+  modeSwitch: { flexDirection: 'row', backgroundColor: '#F5F1F3', borderRadius: 13, padding: 3, gap: 2 },
+  modeOption: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 10 },
+  modeOptionActive: { backgroundColor: P.pink },
+  modeText: { color: P.muted, fontSize: 10, fontWeight: '800' },
+  modeTextActive: { color: P.white },
   avatarText: { color: P.pinkDark, fontWeight: '900', fontSize: 16 },
   map: { height: 280, backgroundColor: '#E9E7E3' },
   mapControls: { position: 'absolute', left: 9, bottom: 12, gap: 6, alignItems: 'center' },
