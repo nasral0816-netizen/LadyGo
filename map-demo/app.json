@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "LadyGo — карта (демо)",
+    "slug": "ladygo-yandex-map-demo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.ladygo.mapdemo",
+      "versionCode": 1
+    }
+  }
+}
