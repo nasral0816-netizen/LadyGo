@@ -574,8 +574,8 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
           paint={{ 'line-color': C.pink, 'line-width': 6, 'line-opacity': 1, 'line-cap': 'round', 'line-join': 'round' }} />
       </GeoJSONSource>}
       {validPoints.length > 0 && <GeoJSONSource id="ladygo-points-source" data={pointData}>
-        <Layer id="ladygo-points-circles" type="circle" filter={['!=', ['get', 'markerType'], 'you']}
-          paint={{ 'circle-radius': 8, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#FFFFFF', 'circle-stroke-width': 2 }} />
+        <Layer id="ladygo-points-circles" type="circle"
+          paint={{ 'circle-radius': ['case', ['==', ['get', 'markerType'], 'you'], 10, 8], 'circle-color': ['get', 'color'], 'circle-stroke-color': '#FFFFFF', 'circle-stroke-width': 3 }} />
         <Layer id="ladygo-you-halo" type="circle" filter={['==', ['get', 'markerType'], 'you']}
           paint={{ 'circle-radius': 15, 'circle-color': '#2F80ED', 'circle-opacity': 0.18 }} />
         <Layer id="ladygo-you-ring" type="circle" filter={['==', ['get', 'markerType'], 'you']}
