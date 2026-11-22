@@ -2,7 +2,7 @@
   "expo": {
     "name": "LadyGo",
     "slug": "guga",
-    "version": "6.7.9.10",
+    "version": "6.7.9.11",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "ladygo",
@@ -12,7 +12,7 @@
     "icon": "./icon.png",
     "android": {
       "package": "com.ladygo.app",
-      "versionCode": 35,
+      "versionCode": 36,
       "adaptiveIcon": {
         "foregroundImage": "./adaptive-icon.png",
         "backgroundColor": "#E80B87"
