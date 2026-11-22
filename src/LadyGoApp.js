@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.9.1';
+const APP_VERSION = '6.7.9.2';
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
 const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
 const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
@@ -533,21 +533,45 @@ function MapLibreMap({ points = [], route = [], height = 245 }) {
       <Camera initialViewState={{ center, zoom }} />
       {validRoute.length > 1 && <GeoJSONSource id="ladygo-route-source" data={routeData}>
         <Layer
+          id="ladygo-route-casing"
+          type="line"
+          paint={{ 'line-color': '#FFFFFF', 'line-width': 10, 'line-opacity': 0.98, 'line-cap': 'round', 'line-join': 'round' }}
+        />
+        <Layer
           id="ladygo-route-line"
           type="line"
-          paint={{ 'line-color': C.pink, 'line-width': 5, 'line-opacity': 0.92 }}
+          paint={{ 'line-color': C.pink, 'line-width': 6, 'line-opacity': 1, 'line-cap': 'round', 'line-join': 'round' }}
         />
       </GeoJSONSource>}
       {validPoints.length > 0 && <GeoJSONSource id="ladygo-points-source" data={pointData}>
         <Layer
           id="ladygo-points-circles"
           type="circle"
+          filter={['!=', ['get', 'markerType'], 'you']}
           paint={{
             'circle-radius': 8,
             'circle-color': ['get', 'color'],
             'circle-stroke-color': '#FFFFFF',
             'circle-stroke-width': 2,
           }}
+        />
+        <Layer
+          id="ladygo-you-halo"
+          type="circle"
+          filter={['==', ['get', 'markerType'], 'you']}
+          paint={{ 'circle-radius': 15, 'circle-color': '#2F80ED', 'circle-opacity': 0.18 }}
+        />
+        <Layer
+          id="ladygo-you-ring"
+          type="circle"
+          filter={['==', ['get', 'markerType'], 'you']}
+          paint={{ 'circle-radius': 9, 'circle-color': '#FFFFFF', 'circle-stroke-color': '#2F80ED', 'circle-stroke-width': 3 }}
+        />
+        <Layer
+          id="ladygo-you-dot"
+          type="circle"
+          filter={['==', ['get', 'markerType'], 'you']}
+          paint={{ 'circle-radius': 4, 'circle-color': '#2F80ED' }}
         />
         <Layer
           id="ladygo-points-labels"
@@ -2219,7 +2243,7 @@ function LadyGoAppContent() {
       </Card>)}
       <View style={s.mapWrap}>
         {Platform.OS === 'android' ? <MapLibreMap key={'booking-map-' + [coords?.latitude, coords?.longitude, destinationCoords?.latitude, destinationCoords?.longitude, route.length].join('-')} height={245} points={[
-          ...(coords ? [{ ...coords, label: 'Подача', color: C.pink }] : []),
+          ...(coords ? [{ ...coords, label: 'Вы здесь · подача', color: '#2F80ED', markerType: 'you' }] : []),
           ...stopCoords.map((point, index) => ({ ...point, label: 'Остановка ' + (index + 1), color: '#D69A35' })),
           ...(destinationCoords ? [{ ...destinationCoords, label: 'Назначение', color: C.blue }] : []),
           ...(driverLocation ? [{ ...driverLocation, label: 'Автомобиль LadyGo', color: '#26865A', markerType: 'vehicle', heading: driverLocation.heading || 0 }] : []),
