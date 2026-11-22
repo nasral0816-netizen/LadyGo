@@ -1872,6 +1872,28 @@ function LadyGoAppContent() {
     setTab('ride');
   };
 
+  const swapAddresses = () => {
+    if (!pickup.trim() || !destination.trim()) {
+      return Alert.alert('Обратный маршрут', 'Сначала укажи оба адреса.');
+    }
+    const oldPickup = pickup;
+    const oldDestination = destination;
+    const oldPickupPoint = coords;
+    const oldDestinationPoint = destinationCoords;
+    setPickup(oldDestination);
+    setDestination(oldPickup);
+    setCoords(oldDestinationPoint);
+    setDestinationCoords(oldPickupPoint);
+    setStopCoords([]);
+    setStopsText('');
+    setRoute([]);
+    setRouteInfo(null);
+    setPriceQuote(null);
+    setEstimatedPrice(null);
+    setPriceDetailsOpen(false);
+    Alert.alert('Маршрут изменён', 'Адреса подачи и назначения поменялись местами. Проверь маршрут и обнови расчёт стоимости.');
+  };
+
   const savePlace = async () => {
     if (!savedLabel.trim() || !savedAddress.trim()) return Alert.alert('Сохранённый адрес', 'Укажи название и адрес.');
     const { error } = await supabase.from('saved_places').insert({ user_id: user.id, label: savedLabel.trim(), address: savedAddress.trim() });
@@ -1885,6 +1907,8 @@ function LadyGoAppContent() {
       return Alert.alert('Уточни адрес назначения', 'Выбери точный адрес из подсказок. Так LadyGo сохранит правильную точку на карте и построит маршрут без догадок.');
     }
     if (activeOrder) return Alert.alert('У тебя уже есть активный заказ', 'Заверши или отмени текущую поездку перед новым заказом.');
+    const phoneDigits = phone.replace(/\\D/g, '');
+    if (phone.trim() && (phoneDigits.length < 10 || phoneDigits.length > 15)) return Alert.alert('Проверь телефон', 'Укажи номер в международном формате или оставь поле пустым.');
     if (!priceQuote?.price_token || !priceQuote?.expires_at || new Date(priceQuote.expires_at).getTime() <= Date.now()) return Alert.alert('Цена устарела', 'Обнови расчёт стоимости перед оформлением заказа.');
     setBusy(true);
     try {
@@ -2614,6 +2638,10 @@ function LadyGoAppContent() {
             </View>
           </SafeAreaView>
         </Modal>
+
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Поменять адреса подачи и назначения местами" onPress={swapAddresses} style={[s.savedChip, { alignSelf: 'flex-start', marginTop: 2 }]}>
+          <Text style={s.savedChipText}>⇅  Поменять местами адреса</Text>
+        </TouchableOpacity>
 
         <Input label="Промежуточные точки (по одной на строку)" value={stopsText} onChangeText={v => { setStopsText(v); setStopCoords([]); setRoute([]); setRouteInfo(null); }} multiline placeholder="Можно оставить пустым" />
         {serviceType === 'ride' && <TouchableOpacity onPress={() => setDoorToDoor(value => !value)} style={[s.row, { alignItems: 'center', paddingVertical: 8 }]}>
