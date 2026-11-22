@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.9.5';
+const APP_VERSION = '6.7.9.6';
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
 const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
 const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
@@ -496,6 +496,14 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
   const cameraRef = useRef(null);
   const [zoom, setZoom] = useState(13);
   const [following, setFollowing] = useState(false);
+  const [styleIndex, setStyleIndex] = useState(0);
+  const [is3D, setIs3D] = useState(false);
+  const mapStyles = [
+    { name: 'Стандарт', url: DEFAULT_MAP_STYLE_URL },
+    { name: 'Светлая', url: 'https://tiles.openfreemap.org/styles/positron' },
+    { name: 'Яркая', url: 'https://tiles.openfreemap.org/styles/bright' },
+    { name: 'Ночная', url: 'https://tiles.openfreemap.org/styles/dark' },
+  ];
   const validPoints = points.filter(point =>
     Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude))
   ).map(point => ({
@@ -523,6 +531,20 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
       )
     : 0.04;
   const initialZoom = Math.max(10, Math.min(16, Math.log2(360 / spread) - 1));
+  const moveToFollowPoint = () => {
+    if (!followPoint || !Number.isFinite(Number(followPoint.latitude)) || !Number.isFinite(Number(followPoint.longitude))) return;
+    const nextFollowing = !following;
+    setFollowing(nextFollowing);
+    if (nextFollowing) {
+      const nextZoom = Math.max(14, zoom);
+      setZoom(nextZoom);
+      cameraRef.current?.easeTo({
+        center: [Number(followPoint.longitude), Number(followPoint.latitude)],
+        zoom: nextZoom,
+        duration: 650,
+      });
+    }
+  };
   useEffect(() => {
     if (!following || !followPoint || !Number.isFinite(Number(followPoint.latitude)) || !Number.isFinite(Number(followPoint.longitude))) return;
     cameraRef.current?.easeTo({
@@ -531,30 +553,37 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
       duration: 650,
     });
   }, [following, followPoint?.latitude, followPoint?.longitude]);
-  const moveToFollowPoint = () => {
-    if (following) {
-      setFollowing(false);
-      return;
-    }
-    if (!followPoint || !Number.isFinite(Number(followPoint.latitude)) || !Number.isFinite(Number(followPoint.longitude))) return;
-    setFollowing(true);
-    setZoom(Math.max(14, zoom));
-    cameraRef.current?.easeTo({
-      center: [Number(followPoint.longitude), Number(followPoint.latitude)],
-      zoom: Math.max(14, zoom),
-      duration: 650,
-    });
-  };
   const changeZoom = delta => {
     const next = Math.max(3, Math.min(19, zoom + delta));
     setZoom(next);
     setFollowing(false);
     cameraRef.current?.easeTo({ zoom: next, duration: 250 });
   };
+  const resetNorth = () => {
+    setIs3D(false);
+    cameraRef.current?.easeTo({ bearing: 0, pitch: 0, duration: 400 });
+  };
+  const toggle3D = () => {
+    const next = !is3D;
+    setIs3D(next);
+    cameraRef.current?.easeTo({ pitch: next ? 48 : 0, duration: 450 });
+  };
+  const cycleMapStyle = () => {
+    setStyleIndex(index => (index + 1) % mapStyles.length);
+  };
+  const showWholeRoute = () => {
+    if (!allCoordinates.length) return;
+    setFollowing(false);
+    const routeSpread = Math.max(spread, 0.008);
+    const nextZoom = Math.max(3, Math.min(16, Math.log2(360 / routeSpread) - 1.5));
+    setZoom(nextZoom);
+    cameraRef.current?.easeTo({ center, zoom: nextZoom, bearing: 0, pitch: 0, duration: 550 });
+    setIs3D(false);
+  };
   return <View style={{ height, borderRadius: 15, overflow: 'hidden', backgroundColor: C.map }}>
     <MapLibreView
       style={{ flex: 1 }}
-      mapStyle={DEFAULT_MAP_STYLE_URL}
+      mapStyle={mapStyles[styleIndex].url}
       androidView="texture"
       attribution
       logo={false}
@@ -591,6 +620,20 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
           layout={{ 'text-field': '🚘', 'text-size': 25, 'text-allow-overlap': true, 'text-rotate': ['get', 'heading'], 'text-rotation-alignment': 'map' }} />
       </GeoJSONSource>}
     </MapLibreView>
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: 9, top: 9, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+      <TouchableOpacity accessibilityLabel="Сменить стиль карты" onPress={cycleMapStyle}
+        style={{ height: 34, paddingHorizontal: 10, borderRadius: 11, backgroundColor: '#FFFFFF', justifyContent: 'center', elevation: 3 }}>
+        <Text style={{ color: C.ink, fontSize: 11, fontWeight: '800' }}>Слои · {mapStyles[styleIndex].name}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity accessibilityLabel="Переключить трёхмерный вид" onPress={toggle3D}
+        style={{ width: 38, height: 34, borderRadius: 11, backgroundColor: is3D ? C.pale : '#FFFFFF', alignItems: 'center', justifyContent: 'center', elevation: 3 }}>
+        <Text style={{ color: C.pinkDark, fontSize: 12, fontWeight: '900' }}>3D</Text>
+      </TouchableOpacity>
+      <TouchableOpacity accessibilityLabel="Вернуть карту на север" onPress={resetNorth}
+        style={{ width: 38, height: 34, borderRadius: 11, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', elevation: 3 }}>
+        <Text style={{ color: C.ink, fontSize: 15, fontWeight: '900' }}>N↑</Text>
+      </TouchableOpacity>
+    </View>
     <View pointerEvents="box-none" style={{ position: 'absolute', right: 10, top: 10, gap: 7 }}>
       <TouchableOpacity accessibilityLabel="Приблизить карту" onPress={() => changeZoom(1)}
         style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', elevation: 3 }}>
@@ -605,9 +648,14 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
         <Text style={{ color: following ? C.pinkDark : C.ink, fontSize: 18, fontWeight: '800' }}>◎</Text>
       </TouchableOpacity>}
     </View>
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: 10, bottom: 10 }}>
+      <TouchableOpacity accessibilityLabel="Показать всю поездку" onPress={showWholeRoute}
+        style={{ height: 36, paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', elevation: 3 }}>
+        <Text style={{ color: C.ink, fontSize: 11, fontWeight: '800' }}>⌖ Вся поездка</Text>
+      </TouchableOpacity>
+    </View>
   </View>;
 }
-
 function TripMap({ order, driverLocation, assignedDriver }) {
   const [roadRoute, setRoadRoute] = useState([]);
   const [routeSummary, setRouteSummary] = useState(null);
