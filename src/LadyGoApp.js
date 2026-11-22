@@ -2469,24 +2469,20 @@ function LadyGoAppContent() {
                 returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
               <Text style={[s.muted, { fontSize: 13, lineHeight: 20 }]}>Введи улицу и дом, затем выбери подходящий адрес из списка.</Text>
               <Text style={s.label}>ИЛИ ОТМЕТЬ МЕСТО ПОДАЧИ НА КАРТЕ</Text>
-              <View style={{ height: 245, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: C.line }}>
-                <MapView mapType="none" style={{ flex: 1 }} region={destinationPickerRegion} onRegionChangeComplete={setDestinationPickerRegion} onPress={async event => {
-                  const point = event.nativeEvent.coordinate;
-                  setDestinationMapPoint(point);
-                  setDestinationMapAddress('Определяем адрес точки…');
-                  try {
-                    const results = await Location.reverseGeocodeAsync(point);
-                    const item = results?.[0] || {};
-                    const label = [item.street, item.streetNumber, item.city || item.subregion, item.region].filter(Boolean).join(', ');
-                    setDestinationMapAddress(label || `Точка ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`);
-                  } catch (_) {
-                    setDestinationMapAddress(`Точка ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`);
-                  }
-                }}>
-                  <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
-                  {destinationMapPoint && <Marker coordinate={destinationMapPoint} title="Место подачи" pinColor={C.green} />}
-                </MapView>
-              </View>
+              <View style={{ height: 390, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: C.line }}>
+  <MapLibreMap height={390} initialCenter={destinationPickerRegion}
+    points={destinationMapPoint ? [{ ...destinationMapPoint, label: 'Место подачи', color: C.green }] : []}
+    onMapPress={async point => {
+      setDestinationMapPoint(point);
+      setDestinationMapAddress('Определяем адрес точки…');
+      try {
+        const results = await Location.reverseGeocodeAsync(point);
+        const item = results?.[0] || {};
+        const label = [item.street, item.streetNumber, item.city || item.subregion, item.region].filter(Boolean).join(', ');
+        setDestinationMapAddress(label || ('Точка ' + point.latitude.toFixed(5) + ', ' + point.longitude.toFixed(5)));
+      } catch (_) { setDestinationMapAddress('Точка ' + point.latitude.toFixed(5) + ', ' + point.longitude.toFixed(5)); }
+    }} />
+</View>
               <Text style={[s.muted, { fontSize: 10 }]}>© OpenStreetMap contributors</Text>
               <Text style={s.muted}>{destinationMapPoint ? destinationMapAddress || 'Точка выбрана' : 'Нажми на карту, чтобы отметить место, где тебя забрать.'}</Text>
               <Button title="Выбрать это место подачи" disabled={!destinationMapPoint} onPress={async () => {
@@ -2597,8 +2593,8 @@ function LadyGoAppContent() {
                 returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
               <Text style={[s.muted, { fontSize: 13, lineHeight: 20 }]}>Введи улицу и дом. Затем нажми на подходящий вариант в списке ниже — адрес добавится в маршрут.</Text>
               <Text style={[s.label, { marginTop: 2 }]}>ИЛИ ВЫБЕРИ ТОЧКУ НА КАРТЕ</Text>
-              <View style={{ height: 285, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: C.line }}>
-                <MapLibreMap height={285} initialCenter={destinationPickerRegion}
+              <View style={{ height: 390, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: C.line }}>
+                <MapLibreMap height={390} initialCenter={destinationPickerRegion}
                   points={destinationMapPoint ? [{ ...destinationMapPoint, label: 'Пункт назначения', color: C.pink }] : []}
                   onMapPress={async point => {
                     setDestinationMapPoint(point);
