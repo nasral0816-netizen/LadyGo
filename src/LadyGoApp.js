@@ -563,8 +563,8 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
       touchZoom
       doubleTapZoom
       doubleTapHoldZoom
-      touchRotate={false}
-      touchPitch={false}
+      touchRotate
+      touchPitch
     >
       <Camera ref={cameraRef} initialViewState={{ center, zoom: initialZoom }} minZoom={3} maxZoom={19} />
       {validRoute.length > 1 && <GeoJSONSource id="ladygo-route-source" data={routeData}>
