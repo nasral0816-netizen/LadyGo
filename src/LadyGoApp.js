@@ -199,6 +199,8 @@ export default function LadyGoApp() {
   const [driverPrices, setDriverPrices] = useState({});
   const [driverLocation, setDriverLocation] = useState(null);
   const [driverVehicle, setDriverVehicle] = useState(null);
+  const [adminOrders, setAdminOrders] = useState([]);
+  const [adminLoading, setAdminLoading] = useState(false);
 
   const loadProfile = useCallback(async u => {
     if (!u || !supabase) return;
@@ -328,6 +330,20 @@ export default function LadyGoApp() {
     }, 400);
     return () => { alive = false; clearTimeout(timer); };
   }, [query]);
+
+  const loadAdminOrders = useCallback(async () => {
+    if (profile?.role !== 'admin' || !supabase) return;
+    setAdminLoading(true);
+    try {
+      const { data, error } = await supabase.from('orders').select('id,pickup_address,destination_address,status,price_rub,estimated_price_rub,created_at,passenger_id,driver_id').order('created_at', { ascending: false }).limit(100);
+      if (error) throw error;
+      setAdminOrders(data || []);
+    } catch (e) {
+      Alert.alert('Не удалось загрузить заказы', translateError(e));
+    } finally {
+      setAdminLoading(false);
+    }
+  }, [profile?.role]);
 
   const loadDriverOrders = useCallback(async () => {
     if (!session?.user || profile?.role !== 'driver' || !supabase) return;
@@ -539,9 +555,12 @@ export default function LadyGoApp() {
   return <SafeAreaView style={st.screen}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
     <View style={st.topbar}><View><Text style={st.logoSmall}>LadyGo</Text><Text style={st.topSub}>Поездки с заботой</Text></View>
       {profile?.role === 'driver' && <View style={st.modeSwitch}>
-        <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>Пассажир</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>Водитель</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>⌖  Пассажир</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>🚘  Водитель</Text></TouchableOpacity>
       </View>}
+      {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); }}>
+        <Text style={[st.adminTopButtonText, tab === 'admin' && st.adminTopButtonTextActive]}>⚙ Админ</Text>
+      </TouchableOpacity>}
       <TouchableOpacity style={st.avatar} onPress={() => setTab('profile')}><Text style={st.avatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></TouchableOpacity>
     </View>
     {tab === 'ride' && <View style={{ flex: 1 }}>
@@ -587,6 +606,26 @@ export default function LadyGoApp() {
       {orders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет поездок</Text><Text style={st.muted}>Оформленные заказы появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Заказать поездку</Text></TouchableOpacity></View> :
         orders.map(o => <View key={o.id} style={st.orderCard}><View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status] || o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleDateString('ru-RU')}</Text></View><Text style={st.orderAddress}>●  {o.pickup_address}</Text><Text style={st.orderAddress}>●  {o.destination_address}</Text><View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub ? fmt(o.price_rub) : 'Цена уточняется'}</Text>{o.status === 'new' && <TouchableOpacity onPress={() => cancelOrder(o)}><Text style={st.cancelText}>Отменить</Text></TouchableOpacity>}</View></View>)}
     </ScrollView>}
+    {tab === 'admin' && profile?.role === 'admin' && <ScrollView contentContainerStyle={st.pageContent}>
+      <View style={st.rowBetween}>
+        <View><Text style={st.pageTitle}>Панель администратора</Text><Text style={st.muted}>Управление и контроль LadyGo</Text></View>
+        <TouchableOpacity style={st.adminRefresh} onPress={loadAdminOrders}><Text style={st.adminRefreshText}>↻</Text></TouchableOpacity>
+      </View>
+      <View style={st.adminStats}>
+        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminOrders.length}</Text><Text style={st.adminStatLabel}>Всего заказов</Text></View>
+        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminOrders.filter(o => ['new','accepted','arrived','in_progress'].includes(o.status)).length}</Text><Text style={st.adminStatLabel}>Активные</Text></View>
+        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminOrders.filter(o => o.status === 'completed').length}</Text><Text style={st.adminStatLabel}>Завершено</Text></View>
+      </View>
+      <View style={st.rowBetween}><Text style={st.heading}>Последние заказы</Text>{adminLoading && <ActivityIndicator color={P.pink}/>}</View>
+      {adminOrders.length === 0 && !adminLoading ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⚙</Text><Text style={st.heading}>Заказов пока нет</Text><Text style={st.muted}>Новые заказы появятся здесь.</Text></View> :
+        adminOrders.map(o => <View key={o.id} style={st.orderCard}>
+          <View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status] || o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleString('ru-RU')}</Text></View>
+          <Text style={st.orderAddress}>●  {o.pickup_address || 'Место подачи не указано'}</Text>
+          <Text style={st.orderAddress}>●  {o.destination_address || 'Назначение не указано'}</Text>
+          <View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub ? fmt(o.price_rub) : o.estimated_price_rub ? fmt(o.estimated_price_rub) : 'Цена не указана'}</Text><Text style={st.muted}>{o.driver_id ? 'Водитель назначен' : 'Без водителя'}</Text></View>
+        </View>)}
+      <Text style={st.footnote}>Доступ к панели предоставляется только аккаунтам с ролью администратора.</Text>
+    </ScrollView>}
     {tab === 'driver' && profile?.role === 'driver' && <ScrollView contentContainerStyle={st.pageContent}>
       <View style={st.rowBetween}><Text style={st.pageTitle}>Заказы водителя</Text><TouchableOpacity onPress={loadDriverOrders}><Text style={st.refreshText}>↻ Обновить</Text></TouchableOpacity></View>
       {driverOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет заказов</Text><Text style={st.muted}>Новые заявки появятся здесь.</Text></View> :
@@ -607,6 +646,7 @@ export default function LadyGoApp() {
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
       <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.email || session.user.email}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
       <TouchableOpacity style={st.profileRow} onPress={() => setTab('orders')}><Text style={st.profileRowIcon}>◷</Text><Text style={st.profileRowText}>История поездок</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
+      {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
       <TouchableOpacity style={st.profileRow} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com')}><Text style={st.profileRowIcon}>?</Text><Text style={st.profileRowText}>Поддержка</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.profileRow} onPress={() => Linking.openURL('tel:+79911121227')}><Text style={st.profileRowIcon}>☎</Text><Text style={st.profileRowText}>Заказать по телефону</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.logout} onPress={signOut}><Text style={st.logoutText}>Выйти из аккаунта</Text></TouchableOpacity>
@@ -638,11 +678,21 @@ const st = StyleSheet.create({
   logoSmall: { color: P.pink, fontSize: 25, fontWeight: '900', letterSpacing: -1 },
   topSub: { color: P.muted, fontSize: 10, marginTop: -2 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
-  modeSwitch: { flexDirection: 'row', backgroundColor: '#F5F1F3', borderRadius: 13, padding: 3, gap: 2 },
-  modeOption: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 10 },
-  modeOptionActive: { backgroundColor: P.pink },
-  modeText: { color: P.muted, fontSize: 10, fontWeight: '800' },
+  modeSwitch: { flexDirection: 'row', backgroundColor: '#F3EEF1', borderRadius: 16, padding: 4, gap: 3, borderWidth: 1, borderColor: '#EDE5E9' },
+  modeOption: { paddingHorizontal: 10, paddingVertical: 9, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  modeOptionActive: { backgroundColor: P.pink, elevation: 2, shadowColor: P.pinkDark, shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
+  modeText: { color: P.muted, fontSize: 10, fontWeight: '900' },
   modeTextActive: { color: P.white },
+  adminTopButton: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, backgroundColor: P.pale, borderWidth: 1, borderColor: '#F5C7D8' },
+  adminTopButtonActive: { backgroundColor: P.pink, borderColor: P.pink },
+  adminTopButtonText: { color: P.pinkDark, fontSize: 12, fontWeight: '900' },
+  adminTopButtonTextActive: { color: P.white },
+  adminRefresh: { width: 42, height: 42, borderRadius: 14, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
+  adminRefreshText: { color: P.pinkDark, fontSize: 25, fontWeight: '900' },
+  adminStats: { flexDirection: 'row', gap: 9 },
+  adminStat: { flex: 1, backgroundColor: '#FAF6F8', borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 13, gap: 5 },
+  adminStatValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
+  adminStatLabel: { color: P.muted, fontSize: 10, fontWeight: '800' },
   avatarText: { color: P.pinkDark, fontWeight: '900', fontSize: 16 },
   map: { height: 280, backgroundColor: '#E9E7E3' },
   mapControls: { position: 'absolute', left: 9, bottom: 12, gap: 6, alignItems: 'flex-start' },
