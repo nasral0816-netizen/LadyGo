@@ -103,7 +103,7 @@ async function findAddresses(q) {
   return found.slice(0, 12).map(({ localRank, ...item }) => item);
 }
 
-function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination }) {
+function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, allowPickDestination = true }) {
   const cameraRef = useRef(null);
   const [zoom, setZoom] = useState(13);
   const [is3D, setIs3D] = useState(false);
@@ -111,7 +111,8 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
   const points = [pickup && { ...pickup, label: 'А', color: P.green }, destination && { ...destination, label: 'Б', color: P.pink }].filter(Boolean);
   const features = points.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] }, properties: { label: p.label, color: p.color } }));
   const line = { type: 'Feature', geometry: { type: 'LineString', coordinates: route.map(p => [p.longitude, p.latitude]) }, properties: {} };
-  const coords = points.map(p => [p.longitude, p.latitude]).concat(route.map(p => [p.longitude, p.latitude]));
+  const carFeature = driverLocation ? { type: 'Feature', geometry: { type: 'Point', coordinates: [driverLocation.longitude, driverLocation.latitude] }, properties: {} } : null;
+  const coords = points.map(p => [p.longitude, p.latitude]).concat(route.map(p => [p.longitude, p.latitude]), driverLocation ? [[driverLocation.longitude, driverLocation.latitude]] : []);
   const center = coords.length ? [coords.reduce((s,p)=>s+p[0],0)/coords.length, coords.reduce((s,p)=>s+p[1],0)/coords.length] : [42.7168,43.9052];
   return <View style={st.map}>
     <MapLibreView style={{ flex: 1 }} mapStyle={P.map} androidView="texture" attribution logo={false} compass dragPan touchZoom doubleTapZoom
@@ -130,11 +131,14 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
       {features.length > 0 && <GeoJSONSource id="markers" data={{ type: 'FeatureCollection', features }}>
         <Layer id="marker-circles" type="circle" paint={{ 'circle-radius': 9, 'circle-color': ['get','color'], 'circle-stroke-color': '#FFFFFF', 'circle-stroke-width': 3 }} />
       </GeoJSONSource>}
+      {carFeature && <GeoJSONSource id="driver-car" data={{ type: 'FeatureCollection', features: [carFeature] }}>
+        <Layer id="driver-car-symbol" type="symbol" layout={{ 'text-field': '🚘', 'text-size': 30, 'text-allow-overlap': true, 'text-ignore-placement': true }} />
+      </GeoJSONSource>}
     </MapLibreView>
     <View style={st.mapControls}>
-      <TouchableOpacity style={[st.locateButton, pickingDestination && { backgroundColor: P.pink }]} onPress={() => onPickDestination?.(null)}>
+      {allowPickDestination && <TouchableOpacity style={[st.locateButton, pickingDestination && { backgroundColor: P.pink }]} onPress={() => onPickDestination?.(null)}>
         <Text style={st.locateButtonText}>{pickingDestination ? 'Выбери точку на карте…' : '⌖  Указать место на карте'}</Text>
-      </TouchableOpacity>
+      </TouchableOpacity>}
       <TouchableOpacity style={st.locateButton} onPress={async () => {
         const point = await onLocate();
         if (point) {
@@ -193,6 +197,8 @@ export default function LadyGoApp() {
   const [phone, setPhone] = useState('');
   const [driverOrders, setDriverOrders] = useState([]);
   const [driverPrices, setDriverPrices] = useState({});
+  const [driverLocation, setDriverLocation] = useState(null);
+  const [driverVehicle, setDriverVehicle] = useState(null);
 
   const loadProfile = useCallback(async u => {
     if (!u || !supabase) return;
@@ -206,7 +212,12 @@ export default function LadyGoApp() {
     const { data, error } = await supabase.from('orders').select('*').eq('passenger_id', session.user.id).order('created_at', { ascending: false }).limit(30);
     if (error) return;
     setOrders(data || []);
-    setActiveOrder((data || []).find(o => ['new','accepted','arrived','in_progress'].includes(o.status)) || null);
+    const active = (data || []).find(o => ['new','accepted','arrived','in_progress'].includes(o.status)) || null;
+    setActiveOrder(active);
+    if (active?.driver_id && ['accepted','arrived','in_progress'].includes(active.status)) {
+      const { data: vehicle } = await supabase.from('driver_profiles').select('display_name,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year').eq('driver_id', active.driver_id).maybeSingle();
+      setDriverVehicle(vehicle || null);
+    } else { setDriverVehicle(null); setDriverLocation(null); }
   }, [session]);
 
   useEffect(() => {
@@ -250,6 +261,51 @@ export default function LadyGoApp() {
     });
     return () => subscription.remove();
   }, [searchField, tab]);
+
+  // Водитель делится геопозицией только при наличии назначенной активной поездки.
+  useEffect(() => {
+    if (profile?.role !== 'driver' || !session?.user?.id) return;
+    const current = driverOrders.find(o => o.driver_id === session.user.id && ['accepted','arrived','in_progress'].includes(o.status));
+    if (!current) return;
+    let subscription;
+    let stopped = false;
+    (async () => {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted' || stopped) return;
+      subscription = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10 },
+        async position => {
+          if (stopped) return;
+          const point = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+          await supabase.from('driver_locations').upsert({
+            driver_id: session.user.id, latitude: point.latitude, longitude: point.longitude,
+            heading: position.coords.heading, updated_at: new Date().toISOString()
+          }, { onConflict: 'driver_id' });
+        }
+      );
+    })().catch(() => {});
+    return () => { stopped = true; subscription?.remove(); };
+  }, [profile?.role, session?.user?.id, driverOrders]);
+
+  // Пассажир получает координаты только водителя, назначенного на его текущий заказ.
+  useEffect(() => {
+    if (!activeOrder?.driver_id || !['accepted','arrived','in_progress'].includes(activeOrder.status) || !supabase) {
+      setDriverLocation(null);
+      return;
+    }
+    let alive = true;
+    const loadLocation = async () => {
+      const { data } = await supabase.from('driver_locations').select('latitude,longitude,heading,updated_at').eq('driver_id', activeOrder.driver_id).maybeSingle();
+      if (alive && data && Date.now() - new Date(data.updated_at).getTime() < 120000) setDriverLocation({ latitude: data.latitude, longitude: data.longitude, heading: data.heading });
+    };
+    loadLocation();
+    const channel = supabase.channel('driver-location-' + activeOrder.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_locations', filter: 'driver_id=eq.' + activeOrder.driver_id }, payload => {
+        const row = payload.new;
+        if (alive && row?.latitude != null && row?.longitude != null) setDriverLocation({ latitude: row.latitude, longitude: row.longitude, heading: row.heading });
+      }).subscribe();
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [activeOrder?.id, activeOrder?.driver_id, activeOrder?.status]);
 
   useEffect(() => { if (session?.user) loadOrders(); }, [session, loadOrders]);
   useEffect(() => {
@@ -505,6 +561,17 @@ export default function LadyGoApp() {
     </View>}
     {tab === 'orders' && <ScrollView contentContainerStyle={st.pageContent}>
       <Text style={st.pageTitle}>Мои поездки</Text>
+      {activeOrder?.driver_id && ['accepted','arrived','in_progress'].includes(activeOrder.status) && <>
+        <Text style={st.heading}>Водитель едет к вам</Text>
+        <MapPanel pickup={activeOrder.pickup_lat && activeOrder.pickup_lng ? { latitude: activeOrder.pickup_lat, longitude: activeOrder.pickup_lng } : null}
+          destination={activeOrder.destination_lat && activeOrder.destination_lng ? { latitude: activeOrder.destination_lat, longitude: activeOrder.destination_lng } : null}
+          route={[]} driverLocation={driverLocation} onLocate={async () => driverLocation} allowPickDestination={false}/>
+        <View style={st.orderCard}>
+          <Text style={st.heading}>{[driverVehicle?.vehicle_color, driverVehicle?.vehicle_make, driverVehicle?.vehicle_model].filter(Boolean).join(' ') || 'Автомобиль водителя'}</Text>
+          <Text style={st.orderAddress}>{driverVehicle?.vehicle_plate || 'Номер автомобиля не указан'}{driverVehicle?.vehicle_year ? ' · ' + driverVehicle.vehicle_year : ''}</Text>
+          <Text style={st.muted}>{driverLocation ? 'Геопозиция обновляется в реальном времени' : 'Ожидаем первую геопозицию автомобиля…'}</Text>
+        </View>
+      </>}
       {orders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет поездок</Text><Text style={st.muted}>Оформленные заказы появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Заказать поездку</Text></TouchableOpacity></View> :
         orders.map(o => <View key={o.id} style={st.orderCard}><View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status] || o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleDateString('ru-RU')}</Text></View><Text style={st.orderAddress}>●  {o.pickup_address}</Text><Text style={st.orderAddress}>●  {o.destination_address}</Text><View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub ? fmt(o.price_rub) : 'Цена уточняется'}</Text>{o.status === 'new' && <TouchableOpacity onPress={() => cancelOrder(o)}><Text style={st.cancelText}>Отменить</Text></TouchableOpacity>}</View></View>)}
     </ScrollView>}
