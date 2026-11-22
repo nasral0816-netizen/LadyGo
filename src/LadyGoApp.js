@@ -105,9 +105,16 @@ async function findAddresses(q) {
 
 function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, allowPickDestination = true }) {
   const cameraRef = useRef(null);
-  const [zoom, setZoom] = useState(13);
+  const [zoom, setZoom] = useState(17);
   const [is3D, setIs3D] = useState(true);
   const [focusPoint, setFocusPoint] = useState(null);
+  useEffect(() => {
+    if (pickup && !focusPoint) {
+      setFocusPoint([pickup.longitude, pickup.latitude]);
+      setZoom(17);
+      setIs3D(true);
+    }
+  }, [pickup, focusPoint]);
   const points = [pickup && { ...pickup, label: 'А', color: P.green }, destination && { ...destination, label: 'Б', color: P.pink }].filter(Boolean);
   const features = points.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] }, properties: { label: p.label, color: p.color } }));
   const line = { type: 'Feature', geometry: { type: 'LineString', coordinates: route.map(p => [p.longitude, p.latitude]) }, properties: {} };
@@ -143,8 +150,8 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
         const point = await onLocate();
         if (point) {
           setFocusPoint([point.longitude, point.latitude]);
-          setZoom(15);
-          setIs3D(false);
+          setZoom(17);
+          setIs3D(true);
         }
       }}>
         <Text style={st.locateButtonText}>◎  Определить местоположение</Text>
@@ -199,6 +206,7 @@ export default function LadyGoApp() {
   const [driverPrices, setDriverPrices] = useState({});
   const [driverLocation, setDriverLocation] = useState(null);
   const [driverVehicle, setDriverVehicle] = useState(null);
+  const autoLocateStarted = useRef(false);
   const [adminOrders, setAdminOrders] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
 
@@ -391,10 +399,10 @@ export default function LadyGoApp() {
     finally { setBusy(false); }
   };
 
-  const locate = async () => {
+  const locate = async ({ silent = false } = {}) => {
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
-      if (perm.status !== 'granted') return Alert.alert('Нужен доступ к геолокации', 'Разреши LadyGo определять место подачи.');
+      if (perm.status !== 'granted') { if (!silent) Alert.alert('Нужен доступ к геолокации', 'Разреши LadyGo определять место подачи.'); return null; }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const point = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
       setPickup(point);
@@ -405,8 +413,14 @@ export default function LadyGoApp() {
         if (address) setPickupText(address);
       }).catch(() => {});
       return point;
-    } catch (_) { Alert.alert('Не удалось определить место', 'Попробуй ещё раз или введи адрес вручную.'); }
+    } catch (_) { if (!silent) Alert.alert('Не удалось определить место', 'Попробуй ещё раз или введи адрес вручную.'); return null; }
   };
+
+  useEffect(() => {
+    if (!session?.user?.id || autoLocateStarted.current) return;
+    autoLocateStarted.current = true;
+    locate({ silent: true });
+  }, [session?.user?.id]);
 
   const pickDestinationOnMap = async point => {
     if (!point) { setPickingDestination(true); return; }
