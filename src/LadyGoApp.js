@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.9.14';
+const APP_VERSION = '6.7.9.15';
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
 const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
 const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
@@ -882,25 +882,28 @@ const startExternalDriverNavigation = async () => {
         // Навигация до выбранной точки всё равно доступна без GPS-старта.
       }
 
-      const googleNavigationUrl = 'google.navigation:q=' + encodeURIComponent(target) + '&mode=d';
+      const yandexNavigatorUrl = 'yandexnavi://build_route_on_map?lat_to=' +
+        encodeURIComponent(String(destinationPoint.latitude)) + '&lon_to=' +
+        encodeURIComponent(String(destinationPoint.longitude));
+      const yandexMapsUrl = origin
+        ? 'https://yandex.ru/maps/?rtext=' + encodeURIComponent(origin + '~' + target) + '&rtt=auto'
+        : 'https://yandex.ru/maps/?ll=' + encodeURIComponent(destinationPoint.longitude + ',' + destinationPoint.latitude) +
+          '&text=' + encodeURIComponent(address) + '&z=16';
       const googleWebUrl = origin
         ? 'https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(origin) +
           '&destination=' + encodeURIComponent(target) + '&travelmode=driving'
         : 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(target) + '&travelmode=driving';
-      const yandexUrl = origin
-        ? 'https://yandex.ru/maps/?rtext=' + encodeURIComponent(origin + '~' + target) + '&rtt=auto'
-        : 'https://yandex.ru/maps/?ll=' + encodeURIComponent(destinationPoint.longitude + ',' + destinationPoint.latitude) +
-          '&text=' + encodeURIComponent(address) + '&z=16';
 
+      // Сначала пробуем Яндекс Навигатор, затем Яндекс Карты и веб-карты.
       try {
-        await Linking.openURL(googleNavigationUrl);
+        await Linking.openURL(yandexNavigatorUrl);
         return;
       } catch (_) {
         try {
-          await Linking.openURL(googleWebUrl);
+          await Linking.openURL(yandexMapsUrl);
           return;
         } catch (_) {
-          await Linking.openURL(yandexUrl);
+          await Linking.openURL(googleWebUrl);
           return;
         }
       }
@@ -2925,17 +2928,11 @@ function LadyGoAppContent() {
             </View>
             <Text style={s.muted}>{externalNavSelected?.address || externalNavQuery}</Text>
             {externalNavSelected && Number.isFinite(Number(externalNavSelected.latitude)) && Number.isFinite(Number(externalNavSelected.longitude)) ? (
-              <View style={{ height: 330, borderRadius: 16, overflow: 'hidden' }}>
-                <MapView
-                  style={{ flex: 1 }}
-                  initialRegion={{ latitude: Number(externalNavSelected.latitude), longitude: Number(externalNavSelected.longitude), latitudeDelta: 0.012, longitudeDelta: 0.012 }}
-                  region={{ latitude: Number(externalNavSelected.latitude), longitude: Number(externalNavSelected.longitude), latitudeDelta: 0.012, longitudeDelta: 0.012 }}
-                  showsUserLocation
-                  showsMyLocationButton
-                >
-                  <Marker coordinate={{ latitude: Number(externalNavSelected.latitude), longitude: Number(externalNavSelected.longitude) }} title="Пункт назначения" description={externalNavSelected.address || externalNavQuery} pinColor={C.pink} />
-                </MapView>
-              </View>
+              <MapLibreMap
+                height={330}
+                initialCenter={{ latitude: Number(externalNavSelected.latitude), longitude: Number(externalNavSelected.longitude) }}
+                points={[{ latitude: Number(externalNavSelected.latitude), longitude: Number(externalNavSelected.longitude), label: 'Пункт назначения', color: C.pink }]}
+              />
             ) : <Text style={s.muted}>Сначала выбери адрес из подсказок, чтобы показать точку на карте.</Text>}
             <Button title="Построить маршрут" loading={externalNavStarting} disabled={!externalNavSelected || externalNavStarting} onPress={async () => { setExternalNavMapOpen(false); await startExternalDriverNavigation(); }} />
             <Button title="Закрыть" secondary onPress={() => setExternalNavMapOpen(false)} />
