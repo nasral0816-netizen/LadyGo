@@ -307,6 +307,15 @@ export default function LadyGoApp() {
     return () => { alive = false; supabase.removeChannel(channel); };
   }, [activeOrder?.id, activeOrder?.driver_id, activeOrder?.status]);
 
+  useEffect(() => {
+    if (!session?.user?.id || !supabase) return;
+    const channel = supabase.channel('passenger-orders-' + session.user.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: 'passenger_id=eq.' + session.user.id }, () => {
+        loadOrders();
+      }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [session?.user?.id, loadOrders]);
+
   useEffect(() => { if (session?.user) loadOrders(); }, [session, loadOrders]);
   useEffect(() => {
     if (!query.trim() || query.trim().length < 2) { setSuggestions([]); return; }
