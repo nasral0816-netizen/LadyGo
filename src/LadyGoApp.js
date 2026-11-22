@@ -2716,10 +2716,6 @@ function LadyGoAppContent() {
         <View style={{ flex: 1 }}><Text style={s.tariffName}>{t.name}</Text><Text style={s.muted}>{t.detail}</Text></View>
         <View style={[s.radio, tariff === t.id && s.radioOn]} />
       </TouchableOpacity>)}
-      <Card>
-        <Text style={s.section}>Дополнительные опции</Text>
-        {PRICE_OPTIONS.map(option => { const selected = selectedOptions.includes(option.id); return <TouchableOpacity key={option.id} onPress={() => setSelectedOptions(current => selected ? current.filter(x => x !== option.id) : [...current, option.id])} style={[s.rowBetween, { paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: C.line }]}><Text style={[s.address, { flex: 1, paddingRight: 8 }]}>{option.label}</Text><Text style={{ color: option.price ? C.ink : C.green, fontWeight: '700', marginRight: 10 }}>{option.price ? '+' + option.price + ' ₽' : 'Бесплатно'}</Text><View style={{ width: 21, height: 21, borderRadius: 6, borderWidth: 1.5, borderColor: selected ? C.pink : C.muted, backgroundColor: selected ? C.pink : C.white, alignItems: 'center', justifyContent: 'center' }}>{selected ? <Text style={{ color: C.white, fontWeight: '900' }}>✓</Text> : null}</View></TouchableOpacity>; })}
-      </Card>
       <Text style={s.section}>Как оплатить</Text>
       <View style={s.row}>
         <TouchableOpacity onPress={() => setPaymentMethod('cash')} style={[s.savedChip, paymentMethod === 'cash' && { borderWidth: 1, borderColor: C.pink }]}>
