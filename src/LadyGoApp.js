@@ -967,6 +967,9 @@ function LadyGoAppContent() {
   const [externalNavSelected, setExternalNavSelected] = useState(null);
   const [externalNavLoading, setExternalNavLoading] = useState(false);
   const [externalNavMapOpen, setExternalNavMapOpen] = useState(false);
+  const [driverNavigationOrder, setDriverNavigationOrder] = useState(null);
+  const [driverNavigationPosition, setDriverNavigationPosition] = useState(null);
+  const [driverNavigationRoute, setDriverNavigationRoute] = useState([]);
   const [externalNavStarting, setExternalNavStarting] = useState(false);
   const [phone, setPhone] = useState('');
   const [comment, setComment] = useState('');
@@ -2817,6 +2820,29 @@ function LadyGoAppContent() {
         />
         <Text style={s.disclaimer}>Откроется автомобильная навигация Google Карт; если приложение недоступно, попробуем веб-карты и Яндекс Карты.</Text>
       </Card>
+      <Modal visible={Boolean(driverNavigationOrder)} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setDriverNavigationOrder(null)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: C.white }}>
+          <View style={{ paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: C.line }}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={s.heading}>Навигация LadyGo</Text>
+              <Text numberOfLines={1} style={s.muted}>{driverNavigationOrder ? (['accepted','arrived'].includes(driverNavigationOrder.status) ? driverNavigationOrder.pickup_address : driverNavigationOrder.destination_address) : ''}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setDriverNavigationOrder(null)} style={{ padding: 8 }}><Text style={{ color: C.pinkDark, fontSize: 25, fontWeight: '800' }}>×</Text></TouchableOpacity>
+          </View>
+          <View style={{ flex: 1, margin: 10, borderRadius: 18, overflow: 'hidden' }}>
+            <MapLibreMap height="100%" followPoint={driverNavigationPosition} followLabel="Следить за мной"
+              points={[
+                ...(driverNavigationPosition ? [{ ...driverNavigationPosition, label: 'Вы здесь', color: '#2F80ED', markerType: 'you' }] : []),
+                ...(driverNavigationOrder ? [{ latitude: Number(['accepted','arrived'].includes(driverNavigationOrder.status) ? driverNavigationOrder.pickup_lat : driverNavigationOrder.destination_lat), longitude: Number(['accepted','arrived'].includes(driverNavigationOrder.status) ? driverNavigationOrder.pickup_lng : driverNavigationOrder.destination_lng), label: ['accepted','arrived'].includes(driverNavigationOrder.status) ? 'Подача' : 'Финиш', color: C.pink }] : []),
+              ]} route={driverNavigationRoute} />
+          </View>
+          <View style={{ padding: 14, gap: 9 }}>
+            <Text style={s.muted}>Синяя метка — вы · розовая — точка назначения · линия — маршрут.</Text>
+            <Button title="Запустить автомобильный навигатор" onPress={() => driverNavigationOrder && openDriverNavigation(driverNavigationOrder)} />
+            <Button title="Закрыть карту" secondary onPress={() => setDriverNavigationOrder(null)} />
+          </View>
+        </SafeAreaView>
+      </Modal>
       <Modal visible={externalNavMapOpen} transparent animationType="slide" onRequestClose={() => setExternalNavMapOpen(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(25,17,22,0.55)', justifyContent: 'center', padding: 16 }}>
           <View style={{ backgroundColor: C.white, borderRadius: 22, padding: 16, gap: 12, overflow: 'hidden' }}>
@@ -2858,7 +2884,22 @@ function LadyGoAppContent() {
       </Card>)}
       <Text style={s.section}>Мои активные поездки</Text>
       {orders.filter(o => ACTIVE.includes(o.status) && o.driver_id === user.id).map(o => <Card key={o.id}>
-        <Pill>{STATUS[o.status] || o.status}</Pill><TripMap order={o} /><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text><Button title="Открыть навигацию" secondary onPress={() => openDriverNavigation(o)} />
+        <Pill>{STATUS[o.status] || o.status}</Pill><TripMap order={o} /><Text style={s.address}>Забрать: {o.pickup_address}</Text><Text style={s.address}>Доставить: {o.destination_address}</Text><Button title="Открыть карту маршрута" secondary onPress={async () => {
+          setDriverNavigationOrder(o);
+          setDriverNavigationRoute([]);
+          try {
+            const current = await getPositionWithFallback();
+            const here = { latitude: current.coords.latitude, longitude: current.coords.longitude };
+            setDriverNavigationPosition(here);
+            const toPickup = ['accepted', 'arrived'].includes(o.status);
+            const target = { latitude: Number(toPickup ? o.pickup_lat : o.destination_lat), longitude: Number(toPickup ? o.pickup_lng : o.destination_lng) };
+            if (Number.isFinite(target.latitude) && Number.isFinite(target.longitude)) {
+              const stops = !toPickup && Array.isArray(o.stops) ? o.stops.filter(x => Number.isFinite(Number(x.latitude)) && Number.isFinite(Number(x.longitude))).map(x => ({ latitude: Number(x.latitude), longitude: Number(x.longitude) })) : [];
+              const route = await fetchDrivingRoute([here, ...stops, target]).catch(() => null);
+              setDriverNavigationRoute(route?.geometry?.coordinates?.map(([longitude, latitude]) => ({ latitude, longitude })) || [here, ...stops, target]);
+            }
+          } catch (_) { setDriverNavigationPosition(null); }
+        }} />
         {Array.isArray(o.stops) && o.stops.length > 0 ? <View style={{ gap: 4 }}><Text style={s.label}>Промежуточные остановки</Text>{o.stops.map((stop, index) => <Text key={'order-stop-' + index} style={s.muted}>{index + 1}. {stop.address}</Text>)}</View> : null}
         <TripChat order={o} userId={user?.id} />
         {o.notes ? <Text style={s.muted}>{o.notes}</Text> : null}
