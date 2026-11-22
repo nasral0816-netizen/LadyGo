@@ -255,6 +255,7 @@ export default function LadyGoApp() {
   const [boot, setBoot] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [registrationPhone, setRegistrationPhone] = useState('');
   const [register, setRegister] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState('ride');
@@ -797,13 +798,21 @@ export default function LadyGoApp() {
   };
   const signIn = async () => {
     if (!email.trim() || password.length < 6) return Alert.alert('Проверь данные', 'Введи email и пароль не короче 6 символов.');
+    const normalizedPhone = registrationPhone.trim();
+    const phoneDigits = normalizedPhone.replace(/\\D/g, '');
+    if (register && (!normalizedPhone || phoneDigits.length < 10 || phoneDigits.length > 15)) {
+      return Alert.alert('Нужен номер телефона', 'При регистрации обязательно укажи действующий номер телефона (от 10 до 15 цифр).');
+    }
     setBusy(true);
     try {
       const result = register
-        ? await supabase.auth.signUp({ email: email.trim(), password })
+        ? await supabase.auth.signUp({ email: email.trim(), password, options: { data: { phone: normalizedPhone } } })
         : await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (result.error) throw result.error;
-      if (register && !result.data.session) Alert.alert('Почти готово', 'Подтверди email по письму, затем войди в LadyGo.');
+      if (register && result.data.user && result.data.session) {
+        await supabase.from('profiles').upsert({ id: result.data.user.id, email: email.trim(), phone: normalizedPhone }, { onConflict: 'id' });
+      }
+      if (register && !result.data.session) Alert.alert('Почти готово', 'Подтверди email по письму, затем войди в LadyGo. Номер телефона сохранён.');
     } catch (e) { Alert.alert('Не удалось войти', translateError(e)); }
     finally { setBusy(false); }
   };
@@ -1019,6 +1028,7 @@ export default function LadyGoApp() {
     <View style={st.authLogo}><Text style={st.logo}>LadyGo</Text><Text style={st.tagline}>Поездки с заботой</Text></View>
     <View style={st.authCard}><Text style={st.heading}>{register ? 'Создать аккаунт' : 'С возвращением'}</Text>
       <TextInput style={st.authInput} value={email} onChangeText={setEmail} placeholder="Электронная почта" autoCapitalize="none" keyboardType="email-address"/>
+      {register ? <TextInput style={st.authInput} value={registrationPhone} onChangeText={setRegistrationPhone} placeholder="Номер телефона *" keyboardType="phone-pad" textContentType="telephoneNumber"/> : null}
       <TextInput style={st.authInput} value={password} onChangeText={setPassword} placeholder="Пароль" secureTextEntry/>
       <TouchableOpacity style={st.primaryBtn} onPress={signIn} disabled={busy}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>{register ? 'Зарегистрироваться' : 'Войти'}</Text>}</TouchableOpacity>
       <TouchableOpacity onPress={() => setRegister(!register)}><Text style={st.switchText}>{register ? 'Уже есть аккаунт? Войти' : 'Создать новый аккаунт'}</Text></TouchableOpacity>
