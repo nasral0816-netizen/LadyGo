@@ -103,7 +103,7 @@ async function findAddresses(q) {
   return found.slice(0, 12).map(({ localRank, ...item }) => item);
 }
 
-function MapPanel({ pickup, destination, route, onLocate }) {
+function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination }) {
   const cameraRef = useRef(null);
   const [zoom, setZoom] = useState(13);
   const [is3D, setIs3D] = useState(false);
@@ -114,7 +114,14 @@ function MapPanel({ pickup, destination, route, onLocate }) {
   const coords = points.map(p => [p.longitude, p.latitude]).concat(route.map(p => [p.longitude, p.latitude]));
   const center = coords.length ? [coords.reduce((s,p)=>s+p[0],0)/coords.length, coords.reduce((s,p)=>s+p[1],0)/coords.length] : [42.7168,43.9052];
   return <View style={st.map}>
-    <MapLibreView style={{ flex: 1 }} mapStyle={P.map} androidView="texture" attribution logo={false} compass dragPan touchZoom doubleTapZoom>
+    <MapLibreView style={{ flex: 1 }} mapStyle={P.map} androidView="texture" attribution logo={false} compass dragPan touchZoom doubleTapZoom
+      onPress={event => {
+        if (!pickingDestination || !onPickDestination) return;
+        const coordinates = event?.geometry?.coordinates || event?.nativeEvent?.geometry?.coordinates;
+        if (Array.isArray(coordinates) && coordinates.length >= 2) {
+          onPickDestination({ longitude: coordinates[0], latitude: coordinates[1] });
+        }
+      }}>
       <Camera ref={cameraRef} center={focusPoint || center} zoom={zoom} pitch={is3D ? 55 : 0} easing="fly" duration={1500} />
       {route.length > 1 && <GeoJSONSource id="route" data={line}>
         <Layer id="route-outline" type="line" paint={{ 'line-color': '#FFFFFF', 'line-width': 9, 'line-cap': 'round', 'line-join': 'round' }} />
@@ -125,6 +132,9 @@ function MapPanel({ pickup, destination, route, onLocate }) {
       </GeoJSONSource>}
     </MapLibreView>
     <View style={st.mapControls}>
+      <TouchableOpacity style={[st.locateButton, pickingDestination && { backgroundColor: P.pink }]} onPress={() => onPickDestination?.(null)}>
+        <Text style={st.locateButtonText}>{pickingDestination ? 'Выбери точку на карте…' : '⌖  Указать место на карте'}</Text>
+      </TouchableOpacity>
       <TouchableOpacity style={st.locateButton} onPress={async () => {
         const point = await onLocate();
         if (point) {
@@ -141,7 +151,7 @@ function MapPanel({ pickup, destination, route, onLocate }) {
         <TouchableOpacity style={st.mapControl} onPress={() => setZoom(v => Math.max(3, v - 1))}><Text style={st.mapControlText}>−</Text></TouchableOpacity>
       </View>
     </View>
-    <View style={st.mapLabel}><View style={st.liveDot}/><Text style={st.mapLabelText}>Карта поездки</Text></View>
+    <View style={st.mapLabel}><View style={st.liveDot}/><Text style={st.mapLabelText}>{pickingDestination ? 'Нажми на карту, чтобы выбрать точку' : 'Карта поездки'}</Text></View>
   </View>;
 }
 
@@ -168,6 +178,7 @@ export default function LadyGoApp() {
   const [destinationText, setDestinationText] = useState('');
   const [pickup, setPickup] = useState(null);
   const [destination, setDestination] = useState(null);
+  const [pickingDestination, setPickingDestination] = useState(false);
   const [searchField, setSearchField] = useState('');
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
@@ -316,6 +327,24 @@ export default function LadyGoApp() {
     } catch (_) { Alert.alert('Не удалось определить место', 'Попробуй ещё раз или введи адрес вручную.'); }
   };
 
+  const pickDestinationOnMap = async point => {
+    if (!point) { setPickingDestination(true); return; }
+    setPickingDestination(false);
+    setDestination(point);
+    setDestinationText('Выбранная точка');
+    try {
+      const response = await fetch('https://photon.komoot.io/reverse?lat=' + point.latitude + '&lon=' + point.longitude + '&lang=ru');
+      const data = await response.json();
+      const feature = data?.features?.[0];
+      const p = feature?.properties || {};
+      const label = [p.name, p.housenumber, p.street, p.city || p.town || p.village]
+        .filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ');
+      if (label) setDestinationText(label);
+    } catch (_) {
+      setDestinationText(point.latitude.toFixed(5) + ', ' + point.longitude.toFixed(5));
+    }
+  };
+
   const chooseSuggestion = async item => {
     const point = { latitude: item.latitude, longitude: item.longitude };
     if (searchField === 'pickup') { setPickup(point); setPickupText(item.label); }
@@ -451,7 +480,7 @@ export default function LadyGoApp() {
       <TouchableOpacity style={st.avatar} onPress={() => setTab('profile')}><Text style={st.avatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></TouchableOpacity>
     </View>
     {tab === 'ride' && <View style={{ flex: 1 }}>
-      <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate}/>
+      <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination}/>
       <ScrollView style={st.sheet} contentContainerStyle={st.sheetContent} keyboardShouldPersistTaps="handled">
         <View style={st.sheetHandle}/>
         <View style={st.rowBetween}><Text style={st.heading}>Куда едем?</Text><View style={st.cityPill}><Text style={st.cityPillText}>Поиск по России</Text></View></View>
