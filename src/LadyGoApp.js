@@ -93,7 +93,7 @@ function MapPanel({ pickup, destination, route, onLocate }) {
   const center = coords.length ? [coords.reduce((s,p)=>s+p[0],0)/coords.length, coords.reduce((s,p)=>s+p[1],0)/coords.length] : [42.7168,43.9052];
   return <View style={st.map}>
     <MapLibreView style={{ flex: 1 }} mapStyle={P.map} androidView="texture" attribution logo={false} compass dragPan touchZoom doubleTapZoom>
-      <Camera ref={cameraRef} center={focusPoint || center} zoom={zoom} pitch={is3D ? 55 : 0} easing="fly" duration={500} />
+      <Camera ref={cameraRef} center={focusPoint || center} zoom={zoom} pitch={is3D ? 55 : 0} easing="fly" duration={1500} />
       {route.length > 1 && <GeoJSONSource id="route" data={line}>
         <Layer id="route-outline" type="line" paint={{ 'line-color': '#FFFFFF', 'line-width': 9, 'line-cap': 'round', 'line-join': 'round' }} />
         <Layer id="route-main" type="line" paint={{ 'line-color': P.pink, 'line-width': 5, 'line-cap': 'round', 'line-join': 'round' }} />
@@ -103,10 +103,21 @@ function MapPanel({ pickup, destination, route, onLocate }) {
       </GeoJSONSource>}
     </MapLibreView>
     <View style={st.mapControls}>
-      <TouchableOpacity style={[st.mapControl, is3D && st.mapControlActive]} onPress={() => setIs3D(v => !v)}><Text style={[st.mapControlText, is3D && st.mapControlTextActive]}>3D</Text></TouchableOpacity>
-      <TouchableOpacity style={st.mapControl} onPress={() => { const next = Math.min(19, zoom + 1); setZoom(next); cameraRef.current?.zoomTo(next, { duration: 250 }); }}><Text style={st.mapControlText}>＋</Text></TouchableOpacity>
-      <TouchableOpacity style={st.mapControl} onPress={() => { const next = Math.max(3, zoom - 1); setZoom(next); cameraRef.current?.zoomTo(next, { duration: 250 }); }}><Text style={st.mapControlText}>−</Text></TouchableOpacity>
-      <TouchableOpacity style={st.mapControl} onPress={async () => { const point = await onLocate(); if (point) { const target = [point.longitude, point.latitude]; setFocusPoint(target); setZoom(16); cameraRef.current?.flyTo({ center: target, zoom: 16, duration: 650 }); } }}><Text style={st.locateText}>◎</Text></TouchableOpacity>
+      <TouchableOpacity style={st.locateButton} onPress={async () => {
+        const point = await onLocate();
+        if (point) {
+          setFocusPoint([point.longitude, point.latitude]);
+          setZoom(15);
+          setIs3D(false);
+        }
+      }}>
+        <Text style={st.locateButtonText}>◎  Определить местоположение</Text>
+      </TouchableOpacity>
+      <View style={st.mapControlRow}>
+        <TouchableOpacity style={[st.mapControl, is3D && st.mapControlActive]} onPress={() => setIs3D(v => !v)}><Text style={[st.mapControlText, is3D && st.mapControlTextActive]}>3D</Text></TouchableOpacity>
+        <TouchableOpacity style={st.mapControl} onPress={() => setZoom(v => Math.min(19, v + 1))}><Text style={st.mapControlText}>＋</Text></TouchableOpacity>
+        <TouchableOpacity style={st.mapControl} onPress={() => setZoom(v => Math.max(3, v - 1))}><Text style={st.mapControlText}>−</Text></TouchableOpacity>
+      </View>
     </View>
     <View style={st.mapLabel}><View style={st.liveDot}/><Text style={st.mapLabelText}>Кисловодск</Text></View>
   </View>;
@@ -246,9 +257,12 @@ export default function LadyGoApp() {
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const point = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
       setPickup(point);
-      const places = await Location.reverseGeocodeAsync(point).catch(() => []);
-      const p = places?.[0] || {};
-      setPickupText([p.street, p.streetNumber, p.city || p.subregion].filter(Boolean).join(', ') || 'Моё местоположение');
+      setPickupText('Моё местоположение');
+      Location.reverseGeocodeAsync(point).then(places => {
+        const p = places?.[0] || {};
+        const address = [p.street, p.streetNumber, p.city || p.subregion].filter(Boolean).join(', ');
+        if (address) setPickupText(address);
+      }).catch(() => {});
       return point;
     } catch (_) { Alert.alert('Не удалось определить место', 'Попробуй ещё раз или введи адрес вручную.'); }
   };
@@ -448,7 +462,10 @@ const st = StyleSheet.create({
   modeTextActive: { color: P.white },
   avatarText: { color: P.pinkDark, fontWeight: '900', fontSize: 16 },
   map: { height: 280, backgroundColor: '#E9E7E3' },
-  mapControls: { position: 'absolute', left: 9, bottom: 12, gap: 6, alignItems: 'center' },
+  mapControls: { position: 'absolute', left: 9, bottom: 12, gap: 6, alignItems: 'flex-start' },
+  locateButton: { height: 34, paddingHorizontal: 10, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.97)', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
+  locateButtonText: { color: P.pinkDark, fontSize: 11, fontWeight: '800' },
+  mapControlRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
   mapControl: { width: 34, height: 34, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.96)', alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
   mapControlActive: { backgroundColor: P.pink },
   mapControlText: { color: P.ink, fontSize: 19, fontWeight: '800', lineHeight: 23 },
