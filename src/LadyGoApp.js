@@ -2736,11 +2736,9 @@ function LadyGoAppContent() {
         <Text style={s.label}>Быстрые пожелания</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
           {['Позвонить по прибытии', 'Написать вместо звонка', 'Помочь с багажом', 'Встречать у входа'].map(note => {
-            const selected = comment.split('
-').includes(note);
+            const selected = comment.split('\\n').includes(note);
             return <TouchableOpacity key={note} onPress={() => setComment(current => {
-              const lines = current.split('
-').map(line => line.trim()).filter(Boolean);
+              const lines = current.split('\\n').map(line => line.trim()).filter(Boolean);
               return selected ? lines.filter(line => line !== note).join('\\n') : [...lines, note].join('\\n');
             })} style={[s.savedChip, selected && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
               <Text style={s.savedChipText}>{selected ? '✓ ' : '+ '}{note}</Text>
