@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.9.9';
+const APP_VERSION = '6.7.9.10';
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
 const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
 const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
