@@ -582,9 +582,11 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
           paint={{ 'circle-radius': 9, 'circle-color': '#FFFFFF', 'circle-stroke-color': '#2F80ED', 'circle-stroke-width': 3 }} />
         <Layer id="ladygo-you-dot" type="circle" filter={['==', ['get', 'markerType'], 'you']}
           paint={{ 'circle-radius': 4, 'circle-color': '#2F80ED' }} />
-        <Layer id="ladygo-points-labels" type="symbol" filter={['!=', ['get', 'markerType'], 'vehicle']}
-          layout={{ 'text-field': ['get', 'label'], 'text-size': 11, 'text-offset': [0, 1.35], 'text-anchor': 'top', 'text-allow-overlap': true }}
-          paint={{ 'text-color': '#282329', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.5 }} />
+        <Layer id="ladygo-vehicle-halo" type="circle" filter={['==', ['get', 'markerType'], 'vehicle']}
+          paint={{ 'circle-radius': 17, 'circle-color': '#26865A', 'circle-opacity': 0.22 }} />
+        <Layer id="ladygo-points-labels" type="symbol"
+          layout={{ 'text-field': ['get', 'label'], 'text-size': ['case', ['==', ['get', 'markerType'], 'vehicle'], 12, 11], 'text-offset': [0, 1.5], 'text-anchor': 'top', 'text-allow-overlap': true }}
+          paint={{ 'text-color': '#282329', 'text-halo-color': '#FFFFFF', 'text-halo-width': 2 }} />
         <Layer id="ladygo-moving-car" type="symbol" filter={['==', ['get', 'markerType'], 'vehicle']}
           layout={{ 'text-field': '🚘', 'text-size': 25, 'text-allow-overlap': true, 'text-rotate': ['get', 'heading'], 'text-rotation-alignment': 'map' }} />
       </GeoJSONSource>}
