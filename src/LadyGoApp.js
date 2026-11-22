@@ -20,6 +20,24 @@ const TARIFFS = [
 const STATUS = { new: 'Ищем водителя', accepted: 'Водитель назначен', arrived: 'Водитель на месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' ₽';
 
+const translateError = error => {
+  const raw = String(error?.message || error || '').trim();
+  const message = raw.toLowerCase();
+  if (!raw) return 'Произошла ошибка. Попробуй ещё раз.';
+  if (/invalid login credentials|invalid email or password/.test(message)) return 'Неверная почта или пароль.';
+  if (/email not confirmed/.test(message)) return 'Подтверди адрес электронной почты по ссылке в письме.';
+  if (/user already registered|already been registered/.test(message)) return 'Этот адрес электронной почты уже зарегистрирован. Войди в аккаунт.';
+  if (/password.*(at least|minimum)|weak password/.test(message)) return 'Пароль слишком простой или короткий. Придумай другой пароль.';
+  if (/email rate limit exceeded|rate limit/.test(message)) return 'Слишком много запросов. Подожди немного и попробуй снова.';
+  if (/network request failed|failed to fetch|fetch failed|networkerror|timeout|timed out/.test(message)) return 'Не удалось подключиться к серверу. Проверь интернет и попробуй ещё раз.';
+  if (/duplicate key|unique constraint|orders_one_active_per_passenger_idx/.test(message)) return 'У тебя уже есть активный заказ. Открой раздел «Мои поездки».';
+  if (/permission denied|not allowed|unauthorized|forbidden|jwt/.test(message)) return 'Недостаточно прав для этого действия. Перезайди в аккаунт и попробуй снова.';
+  if (/function .* not found|could not find the function|schema cache/.test(message)) return 'Функция временно недоступна. Обнови приложение или попробуй позже.';
+  if (/row-level security|violates row-level security/.test(message)) return 'Действие не разрешено для этого аккаунта.';
+  if (/маршрут не найден/.test(message)) return 'Не удалось построить маршрут. Проверь выбранные адреса.';
+  return 'Не удалось выполнить действие. Проверь подключение к интернету и попробуй ещё раз.';
+};
+
 async function findAddresses(q) {
   const clean = String(q || '').trim();
   if (clean.length < 2) return [];
@@ -227,7 +245,7 @@ export default function LadyGoApp() {
       if (error) throw error;
       await loadDriverOrders();
       Alert.alert('Заказ принят', 'Поездка добавлена в твои активные заказы.');
-    } catch (e) { Alert.alert('Не удалось принять заказ', e.message || 'Обнови список и попробуй ещё раз.'); }
+    } catch (e) { Alert.alert('Не удалось принять заказ', translateError(e)); }
     finally { setBusy(false); }
   };
 
@@ -237,7 +255,7 @@ export default function LadyGoApp() {
       const { error } = await supabase.rpc('ladygo_update_trip_status', { p_order_id: order.id, p_status: status });
       if (error) throw error;
       await loadDriverOrders();
-    } catch (e) { Alert.alert('Не удалось обновить поездку', e.message || 'Попробуй ещё раз.'); }
+    } catch (e) { Alert.alert('Не удалось обновить поездку', translateError(e)); }
     finally { setBusy(false); }
   };
 
@@ -250,7 +268,7 @@ export default function LadyGoApp() {
         : await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (result.error) throw result.error;
       if (register && !result.data.session) Alert.alert('Почти готово', 'Подтверди email по письму, затем войди в LadyGo.');
-    } catch (e) { Alert.alert('Не удалось войти', e.message || 'Попробуй ещё раз.'); }
+    } catch (e) { Alert.alert('Не удалось войти', translateError(e)); }
     finally { setBusy(false); }
   };
 
@@ -353,7 +371,7 @@ export default function LadyGoApp() {
         setTab('orders');
         Alert.alert('У тебя уже есть активный заказ', 'Открой вкладку «Мои поездки»: предыдущий заказ ещё не завершён. Отмени его или дождись завершения, затем оформи новый.');
       } else {
-        Alert.alert('Не удалось оформить заказ', message || 'Попробуй ещё раз.');
+        Alert.alert('Не удалось оформить заказ', translateError(e));
       }
     }
     finally { setBusy(false); }
@@ -365,7 +383,7 @@ export default function LadyGoApp() {
       { text: 'Не отменять', style: 'cancel' },
       { text: 'Отменить', style: 'destructive', onPress: async () => {
         const { error } = await supabase.rpc('cancel_my_order', { order_id: order.id });
-        if (error) Alert.alert('Не удалось отменить', error.message);
+        if (error) Alert.alert('Не удалось отменить', translateError(error));
         else loadOrders();
       }}
     ]);
