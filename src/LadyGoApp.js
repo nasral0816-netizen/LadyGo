@@ -1127,6 +1127,22 @@ function LadyGoAppContent() {
   const unreadCount = notifications.filter(item => !item.read_at).length;
   const estimatedPrice = priceQuote?.amount_rub ?? null;
   const priceBreakdown = priceQuote?.breakdown || null;
+  useEffect(() => {
+    let active = true;
+    const loadQuote = async () => {
+      if (!routeInfo || !coords || !destinationCoords || !supabase) { setPriceQuote(null); return; }
+      setPriceLoading(true);
+      try {
+        const points = [coords, ...stopCoords, destinationCoords].map(p => ({ latitude: Number(p.latitude), longitude: Number(p.longitude) }));
+        const { data, error } = await supabase.functions.invoke('pricing-service', { body: { action: 'quote', city_id: 'kislovodsk', tariff_id: tariff, points, options: selectedOptions } });
+        if (error) throw error;
+        if (active && data?.price_token) setPriceQuote(data); else if (active) setPriceQuote(null);
+      } catch (error) { if (active) setPriceQuote(null); console.warn('LadyGo pricing:', error?.message || error); }
+      finally { if (active) setPriceLoading(false); }
+    };
+    loadQuote();
+    return () => { active = false; };
+  }, [routeInfo, coords, destinationCoords, stopCoords, tariff, selectedOptions]);
 
   const loadProfile = useCallback(async currentUser => {
     if (!currentUser || !supabase) return null;
@@ -1857,6 +1873,7 @@ function LadyGoAppContent() {
       return Alert.alert('Уточни адрес назначения', 'Выбери точный адрес из подсказок. Так LadyGo сохранит правильную точку на карте и построит маршрут без догадок.');
     }
     if (activeOrder) return Alert.alert('У тебя уже есть активный заказ', 'Заверши или отмени текущую поездку перед новым заказом.');
+    if (!priceQuote?.price_token || !priceQuote?.expires_at || new Date(priceQuote.expires_at).getTime() <= Date.now()) return Alert.alert('Цена устарела', 'Обнови маршрут или дождись нового расчёта цены.');
     if (!priceQuote?.price_token || !priceQuote?.expires_at || new Date(priceQuote.expires_at).getTime() <= Date.now()) return Alert.alert('Цена устарела', 'Обнови расчёт стоимости перед оформлением заказа.');
     setBusy(true);
     try {
@@ -2538,16 +2555,23 @@ function LadyGoAppContent() {
         <Button title="Показать маршрут на карте" secondary compact onPress={() => buildRoute()} />
         {routeInfo && <Text style={s.routeInfo}>{routeInfo.km} км · около {routeInfo.minutes} мин в пути</Text>}
         <View style={{ gap: 4, paddingTop: 7 }}>
-          <Text style={s.routeInfo}>{estimatedPrice != null ? 'Предварительная стоимость: ' + money(estimatedPrice) + '. Итог подтвердит водитель.' : 'Стоимость поездки будет согласована с водителем.'}</Text>
+          <View style={s.rowBetween}><Text style={s.routeInfo}>{priceLoading ? 'Рассчитываем стоимость…' : estimatedPrice != null ? 'Предварительная стоимость' : 'Стоимость появится после маршрута'}</Text><Text style={s.price}>{estimatedPrice != null ? money(estimatedPrice) : '—'}</Text></View>
+          {priceQuote && <TouchableOpacity onPress={() => setPriceDetailsOpen(true)} style={[s.savedChip, { alignSelf: 'flex-start', borderWidth: 1, borderColor: C.pink }]}><Text style={s.savedChipText}>ⓘ Подробнее о цене</Text></TouchableOpacity>}
+          {priceQuote?.expires_at && <Text style={s.muted}>Цена зафиксирована на 4 минуты · до {new Date(priceQuote.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>}
+          <Text style={s.muted}>Расчёт учитывает километраж и время по дорожному маршруту. Итог может измениться при изменении маршрута или платном ожидании.</Text>
           {serviceType === 'courier' && <Text style={s.muted}>Стоимость доставки согласуется с водителем до принятия заказа. Алкоголь и табачные изделия не принимаются.</Text>}
         </View>
       </Card>
       <Text style={s.section}>Выберите подходящий тариф</Text>
       {TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[s.tariff, tariff === t.id && s.tariffSelected]}>
-        <View style={s.tariffIcon}><Text style={s.tariffEmoji}>{t.id === 'child' ? '♡' : t.id === 'comfort' ? '✦' : '↗'}</Text></View>
+        <View style={s.tariffIcon}><Text style={s.tariffEmoji}>{t.id === 'comfort_plus' ? '✧' : t.id === 'comfort' ? '✦' : '↗'}</Text></View>
         <View style={{ flex: 1 }}><Text style={s.tariffName}>{t.name}</Text><Text style={s.muted}>{t.detail}</Text></View>
         <View style={[s.radio, tariff === t.id && s.radioOn]} />
       </TouchableOpacity>)}
+      <Card>
+        <Text style={s.section}>Дополнительные опции</Text>
+        {PRICE_OPTIONS.map(option => { const selected = selectedOptions.includes(option.id); return <TouchableOpacity key={option.id} onPress={() => setSelectedOptions(current => selected ? current.filter(x => x !== option.id) : [...current, option.id])} style={[s.rowBetween, { paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: C.line }]}><Text style={[s.address, { flex: 1, paddingRight: 8 }]}>{option.label}</Text><Text style={{ color: option.price ? C.ink : C.green, fontWeight: '700', marginRight: 10 }}>{option.price ? '+' + option.price + ' ₽' : 'Бесплатно'}</Text><View style={{ width: 21, height: 21, borderRadius: 6, borderWidth: 1.5, borderColor: selected ? C.pink : C.muted, backgroundColor: selected ? C.pink : C.white, alignItems: 'center', justifyContent: 'center' }}>{selected ? <Text style={{ color: C.white, fontWeight: '900' }}>✓</Text> : null}</View></TouchableOpacity>; })}
+      </Card>
       <Text style={s.section}>Как оплатить</Text>
       <View style={s.row}>
         <TouchableOpacity onPress={() => setPaymentMethod('cash')} style={[s.savedChip, paymentMethod === 'cash' && { borderWidth: 1, borderColor: C.pink }]}>
@@ -2575,6 +2599,29 @@ function LadyGoAppContent() {
         <Button title="Заказать поездку" loading={busy} onPress={createOrder} disabled={busy} />
         <Text style={s.disclaimer}>Перед подтверждением водитель согласует с тобой итоговую стоимость и способ оплаты.</Text>
       </Card>
+      <Modal visible={priceDetailsOpen} transparent animationType='slide' onRequestClose={() => setPriceDetailsOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(25,17,22,0.55)', justifyContent: 'center', padding: 16 }}>
+          <View style={{ backgroundColor: C.white, borderRadius: 22, padding: 18, gap: 12, maxHeight: '82%' }}>
+            <View style={s.rowBetween}><Text style={s.heading}>Из чего складывается цена</Text><TouchableOpacity onPress={() => setPriceDetailsOpen(false)}><Text style={{ color: C.pinkDark, fontSize: 24, fontWeight: '800' }}>×</Text></TouchableOpacity></View>
+            <ScrollView contentContainerStyle={{ gap: 10 }}>
+              <View style={s.rowBetween}><Text style={s.address}>Минимальный тариф</Text><Text style={s.address}>{money(priceBreakdown?.min_price)}</Text></View>
+              <Text style={s.muted}>Включено {priceBreakdown?.included_km ?? 1} км и {priceBreakdown?.included_min ?? 2} мин</Text>
+              <View style={s.rowBetween}><Text style={s.address}>Маршрут сверх пакета</Text><Text style={s.address}>{money(priceBreakdown?.route_cost)}</Text></View>
+              <Text style={s.muted}>{priceBreakdown?.billable_km ?? 0} км и {priceBreakdown?.billable_min ?? 0} мин сверх пакета</Text>
+              <View style={s.rowBetween}><Text style={s.address}>Дальняя подача</Text><Text style={s.address}>{money(priceBreakdown?.pickup_cost || 0)}</Text></View>
+              <View style={s.rowBetween}><Text style={s.address}>Коэффициент спроса ×{priceBreakdown?.surge_multiplier ?? 1}</Text></View>
+              <Text style={s.muted}>{priceBreakdown?.surge_reason || 'Обычный спрос'}</Text>
+              <View style={s.rowBetween}><Text style={s.address}>Опции</Text><Text style={s.address}>{money(priceBreakdown?.options_cost || 0)}</Text></View>
+              <View style={s.rowBetween}><Text style={s.address}>Платные дороги</Text><Text style={s.address}>{money(priceBreakdown?.tolls || 0)}</Text></View>
+              <View style={s.rowBetween}><Text style={s.address}>Скидка</Text><Text style={s.address}>−{money(priceBreakdown?.discount || 0)}</Text></View>
+              <View style={{ height: 1, backgroundColor: C.line }} />
+              <View style={s.rowBetween}><Text style={s.heading}>Итого</Text><Text style={[s.heading, { color: C.pinkDark }]}>{money(priceQuote?.amount_rub)}</Text></View>
+              <Text style={s.muted}>Бесплатное ожидание — {priceBreakdown?.free_wait_min ?? 3} мин. Далее — оплата за минуту по выбранному тарифу.</Text>
+            </ScrollView>
+            <Button title='Понятно' onPress={() => setPriceDetailsOpen(false)} />
+          </View>
+        </View>
+      </Modal>
     </ScrollView>}
 
     {mode === 'driver' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
