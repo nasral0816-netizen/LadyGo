@@ -565,6 +565,9 @@ export default function LadyGoApp() {
         <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !quote?.price_token || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !quote?.price_token || busy}>
           {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
         </TouchableOpacity>
+        <TouchableOpacity style={st.phoneOrderBtn} onPress={() => Linking.openURL('tel:+79911121227')}>
+          <Text style={st.phoneOrderText}>☎  Заказать по телефону</Text>
+        </TouchableOpacity>
         <Text style={st.footnote}>Создано независимым автором @acyma</Text>
       </ScrollView>
     </View>}
@@ -627,6 +630,8 @@ const st = StyleSheet.create({
   authInput: { borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 17, fontSize: 16, color: P.ink, backgroundColor: '#FBFAFB' },
   primaryBtn: { backgroundColor: P.pink, minHeight: 56, borderRadius: 17, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, marginTop: 8 },
   primaryText: { color: P.white, fontSize: 16, fontWeight: '800' },
+  phoneOrderBtn: { minHeight: 52, borderRadius: 16, borderWidth: 1.5, borderColor: P.pink, backgroundColor: P.white, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
+  phoneOrderText: { color: P.pinkDark, fontSize: 15, fontWeight: '800' },
   switchText: { color: P.pinkDark, textAlign: 'center', fontWeight: '700', padding: 12 },
   footnote: { color: '#A69DA3', fontSize: 11, textAlign: 'center', marginTop: 20 },
   topbar: { height: 62, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: P.white, borderBottomWidth: 1, borderColor: '#F2EEF0' },
