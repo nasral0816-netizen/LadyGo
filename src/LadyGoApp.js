@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Platform, SafeAreaView, ScrollView,
-  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View
+  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image
 } from 'react-native';
 import { Camera, GeoJSONSource, Layer, Map as MapLibreView } from '@maplibre/maplibre-react-native';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
 import { supabase } from './supabase';
 
 const P = {
@@ -208,6 +209,11 @@ export default function LadyGoApp() {
   const [driverPresenceLoading, setDriverPresenceLoading] = useState(false);
   const [driverLocation, setDriverLocation] = useState(null);
   const [driverVehicle, setDriverVehicle] = useState(null);
+  const [vehicleForm, setVehicleForm] = useState({ display_name: '', vehicle_make: '', vehicle_model: '', vehicle_color: '', vehicle_plate: '', vehicle_year: '' });
+  const [vehiclePhotoPath, setVehiclePhotoPath] = useState('');
+  const [vehiclePhotoPreview, setVehiclePhotoPreview] = useState('');
+  const [vehicleSaving, setVehicleSaving] = useState(false);
+  const [vehicleUploading, setVehicleUploading] = useState(false);
   const autoLocateStarted = useRef(false);
   const [adminOrders, setAdminOrders] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
@@ -243,8 +249,11 @@ export default function LadyGoApp() {
     const active = orderRows.find(o => ['new','accepted','arrived','in_progress'].includes(o.status)) || null;
     setActiveOrder(active);
     if (active?.driver_id && ['accepted','arrived','in_progress'].includes(active.status)) {
-      const { data: vehicle } = await supabase.from('driver_profiles').select('display_name,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year').eq('driver_id', active.driver_id).maybeSingle();
-      setDriverVehicle(vehicle || null);
+      const { data: vehicle } = await supabase.from('driver_profiles').select('display_name,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,vehicle_photo_url').eq('driver_id', active.driver_id).maybeSingle();
+      if (vehicle?.vehicle_photo_url) {
+        const { data: signed } = await supabase.storage.from('ladygo-driver-media').createSignedUrl(vehicle.vehicle_photo_url, 3600);
+        setDriverVehicle({ ...vehicle, vehicle_photo_signed_url: signed?.signedUrl || null });
+      } else setDriverVehicle(vehicle || null);
     } else { setDriverVehicle(null); setDriverLocation(null); }
   }, [session]);
 
@@ -371,6 +380,64 @@ export default function LadyGoApp() {
     }
   }, [profile?.role]);
 
+  useEffect(() => {
+    let alive = true;
+    if (profile?.role !== 'driver' || !session?.user?.id || !supabase) return () => { alive = false; };
+    (async () => {
+      const { data } = await supabase.from('driver_profiles').select('display_name,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,vehicle_photo_url').eq('driver_id', session.user.id).maybeSingle();
+      if (!alive) return;
+      setVehicleForm({ display_name: data?.display_name || '', vehicle_make: data?.vehicle_make || '', vehicle_model: data?.vehicle_model || '', vehicle_color: data?.vehicle_color || '', vehicle_plate: data?.vehicle_plate || '', vehicle_year: data?.vehicle_year ? String(data.vehicle_year) : '' });
+      setVehiclePhotoPath(data?.vehicle_photo_url || '');
+      if (data?.vehicle_photo_url) {
+        const { data: signed } = await supabase.storage.from('ladygo-driver-media').createSignedUrl(data.vehicle_photo_url, 3600);
+        if (alive) setVehiclePhotoPreview(signed?.signedUrl || '');
+      } else if (alive) setVehiclePhotoPreview('');
+    })().catch(() => {});
+    return () => { alive = false; };
+  }, [profile?.role, session?.user?.id]);
+
+  const chooseVehiclePhoto = async () => {
+    if (vehicleUploading || !session?.user?.id) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) { Alert.alert('Нужен доступ к фото', 'Разреши доступ к галерее, чтобы добавить фотографию автомобиля.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [4, 3], quality: 0.82 });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setVehicleUploading(true);
+    try {
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      const mime = asset.mimeType || 'image/jpeg';
+      const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
+      const path = `${session.user.id}/vehicle-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('ladygo-driver-media').upload(path, blob, { contentType: mime, upsert: false });
+      if (error) throw error;
+      const { data: signed } = await supabase.storage.from('ladygo-driver-media').createSignedUrl(path, 3600);
+      setVehiclePhotoPath(path);
+      setVehiclePhotoPreview(signed?.signedUrl || asset.uri);
+    } catch (e) { Alert.alert('Не удалось загрузить фото', translateError(e)); }
+    finally { setVehicleUploading(false); }
+  };
+
+  const saveVehicleProfile = async () => {
+    if (!session?.user?.id || vehicleSaving) return;
+    if (!vehicleForm.vehicle_make.trim() || !vehicleForm.vehicle_model.trim()) { Alert.alert('Заполни данные машины', 'Укажи марку и модель автомобиля.'); return; }
+    const year = vehicleForm.vehicle_year.trim() ? Number(vehicleForm.vehicle_year) : null;
+    if (year !== null && (!Number.isInteger(year) || year < 1950 || year > new Date().getFullYear() + 1)) { Alert.alert('Проверь год выпуска', 'Укажи корректный год автомобиля.'); return; }
+    setVehicleSaving(true);
+    try {
+      const { error } = await supabase.from('driver_profiles').upsert({
+        driver_id: session.user.id, display_name: vehicleForm.display_name.trim(),
+        vehicle_make: vehicleForm.vehicle_make.trim(), vehicle_model: vehicleForm.vehicle_model.trim(),
+        vehicle_color: vehicleForm.vehicle_color.trim() || null, vehicle_plate: vehicleForm.vehicle_plate.trim() || null,
+        vehicle_year: year, vehicle_photo_url: vehiclePhotoPath || null, updated_at: new Date().toISOString()
+      }, { onConflict: 'driver_id' });
+      if (error) throw error;
+      Alert.alert('Сохранено', 'Данные автомобиля обновлены. Пассажир увидит их после назначения поездки.');
+      if (activeOrder?.driver_id === session.user.id) await loadOrders();
+    } catch (e) { Alert.alert('Не удалось сохранить автомобиль', translateError(e)); }
+    finally { setVehicleSaving(false); }
+  };
   const loadDriverOrders = useCallback(async () => {
     if (!session?.user || profile?.role !== 'driver' || !supabase) return;
     setDriverLoading(true);
@@ -767,6 +834,7 @@ export default function LadyGoApp() {
           destination={activeOrder.destination_lat && activeOrder.destination_lng ? { latitude: activeOrder.destination_lat, longitude: activeOrder.destination_lng } : null}
           route={[]} driverLocation={driverLocation} onLocate={async () => driverLocation} allowPickDestination={false}/>
         <View style={st.orderCard}>
+          {driverVehicle?.vehicle_photo_signed_url && <Image source={{ uri: driverVehicle.vehicle_photo_signed_url }} style={st.passengerVehiclePhoto} resizeMode="cover" />}
           <Text style={st.heading}>{[driverVehicle?.vehicle_color, driverVehicle?.vehicle_make, driverVehicle?.vehicle_model].filter(Boolean).join(' ') || 'Автомобиль водителя'}</Text>
           <Text style={st.orderAddress}>{driverVehicle?.vehicle_plate || 'Номер автомобиля не указан'}{driverVehicle?.vehicle_year ? ' · ' + driverVehicle.vehicle_year : ''}</Text>
           <Text style={st.muted}>{driverLocation ? 'Геопозиция обновляется в реальном времени' : 'Ожидаем первую геопозицию автомобиля…'}</Text>
@@ -874,6 +942,26 @@ export default function LadyGoApp() {
             <Text style={st.driverEarningsNote}>По данным завершённых заказов</Text>
           </View>
           <Text style={st.driverEarningsIcon}>₽</Text>
+        </View>
+        <View style={st.vehicleEditorCard}>
+          <View style={st.rowBetween}><Text style={st.heading}>Мой автомобиль</Text><Text style={st.vehicleEditorHint}>Данные для пассажира</Text></View>
+          {vehiclePhotoPreview ? <Image source={{ uri: vehiclePhotoPreview }} style={st.vehiclePhotoPreview} resizeMode="cover" /> : <View style={st.vehiclePhotoPlaceholder}><Text style={st.vehiclePhotoIcon}>🚘</Text><Text style={st.vehiclePhotoPlaceholderText}>Добавь фото своего автомобиля</Text></View>}
+          <TouchableOpacity style={st.vehiclePhotoButton} onPress={chooseVehiclePhoto} disabled={vehicleUploading}>
+            {vehicleUploading ? <ActivityIndicator color={P.pinkDark}/> : <Text style={st.vehiclePhotoButtonText}>{vehiclePhotoPreview ? 'Изменить фото машины' : 'Добавить фото машины'}</Text>}
+          </TouchableOpacity>
+          <TextInput style={st.phoneInput} value={vehicleForm.display_name} onChangeText={v=>setVehicleForm(p=>({...p,display_name:v}))} placeholder="Имя водителя (как увидит пассажир)" maxLength={120}/>
+          <View style={st.vehicleInputRow}>
+            <TextInput style={[st.phoneInput,{flex:1}]} value={vehicleForm.vehicle_make} onChangeText={v=>setVehicleForm(p=>({...p,vehicle_make:v}))} placeholder="Марка (например, Kia)" maxLength={60}/>
+            <TextInput style={[st.phoneInput,{flex:1}]} value={vehicleForm.vehicle_model} onChangeText={v=>setVehicleForm(p=>({...p,vehicle_model:v}))} placeholder="Модель" maxLength={60}/>
+          </View>
+          <View style={st.vehicleInputRow}>
+            <TextInput style={[st.phoneInput,{flex:1}]} value={vehicleForm.vehicle_color} onChangeText={v=>setVehicleForm(p=>({...p,vehicle_color:v}))} placeholder="Цвет" maxLength={40}/>
+            <TextInput style={[st.phoneInput,{flex:1}]} value={vehicleForm.vehicle_year} onChangeText={v=>setVehicleForm(p=>({...p,vehicle_year:v.replace(/[^0-9]/g,'').slice(0,4)}))} placeholder="Год выпуска" keyboardType="number-pad" maxLength={4}/>
+          </View>
+          <TextInput style={st.phoneInput} value={vehicleForm.vehicle_plate} onChangeText={v=>setVehicleForm(p=>({...p,vehicle_plate:v.toUpperCase()}))} placeholder="Государственный номер" maxLength={24} autoCapitalize="characters"/>
+          <TouchableOpacity style={st.vehicleSaveButton} onPress={saveVehicleProfile} disabled={vehicleSaving || vehicleUploading}>
+            {vehicleSaving ? <ActivityIndicator color={P.white}/> : <Text style={st.vehicleSaveText}>Сохранить данные автомобиля</Text>}
+          </TouchableOpacity>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.driverTabs}>
           {tabs.map(([id,label]) => <TouchableOpacity key={id} onPress={()=>setDriverSection(id)} style={[st.driverTab,driverSection===id&&st.driverTabActive]}>
@@ -1126,5 +1214,17 @@ const st = StyleSheet.create({
   ratingDriverCard: { backgroundColor: '#FFF5F8', borderColor: '#F5D6E2', borderWidth: 1, borderRadius: 16, padding: 14, gap: 5 },
   ratingDriverLabel: { color: P.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   ratingDriverValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
-  ratingDriverCount: { color: P.muted, fontSize: 12, fontWeight: '700' }
+  ratingDriverCount: { color: P.muted, fontSize: 12, fontWeight: '700' },
+  vehicleEditorCard: { backgroundColor: P.white, borderColor: P.line, borderWidth: 1, borderRadius: 18, padding: 14, gap: 10 },
+  vehicleEditorHint: { color: P.muted, fontSize: 10, fontWeight: '700' },
+  vehiclePhotoPreview: { width: '100%', height: 170, borderRadius: 14, backgroundColor: P.pale },
+  vehiclePhotoPlaceholder: { width: '100%', height: 130, borderRadius: 14, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  vehiclePhotoIcon: { fontSize: 36 },
+  vehiclePhotoPlaceholderText: { color: P.muted, fontSize: 12, fontWeight: '700' },
+  vehiclePhotoButton: { borderWidth: 1, borderColor: P.pink, borderRadius: 12, padding: 12, alignItems: 'center' },
+  vehiclePhotoButtonText: { color: P.pinkDark, fontSize: 13, fontWeight: '800' },
+  vehicleInputRow: { flexDirection: 'row', gap: 8 },
+  vehicleSaveButton: { backgroundColor: P.pink, borderRadius: 13, padding: 14, alignItems: 'center' },
+  vehicleSaveText: { color: P.white, fontSize: 13, fontWeight: '900' },
+  passengerVehiclePhoto: { width: '100%', height: 180, borderRadius: 14, marginBottom: 10, backgroundColor: P.pale }
 });
