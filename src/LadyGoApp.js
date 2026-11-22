@@ -954,6 +954,10 @@ function LadyGoAppContent() {
   const [pickupSuggestionsLoading, setPickupSuggestionsLoading] = useState(false);
   const [destination, setDestination] = useState('');
   const [destinationSearchOpen, setDestinationSearchOpen] = useState(false);
+  const [destinationPickerRegion, setDestinationPickerRegion] = useState({ latitude: 43.9052, longitude: 42.7168, latitudeDelta: 0.025, longitudeDelta: 0.025 });
+  const [destinationMapPoint, setDestinationMapPoint] = useState(null);
+  const [destinationMapAddress, setDestinationMapAddress] = useState('');
+  const [destinationMapBusy, setDestinationMapBusy] = useState(false);
   const [destinationSearchQuery, setDestinationSearchQuery] = useState('');
   const [destinationSuggestions, setDestinationSuggestions] = useState([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
@@ -2485,7 +2489,10 @@ function LadyGoAppContent() {
           <TouchableOpacity activeOpacity={0.8} onPress={() => {
             setDestinationSearchQuery(destination);
             setDestinationSuggestions([]);
-            setDestinationCoords(null);
+            setDestinationMapPoint(destinationCoords || coords || null);
+            setDestinationMapAddress(destination || '');
+            const startRegion = destinationCoords || coords;
+            setDestinationPickerRegion({ latitude: startRegion?.latitude ?? 43.9052, longitude: startRegion?.longitude ?? 42.7168, latitudeDelta: 0.025, longitudeDelta: 0.025 });
             setDestinationSearchOpen(true);
           }} style={[s.input, { minHeight: 48, justifyContent: 'center' }]}>
             <Text style={{ color: destination ? C.ink : '#B6AAB0', fontSize: 15 }} numberOfLines={2}>
@@ -2519,6 +2526,49 @@ function LadyGoAppContent() {
                 placeholder="Улица, дом или место" placeholderTextColor="#B6AAB0"
                 autoFocus returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
               <Text style={[s.muted, { fontSize: 13, lineHeight: 20 }]}>Введи улицу и дом. Затем нажми на подходящий вариант в списке ниже — адрес добавится в маршрут.</Text>
+              <Text style={[s.label, { marginTop: 2 }]}>ИЛИ ВЫБЕРИ ТОЧКУ НА КАРТЕ</Text>
+              <View style={{ height: 285, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: C.line }}>
+                <MapView mapType="none" style={{ flex: 1 }} region={destinationPickerRegion} onRegionChangeComplete={setDestinationPickerRegion} onPress={async event => {
+                  const point = event.nativeEvent.coordinate;
+                  setDestinationMapPoint(point);
+                  setDestinationMapAddress('Определяем адрес точки…');
+                  try {
+                    const results = await Location.reverseGeocodeAsync(point);
+                    const item = results?.[0] || {};
+                    const label = [item.street, item.streetNumber, item.city || item.subregion, item.region].filter(Boolean).join(', ');
+                    setDestinationMapAddress(label || `Точка ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`);
+                  } catch (_) {
+                    setDestinationMapAddress(`Точка ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`);
+                  }
+                }}>
+                  <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
+                  {destinationMapPoint && <Marker coordinate={destinationMapPoint} title="Пункт назначения" pinColor={C.pink} />}
+                </MapView>
+              </View>
+              <Text style={s.muted}>{destinationMapPoint ? destinationMapAddress || 'Точка выбрана' : 'Передвинь карту и нажми на нужное место — появится метка.'}</Text>
+              <Button title={destinationMapBusy ? 'Выбираем точку…' : 'Выбрать эту точку назначения'} disabled={!destinationMapPoint || destinationMapBusy} loading={destinationMapBusy} onPress={async () => {
+                if (!destinationMapPoint) return;
+                setDestinationMapBusy(true);
+                try {
+                  let label = destinationMapAddress;
+                  if (!label || label === 'Определяем адрес точки…') {
+                    const results = await Location.reverseGeocodeAsync(destinationMapPoint).catch(() => []);
+                    const item = results?.[0] || {};
+                    label = [item.street, item.streetNumber, item.city || item.subregion, item.region].filter(Boolean).join(', ');
+                  }
+                  if (!label || label === 'Определяем адрес точки…') label = `Точка ${destinationMapPoint.latitude.toFixed(5)}, ${destinationMapPoint.longitude.toFixed(5)}`;
+                  setDestination(label);
+                  setDestinationCoords(destinationMapPoint);
+                  setDestinationSuggestions([]);
+                  setDestinationSearchOpen(false);
+                  setStopCoords([]);
+                  setRoute([]);
+                  setRouteInfo(null);
+                  if (pickup.trim()) buildRoute(label, destinationMapPoint);
+                } catch (error) {
+                  Alert.alert('Не удалось выбрать точку', 'Попробуй нажать на карту ещё раз.');
+                } finally { setDestinationMapBusy(false); }
+              }} />
               {suggestionsLoading && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 12 }}>
                 <ActivityIndicator color={C.pink} /><Text style={s.muted}>Ищем адреса…</Text>
               </View>}
