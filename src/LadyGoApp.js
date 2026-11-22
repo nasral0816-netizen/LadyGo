@@ -1921,10 +1921,43 @@ function LadyGoAppContent() {
   };
 
   const savePlace = async () => {
-    if (!savedLabel.trim() || !savedAddress.trim()) return Alert.alert('Сохранённый адрес', 'Укажи название и адрес.');
-    const { error } = await supabase.from('saved_places').insert({ user_id: user.id, label: savedLabel.trim(), address: savedAddress.trim() });
-    if (error) return Alert.alert('Не удалось сохранить адрес', errorText(error));
-    setSavedAddress(''); await loadSavedPlaces();
+    const label = savedLabel.trim();
+    const address = savedAddress.trim();
+    if (!label || !address) return Alert.alert('Сохранённый адрес', 'Укажи название и адрес.');
+    if (savedPlaces.length >= 10) return Alert.alert('Лимит адресов', 'Можно сохранить не больше 10 адресов. Удали ненужный адрес и попробуй снова.');
+    if (savedPlaces.some(place => String(place.address || '').trim().toLocaleLowerCase() === address.toLocaleLowerCase())) {
+      return Alert.alert('Адрес уже сохранён', 'Этот адрес уже есть в твоём списке.');
+    }
+    setBusy(true);
+    try {
+      let point = null;
+      try { point = await geocodeAddress(address); } catch (_) {}
+      const { error } = await supabase.from('saved_places').insert({
+        user_id: user.id, label, address,
+        ...(point ? { latitude: point.latitude, longitude: point.longitude } : {}),
+      });
+      if (error) throw error;
+      setSavedAddress('');
+      await loadSavedPlaces();
+      Alert.alert('Адрес сохранён', 'Теперь его можно быстро выбрать при оформлении поездки.');
+    } catch (error) {
+      Alert.alert('Не удалось сохранить адрес', errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteSavedPlace = place => {
+    Alert.alert('Удалить сохранённый адрес?', place.label || place.address, [
+      { text: 'Не удалять', style: 'cancel' },
+      { text: 'Удалить', style: 'destructive', onPress: async () => {
+        setBusy(true);
+        const { error } = await supabase.from('saved_places').delete().eq('id', place.id).eq('user_id', user.id);
+        setBusy(false);
+        if (error) return Alert.alert('Не удалось удалить адрес', errorText(error));
+        await loadSavedPlaces();
+      } },
+    ]);
   };
 
   const createOrder = async () => {
@@ -3036,7 +3069,7 @@ function LadyGoAppContent() {
         <Button title="Сохранить карточку водителя" loading={busy} onPress={saveDriverProfile} disabled={busy} />
       </Card>}
       {!isDriver && !isAdmin && applications[0] && <Card><Text style={s.section}>Заявка водителя</Text><Pill color={applications[0].status === 'approved' ? C.green : applications[0].status === 'rejected' ? C.red : C.pink}>{applications[0].status === 'approved' ? 'Одобрена' : applications[0].status === 'rejected' ? 'Отклонена' : 'На рассмотрении'}</Pill></Card>}
-      {!isDriver && !isAdmin && <Card><Text style={s.section}>Сохранённые адреса</Text><Input label="Название" value={savedLabel} onChangeText={setSavedLabel} placeholder="Дом, работа…" /><Input label="Адрес" value={savedAddress} onChangeText={setSavedAddress} placeholder="Введите адрес" /><Button title="Сохранить адрес" onPress={savePlace} compact />{savedPlaces.map(p => <TouchableOpacity key={p.id} onPress={() => { setPickup(p.address); setCoords(null); setRoute([]); setRouteInfo(null); setTab('ride'); }}><Text style={s.address}>{p.label}: {p.address}</Text></TouchableOpacity>)}</Card>}
+      {!isDriver && !isAdmin && <Card><Text style={s.section}>Сохранённые адреса</Text><Input label="Название" value={savedLabel} onChangeText={setSavedLabel} placeholder="Дом, работа…" /><Input label="Адрес" value={savedAddress} onChangeText={setSavedAddress} placeholder="Введите адрес" /><Button title="Сохранить адрес" onPress={savePlace} compact loading={busy} disabled={busy} />{savedPlaces.map(p => <View key={p.id} style={[s.rowBetween, { paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: C.line }]}><TouchableOpacity style={{ flex: 1, paddingRight: 8 }} onPress={async () => { setPickup(p.address); const point = Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude)) ? { latitude: Number(p.latitude), longitude: Number(p.longitude) } : await geocodeAddress(p.address); setCoords(point || null); setRoute([]); setRouteInfo(null); setPriceQuote(null); setEstimatedPrice(null); setTab('ride'); }}><Text style={s.address}>{p.label}: {p.address}</Text><Text style={s.muted}>Нажми, чтобы выбрать адрес подачи</Text></TouchableOpacity><TouchableOpacity onPress={() => deleteSavedPlace(p)} disabled={busy} style={{ padding: 9 }}><Text style={{ color: C.red, fontWeight: '700' }}>Удалить</Text></TouchableOpacity></View>)}</Card>}
       {!isDriver && !isAdmin && <Card>
         <Text style={s.section}>Стать водителем LadyGo</Text>
         <Text style={s.muted}>Заполни карточку водителя и автомобиля. Документы предъявишь администратору лично.</Text>
