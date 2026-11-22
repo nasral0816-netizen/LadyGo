@@ -10,7 +10,14 @@ A separate, non-operational Android map demonstration. It does not connect to Su
 - Android 8.0+ (API 26+)
 - A Yandex MapKit Mobile SDK key
 
-The app uses the `full` MapKit flavor so search/geocoding/routing modules can be added in later demo iterations. This screen currently draws a clearly labelled illustrative route and simulated car marker.
+The app uses the `full` MapKit flavor and includes:
+- Yandex vector map centered on Kislovodsk
+- Yandex place/address search within the Kislovodsk map area
+- Driving route preview between a fixed demo pickup point and the selected search result
+- 2D/3D tilt and zoom controls
+- Clearly marked demo pickup/destination pins and a simulated car marker
+
+The car position is changed only by the demo button. No device geolocation or real passenger/driver data is used.
 
 ## Add the Yandex key
 
@@ -39,10 +46,10 @@ EAS produces an installable APK when the build completes. This repository change
 ## Demo controls
 
 - Drag and pinch the map normally.
+- Enter an address and tap **Найти**; choose a result to preview a route.
 - `+` / `−` zoom in and out.
 - `2D / 3D` changes camera tilt.
 - `⌖` resets the camera to Kislovodsk.
-- The pink line and endpoints are fixed sample coordinates.
 - The blue car marker moves only when the simulation button is pressed.
 
-No real location or passenger/driver data is used.
+If address search or route preview fails, first check that the MapKit key is valid and enabled for MapKit Mobile SDK. Search and routing require the `full` flavor.
