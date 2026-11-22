@@ -2447,9 +2447,9 @@ function LadyGoAppContent() {
             {savedPlaces.slice(0, 4).map(place => <TouchableOpacity key={place.id} onPress={async () => {
               setPickup(place.address);
               const point = await geocodeAddress(place.address);
-              setCoords(point || null);
+              if (point) setCoords(point);
+              else { setCoords(null); Alert.alert('Адрес сохранён', 'Координаты пока не найдены. Уточни точку перед заказом.'); }
               setRoute([]); setRouteInfo(null); setPriceQuote(null); setEstimatedPrice(null);
-              else Alert.alert('Адрес сохранён', 'Координаты пока не найдены. Уточни точку перед заказом.');
             }} style={s.savedChip}><Text style={s.savedChipText}>{place.label || 'Избранное'}</Text></TouchableOpacity>)}
           </View>}
         </View>
