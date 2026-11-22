@@ -2214,13 +2214,13 @@ function LadyGoAppContent() {
       <Input label="Электронная почта" value={email} onChangeText={setEmail} keyboardType="email-address" />
       {otpSent ? <>
         <Input label="Шестизначный код из письма" value={otpCode} onChangeText={value => setOtpCode(value.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" placeholder="000000" />
-        <Button title={busy ? 'Проверяем…' : 'Подтвердить код'} onPress={verifySignupOtp} disabled={busy || otpCode.length !== 6} />
+        <Button title="Подтвердить код" loading={busy} onPress={verifySignupOtp} disabled={busy || otpCode.length !== 6} />
         <Button title="Отправить код ещё раз" secondary onPress={resendSignupEmail} disabled={busy} />
         <Button title="Назад ко входу" secondary onPress={() => { setOtpSent(false); setOtpCode(''); setAuthMode('login'); }} />
       </> : <>
         <Input label="Пароль" value={password} onChangeText={setPassword} secureTextEntry />
         {authMode === 'login' && <TouchableOpacity onPress={resetPassword} disabled={busy}><Text style={{ color: C.pinkDark, fontWeight: '700', textAlign: 'right', paddingVertical: 8 }}>Забыли пароль?</Text></TouchableOpacity>}
-        <Button title={busy ? 'Подождите…' : authMode === 'login' ? 'Войти' : 'Зарегистрироваться'} onPress={signIn} disabled={busy} />
+        <Button title={authMode === 'login' ? 'Войти' : 'Зарегистрироваться'} loading={busy} onPress={signIn} disabled={busy} />
         <Button title={authMode === 'login' ? 'Создать аккаунт' : 'У меня уже есть аккаунт'} secondary onPress={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setOtpCode(''); }} />
         {authMode === 'signup' && <TouchableOpacity onPress={resendSignupEmail} disabled={busy}><Text style={{ color: C.pinkDark, fontWeight: '700', textAlign: 'center', paddingVertical: 10 }}>{busy ? 'Подождите…' : 'Не пришло письмо? Отправить ещё раз'}</Text></TouchableOpacity>}
       </>}
@@ -2238,8 +2238,8 @@ function LadyGoAppContent() {
       <TouchableOpacity style={s.avatar} onPress={() => setTab('profile')}><Text style={s.avatarText}>{(profile?.email || 'L')[0].toUpperCase()}</Text></TouchableOpacity>
     </View>
     <View style={s.rolebar}>
-      <TouchableOpacity onPress={() => { setMode('passenger'); setTab('ride'); }} style={[s.roleButton, mode === 'passenger' && s.roleActive]}><Text style={[s.roleText, mode === 'passenger' && s.roleTextActive]}>Пассажир</Text></TouchableOpacity>
-      {isDriver && <TouchableOpacity onPress={() => { setMode('driver'); setTab('ride'); }} style={[s.roleButton, mode === 'driver' && s.roleActive]}><Text style={[s.roleText, mode === 'driver' && s.roleTextActive]}>Водитель</Text></TouchableOpacity>}
+      <TouchableOpacity activeOpacity={0.82} hitSlop={3} android_ripple={{ color: '#F5DCE6' }} accessibilityRole="button" accessibilityState={{ selected: mode === 'passenger' }} onPress={() => { setMode('passenger'); setTab('ride'); }} style={[s.roleButton, mode === 'passenger' && s.roleActive]}><Text style={[s.roleText, mode === 'passenger' && s.roleTextActive]}>Пассажир</Text></TouchableOpacity>
+      {isDriver && <TouchableOpacity activeOpacity={0.82} hitSlop={3} android_ripple={{ color: '#F5DCE6' }} accessibilityRole="button" accessibilityState={{ selected: mode === 'driver' }} onPress={() => { setMode('driver'); setTab('ride'); }} style={[s.roleButton, mode === 'driver' && s.roleActive]}><Text style={[s.roleText, mode === 'driver' && s.roleTextActive]}>Водитель</Text></TouchableOpacity>}
       {isAdmin && <TouchableOpacity onPress={() => { setMode('admin'); setTab('ride'); }} style={[s.roleButton, mode === 'admin' && s.roleActive]}><Text style={[s.roleText, mode === 'admin' && s.roleTextActive]}>Администратор</Text></TouchableOpacity>}
     </View>
 
@@ -2521,7 +2521,7 @@ function LadyGoAppContent() {
             </TouchableOpacity>;
           })}
         </View>
-        <Button title={busy ? 'Отправляем…' : 'Заказать поездку'} onPress={createOrder} disabled={busy} />
+        <Button title="Заказать поездку" loading={busy} onPress={createOrder} disabled={busy} />
         <Text style={s.disclaimer}>Перед подтверждением водитель согласует с тобой итоговую стоимость и способ оплаты.</Text>
       </Card>
     </ScrollView>}
@@ -2535,7 +2535,7 @@ function LadyGoAppContent() {
       <Text style={s.muted}>Показатели рассчитаны по последним 40 заказам, загруженным в рабочий экран.</Text>
       <Card><Text style={s.muted}>Рейтинг водителя</Text><Text style={s.heading}>{ratings.length ? (ratings.reduce((sum, item) => sum + Number(item.rating), 0) / ratings.length).toFixed(1) + ' ★' : 'Пока нет оценок'}</Text><Text style={s.muted}>{ratings.length} оценок пассажиров</Text></Card>
       <Card><Text style={s.muted}>Статус водителя</Text><Text style={s.heading}>{driverOnline ? 'На линии' : 'Не на линии'}</Text>
-        <Button title={busy ? 'Сохраняем…' : driverOnline ? 'Завершить смену' : 'Выйти на линию'} onPress={() => driverOnline ? setDriverAvailability(false) : Alert.alert('Фоновая геолокация', 'Во время смены LadyGo будет передавать местоположение, даже когда приложение свёрнуто. На Android появится постоянное системное уведомление. Разрешение нужно только водителю на линии.', [{ text: 'Отмена', style: 'cancel' }, { text: 'Продолжить', onPress: () => setDriverAvailability(true) }])} disabled={busy} secondary={!driverOnline} />
+        <Button title={driverOnline ? 'Завершить смену' : 'Выйти на линию'} loading={busy} onPress={() => driverOnline ? setDriverAvailability(false) : Alert.alert('Фоновая геолокация', 'Во время смены LadyGo будет передавать местоположение, даже когда приложение свёрнуто. На Android появится постоянное системное уведомление. Разрешение нужно только водителю на линии.', [{ text: 'Отмена', style: 'cancel' }, { text: 'Продолжить', onPress: () => setDriverAvailability(true) }])} disabled={busy} secondary={!driverOnline} />
         <Text style={s.disclaimer}>При выходе на линию LadyGo обновляет геопозицию и статус доступности даже при свёрнутом приложении. На Android отображается системное уведомление о работе геолокации.</Text>
         {driverGpsError ? <Text style={{ color: C.red, fontSize: 12, marginTop: 8 }}>Геолокация: {driverGpsError}</Text> : driverOnline && <Text style={{ color: C.green, fontSize: 12, marginTop: 8 }}>Геопозиция отправлена{driverGpsUpdatedAt ? ' · ' + new Date(driverGpsUpdatedAt).toLocaleTimeString() : ''}</Text>}
       </Card>
@@ -2602,7 +2602,7 @@ function LadyGoAppContent() {
                 </MapView>
               </View>
             ) : <Text style={s.muted}>Сначала выбери адрес из подсказок, чтобы показать точку на карте.</Text>}
-            <Button title={externalNavStarting ? 'Открываем…' : 'Построить маршрут'} disabled={!externalNavSelected || externalNavStarting} onPress={async () => { setExternalNavMapOpen(false); await startExternalDriverNavigation(); }} />
+            <Button title="Построить маршрут" loading={externalNavStarting} disabled={!externalNavSelected || externalNavStarting} onPress={async () => { setExternalNavMapOpen(false); await startExternalDriverNavigation(); }} />
             <Button title="Закрыть" secondary onPress={() => setExternalNavMapOpen(false)} />
           </View>
         </View>
@@ -2714,7 +2714,7 @@ function LadyGoAppContent() {
         <Input label="Цвет автомобиля" value={driverProfileDraft.vehicle_color || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_color: value }))} />
         <Input label="Государственный номер" value={driverProfileDraft.vehicle_plate || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_plate: value }))} />
         <Input label="Год выпуска" value={driverProfileDraft.vehicle_year || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_year: value }))} keyboardType="number-pad" />
-        <Button title={busy ? 'Сохраняем…' : 'Сохранить карточку водителя'} onPress={saveDriverProfile} disabled={busy} />
+        <Button title="Сохранить карточку водителя" loading={busy} onPress={saveDriverProfile} disabled={busy} />
       </Card>}
       {!isDriver && !isAdmin && applications[0] && <Card><Text style={s.section}>Заявка водителя</Text><Pill color={applications[0].status === 'approved' ? C.green : applications[0].status === 'rejected' ? C.red : C.pink}>{applications[0].status === 'approved' ? 'Одобрена' : applications[0].status === 'rejected' ? 'Отклонена' : 'На рассмотрении'}</Pill></Card>}
       {!isDriver && !isAdmin && <Card><Text style={s.section}>Сохранённые адреса</Text><Input label="Название" value={savedLabel} onChangeText={setSavedLabel} placeholder="Дом, работа…" /><Input label="Адрес" value={savedAddress} onChangeText={setSavedAddress} placeholder="Введите адрес" /><Button title="Сохранить адрес" onPress={savePlace} compact />{savedPlaces.map(p => <TouchableOpacity key={p.id} onPress={() => { setPickup(p.address); setCoords(null); setRoute([]); setRouteInfo(null); setTab('ride'); }}><Text style={s.address}>{p.label}: {p.address}</Text></TouchableOpacity>)}</Card>}
@@ -2736,12 +2736,12 @@ function LadyGoAppContent() {
         {applicationVehiclePhotoUri ? <Image source={{ uri: applicationVehiclePhotoUri }} style={s.vehiclePhoto} resizeMode="cover" /> : null}
         <Button title={applicationVehiclePhotoUri ? 'Изменить фото автомобиля' : 'Добавить фото автомобиля'} secondary compact onPress={() => chooseProfilePhoto(setApplicationVehiclePhotoUri, [4, 3])} />
         <Input label="Опыт и дополнительная информация" value={applicationNote} onChangeText={setApplicationNote} multiline />
-        <Button title={busy ? 'Отправляем…' : 'Отправить заявку'} onPress={submitApplication} disabled={busy} />
+        <Button title="Отправить заявку" loading={busy} onPress={submitApplication} disabled={busy} />
       </Card>}
       <Card><Text style={s.section}>Поддержка LadyGo</Text>
         <Input label="Тема обращения" value={supportSubject} onChangeText={setSupportSubject} placeholder="Например, вопрос по поездке" />
         <Input label="Сообщение" value={supportMessage} onChangeText={setSupportMessage} multiline placeholder="Опиши, что произошло или чем помочь…" />
-        <Button title="Отправить обращение" onPress={submitSupportTicket} disabled={busy} />
+        <Button title="Отправить обращение" loading={busy} onPress={submitSupportTicket} disabled={busy} />
         {supportTickets.map(ticket => <View key={ticket.id} style={{ gap: 5 }}>
           <View style={s.rowBetween}><Text style={s.tariffName}>{ticket.subject}</Text><Pill color={ticket.status === 'resolved' ? C.green : C.pink}>{ticket.status === 'resolved' ? 'Решено' : 'Открыто'}</Pill></View>
           <Text style={s.muted}>{ticket.message}</Text>
@@ -2859,7 +2859,7 @@ const s = StyleSheet.create({
   field: { gap: 6, marginTop: 4 },
   label: { color: '#81757C', fontSize: 12, fontWeight: '700', letterSpacing: 0.1 },
   input: { borderWidth: 1, borderColor: '#E8E1E5', borderRadius: 14, paddingHorizontal: 15, paddingVertical: 14, color: C.ink, backgroundColor: '#FFFFFF', fontSize: 16, minHeight: 50 },
-  button: { backgroundColor: C.pink, paddingVertical: 15, paddingHorizontal: 18, minHeight: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 5, shadowColor: C.pinkDark, shadowOpacity: 0.07, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
+  button: { backgroundColor: C.pink, paddingVertical: 15, paddingHorizontal: 18, minHeight: 52, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 5, overflow: 'hidden', shadowColor: C.pinkDark, shadowOpacity: 0.1, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   buttonSecondary: { backgroundColor: '#FFF8FA', borderWidth: 1, borderColor: '#F0DCE4' },
   buttonDisabled: { opacity: 0.42, elevation: 0, shadowOpacity: 0 },
   buttonDanger: { backgroundColor: '#FFF5F6', borderColor: '#F1D6DC' },
