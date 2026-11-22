@@ -2465,7 +2465,7 @@ function LadyGoAppContent() {
             <View style={{ padding: 16, gap: 10 }}>
               <TextInput value={pickupSearchQuery} onChangeText={setPickupSearchQuery}
                 placeholder="Улица, дом или место" placeholderTextColor="#B6AAB0"
-                autoFocus returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
+                returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
               <Text style={[s.muted, { fontSize: 13, lineHeight: 20 }]}>Введи улицу и дом, затем выбери подходящий адрес из списка.</Text>
               <Text style={s.label}>ИЛИ ОТМЕТЬ МЕСТО ПОДАЧИ НА КАРТЕ</Text>
               <View style={{ height: 245, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: C.line }}>
@@ -2593,7 +2593,7 @@ function LadyGoAppContent() {
             <View style={{ padding: 16, gap: 10 }}>
               <TextInput value={destinationSearchQuery} onChangeText={setDestinationSearchQuery}
                 placeholder="Улица, дом или место" placeholderTextColor="#B6AAB0"
-                autoFocus returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
+                returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
               <Text style={[s.muted, { fontSize: 13, lineHeight: 20 }]}>Введи улицу и дом. Затем нажми на подходящий вариант в списке ниже — адрес добавится в маршрут.</Text>
               <Text style={[s.label, { marginTop: 2 }]}>ИЛИ ВЫБЕРИ ТОЧКУ НА КАРТЕ</Text>
               <View style={{ height: 285, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: C.line }}>
