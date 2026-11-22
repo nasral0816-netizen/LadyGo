@@ -8,6 +8,24 @@ import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from './supabase';
 
+function decodeBase64Image(base64) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const clean = String(base64 || '').replace(/[^A-Za-z0-9+/]/g, '');
+  const output = new Uint8Array(Math.floor(clean.length * 3 / 4));
+  let out = 0;
+  for (let i = 0; i < clean.length; i += 4) {
+    const a = alphabet.indexOf(clean[i]);
+    const b = alphabet.indexOf(clean[i + 1]);
+    const c = alphabet.indexOf(clean[i + 2]);
+    const d = alphabet.indexOf(clean[i + 3]);
+    if (a < 0 || b < 0) break;
+    output[out++] = (a << 2) | (b >> 4);
+    if (c >= 0) output[out++] = ((b & 15) << 4) | (c >> 2);
+    if (d >= 0) output[out++] = ((c & 3) << 6) | d;
+  }
+  return output.slice(0, out);
+}
+
 const P = {
   pink: '#E84F87', pinkDark: '#C93670', pale: '#FFF0F5', ink: '#19171B',
   muted: '#817A80', line: '#ECE8EB', white: '#FFFFFF', green: '#16845B',
@@ -446,17 +464,18 @@ export default function LadyGoApp() {
     if (vehicleUploading || !session?.user?.id) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { Alert.alert('Нужен доступ к фото', 'Разреши доступ к галерее, чтобы добавить фотографию автомобиля.'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [4, 3], quality: 0.82 });
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [4, 3], quality: 0.82, base64: true });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     setVehicleUploading(true);
     try {
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
-      const mime = asset.mimeType || 'image/jpeg';
+      if (!asset.base64) throw new Error('Не удалось прочитать выбранное фото. Выбери изображение ещё раз.');
+      const mime = ['image/jpeg', 'image/png', 'image/webp'].includes(asset.mimeType) ? asset.mimeType : 'image/jpeg';
+      const bytes = decodeBase64Image(asset.base64);
+      if (!bytes.length) throw new Error('Фото пустое или повреждено. Выбери другое изображение.');
       const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
       const path = `${session.user.id}/vehicle-${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('ladygo-driver-media').upload(path, blob, { contentType: mime, upsert: false });
+      const { error } = await supabase.storage.from('ladygo-driver-media').upload(path, bytes, { contentType: mime, upsert: false });
       if (error) throw error;
       const { data: signed } = await supabase.storage.from('ladygo-driver-media').createSignedUrl(path, 3600);
       setVehiclePhotoPath(path);
@@ -469,17 +488,18 @@ export default function LadyGoApp() {
     if (driverPhotoUploading || !session?.user?.id) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) { Alert.alert('Нужен доступ к фото', 'Разреши доступ к галерее, чтобы добавить фотографию профиля водителя.'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.82 });
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.82, base64: true });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     setDriverPhotoUploading(true);
     try {
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
-      const mime = asset.mimeType || 'image/jpeg';
+      if (!asset.base64) throw new Error('Не удалось прочитать выбранное фото. Выбери изображение ещё раз.');
+      const mime = ['image/jpeg', 'image/png', 'image/webp'].includes(asset.mimeType) ? asset.mimeType : 'image/jpeg';
+      const bytes = decodeBase64Image(asset.base64);
+      if (!bytes.length) throw new Error('Фото пустое или повреждено. Выбери другое изображение.');
       const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
       const path = `${session.user.id}/avatar-${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('ladygo-driver-media').upload(path, blob, { contentType: mime, upsert: false });
+      const { error } = await supabase.storage.from('ladygo-driver-media').upload(path, bytes, { contentType: mime, upsert: false });
       if (error) throw error;
       const { data: signed } = await supabase.storage.from('ladygo-driver-media').createSignedUrl(path, 3600);
       setDriverPhotoPath(path);
