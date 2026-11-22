@@ -2432,6 +2432,10 @@ function LadyGoAppContent() {
           <TouchableOpacity activeOpacity={0.8} onPress={() => {
             setPickupSearchQuery(pickup);
             setPickupSuggestions([]);
+            setDestinationMapPoint(coords || null);
+            setDestinationMapAddress(pickup || '');
+            const startRegion = coords;
+            setDestinationPickerRegion({ latitude: startRegion?.latitude ?? 43.9052, longitude: startRegion?.longitude ?? 42.7168, latitudeDelta: 0.025, longitudeDelta: 0.025 });
             setPickupSearchOpen(true);
           }} style={[s.input, { minHeight: 48, justifyContent: 'center' }]}>
             <Text style={{ color: pickup ? C.ink : '#B6AAB0', fontSize: 15 }} numberOfLines={2}>
@@ -2462,6 +2466,45 @@ function LadyGoAppContent() {
                 placeholder="Улица, дом или место" placeholderTextColor="#B6AAB0"
                 autoFocus returnKeyType="search" style={[s.input, { fontSize: 16 }]} />
               <Text style={[s.muted, { fontSize: 13, lineHeight: 20 }]}>Введи улицу и дом, затем выбери подходящий адрес из списка.</Text>
+              <Text style={s.label}>ИЛИ ОТМЕТЬ МЕСТО ПОДАЧИ НА КАРТЕ</Text>
+              <View style={{ height: 245, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: C.line }}>
+                <MapView mapType="none" style={{ flex: 1 }} region={destinationPickerRegion} onRegionChangeComplete={setDestinationPickerRegion} onPress={async event => {
+                  const point = event.nativeEvent.coordinate;
+                  setDestinationMapPoint(point);
+                  setDestinationMapAddress('Определяем адрес точки…');
+                  try {
+                    const results = await Location.reverseGeocodeAsync(point);
+                    const item = results?.[0] || {};
+                    const label = [item.street, item.streetNumber, item.city || item.subregion, item.region].filter(Boolean).join(', ');
+                    setDestinationMapAddress(label || `Точка ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`);
+                  } catch (_) {
+                    setDestinationMapAddress(`Точка ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`);
+                  }
+                }}>
+                  <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
+                  {destinationMapPoint && <Marker coordinate={destinationMapPoint} title="Место подачи" pinColor={C.green} />}
+                </MapView>
+              </View>
+              <Text style={s.muted}>{destinationMapPoint ? destinationMapAddress || 'Точка выбрана' : 'Нажми на карту, чтобы отметить место, где тебя забрать.'}</Text>
+              <Button title="Выбрать это место подачи" disabled={!destinationMapPoint} onPress={async () => {
+                if (!destinationMapPoint) return;
+                let label = destinationMapAddress;
+                if (!label || label === 'Определяем адрес точки…') {
+                  const results = await Location.reverseGeocodeAsync(destinationMapPoint).catch(() => []);
+                  const item = results?.[0] || {};
+                  label = [item.street, item.streetNumber, item.city || item.subregion, item.region].filter(Boolean).join(', ');
+                }
+                if (!label || label === 'Определяем адрес точки…') label = `Точка ${destinationMapPoint.latitude.toFixed(5)}, ${destinationMapPoint.longitude.toFixed(5)}`;
+                setPickup(label);
+                setCoords(destinationMapPoint);
+                setPickupSuggestions([]);
+                setPickupSearchOpen(false);
+                setStopCoords([]);
+                setRoute([]);
+                setRouteInfo(null);
+                setPriceQuote(null);
+                setEstimatedPrice(null);
+              }} />
               {pickupSuggestionsLoading && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 12 }}>
                 <ActivityIndicator color={C.pink} /><Text style={s.muted}>Ищем адреса…</Text>
               </View>}
