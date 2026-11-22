@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.9.10';
+const APP_VERSION = '6.7.9.12';
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
 const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
 const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
@@ -637,7 +637,7 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
           layout={{ 'text-field': '🚘', 'text-size': 25, 'text-allow-overlap': true, 'text-rotate': ['get', 'heading'], 'text-rotation-alignment': 'map' }} />
       </GeoJSONSource>}
     </MapLibreView>
-    <View pointerEvents="box-none" style={{ position: 'absolute', left: 9, top: 9, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: 9, top: 9, flexDirection: 'row', flexWrap: 'wrap', maxWidth: '72%', alignItems: 'center', gap: 5 }}>
       <TouchableOpacity accessibilityLabel="Сменить стиль карты" onPress={cycleMapStyle}
         style={{ height: 34, paddingHorizontal: 10, borderRadius: 11, backgroundColor: '#FFFFFF', justifyContent: 'center', elevation: 3 }}>
         <Text style={{ color: C.ink, fontSize: 11, fontWeight: '800' }}>Слои · {mapStyles[styleIndex].name}</Text>
@@ -717,12 +717,12 @@ function TripMap({ order, driverLocation, assignedDriver }) {
 
   if (!hasCoords) return null;
   return <View style={{ gap: 7 }}>
-    {Platform.OS === 'android' ? <MapLibreMap key={'trip-map-' + order.id} height={190} followPoint={driverLocation} followLabel="Следить за водителем" points={[
+    {Platform.OS === 'android' ? <MapLibreMap key={'trip-map-' + order.id} height={260} followPoint={driverLocation} followLabel="Следить за водителем" points={[
       { latitude: start.latitude, longitude: start.longitude, label: 'Подача', color: C.pink },
       ...stops.map((point, index) => ({ ...point, label: point.address || ('Остановка ' + (index + 1)), color: '#D69A35' })),
       { latitude: end.latitude, longitude: end.longitude, label: 'Назначение', color: C.blue },
       ...(driverLocation?.latitude != null && driverLocation?.longitude != null ? [{ latitude: driverLocation.latitude, longitude: driverLocation.longitude, label: 'Водитель LadyGo', color: '#26865A', markerType: 'vehicle', heading: driverLocation.heading || 0 }] : []),
-    ]} route={roadRoute.length > 1 ? roadRoute : routePoints} /> : <MapView mapType="none" style={{ height: 190, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: driverLocation?.latitude ?? (start.latitude + end.latitude) / 2, longitude: driverLocation?.longitude ?? (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
+    ]} route={roadRoute.length > 1 ? roadRoute : routePoints} /> : <MapView mapType="none" style={{ height: 260, borderRadius: 15, overflow: 'hidden' }} initialRegion={{ latitude: driverLocation?.latitude ?? (start.latitude + end.latitude) / 2, longitude: driverLocation?.longitude ?? (start.longitude + end.longitude) / 2, latitudeDelta: Math.max(0.02, Math.abs(start.latitude - end.latitude) * 1.8), longitudeDelta: Math.max(0.02, Math.abs(start.longitude - end.longitude) * 1.8) }}>
       <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
       <Marker coordinate={start} title="Подача" pinColor={C.pink} />
       {driverLocation?.latitude != null && driverLocation?.longitude != null && <Marker coordinate={{ latitude: driverLocation.latitude, longitude: driverLocation.longitude }} title="Водитель LadyGo" description="Текущее местоположение" pinColor="#26865A" />}
@@ -3132,7 +3132,7 @@ const s = StyleSheet.create({
   roleText: { color: C.muted, fontWeight: '700', fontSize: 12 },
   roleTextActive: { color: C.pinkDark },
   content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 42, gap: 15 },
-  mapWrap: { height: 250, borderRadius: 18, overflow: 'hidden', position: 'relative', backgroundColor: C.map, borderWidth: 1, borderColor: '#EEE7EA' },
+  mapWrap: { height: 300, borderRadius: 18, overflow: 'hidden', position: 'relative', backgroundColor: C.map, borderWidth: 1, borderColor: '#EEE7EA' },
   map: { flex: 1 },
   locButton: { position: 'absolute', bottom: 12, right: 12, backgroundColor: C.white, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, elevation: 3 },
   locText: { color: C.ink, fontSize: 12, fontWeight: '700' },
