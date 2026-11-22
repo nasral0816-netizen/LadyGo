@@ -41,68 +41,105 @@ const translateError = error => {
 };
 
 async function findAddresses(q) {
-  const clean = String(q || '').trim();
+  const clean = String(q || '').replace(/\\s+/g, ' ').trim();
   if (clean.length < 2) return [];
 
-  // Если пользователь уже указал город/регион, ищем по всей стране без привязки к Кисловодску.
   const explicitCity = /краснодар|саратов|кисловодск|пятигорск|ессентуки|минеральн|черкесск|невинномысск|ставропол|георгиевск|железноводск|лермонтов|подкумок|карачаевск|домбай/i.test(clean);
+  const localSuffix = 'Кисловодск, Ставропольский край, Россия';
   const searches = explicitCity
     ? [...new Set([clean, clean + ', Россия'])]
     : [...new Set([
-        clean + ', Кисловодск, Ставропольский край, Россия',
+        clean + ', ' + localSuffix,
+        'улица ' + clean + ', ' + localSuffix,
         clean + ', Пятигорск, Ставропольский край, Россия',
         clean + ', Ессентуки, Ставропольский край, Россия',
-        clean + ', Минеральные Воды, Ставропольский край, Россия',
         clean + ', Черкесск, Карачаево-Черкесия, Россия',
-        clean,
-        clean + ', Россия'
+        clean
       ])];
 
   const found = [];
   const seen = new Set();
   const localityOnly = new Set(['city', 'town', 'village', 'municipality', 'administrative']);
-  for (const search of searches) {
-    try {
-      const url = 'https://photon.komoot.io/api/?lang=ru&limit=12&q=' + encodeURIComponent(search);
-      const response = await fetch(url, { headers: { Accept: 'application/json' } });
-      if (!response.ok) continue;
-      const json = await response.json();
-      for (const feature of json.features || []) {
-        const p = feature.properties || {};
-        const coords = feature.geometry?.coordinates || [];
-        const latitude = Number(coords[1]);
-        const longitude = Number(coords[0]);
-        if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
-            Math.abs(latitude) > 90 || Math.abs(longitude) > 180) continue;
+  const addResult = (item, source) => {
+    const latitude = Number(item.latitude);
+    const longitude = Number(item.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+        Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return;
+    const key = item.id || (latitude.toFixed(5) + ':' + longitude.toFixed(5));
+    if (seen.has(key)) return;
+    seen.add(key);
+    const detail = item.detail || 'Россия';
+    found.push({
+      id: String(key),
+      label: item.label || clean,
+      detail,
+      latitude,
+      longitude,
+      localRank: /кисловодск/i.test(detail) ? 0 :
+        /ставропольский край|карачаево-черкес/i.test(detail) ? 1 : 2,
+      source
+    });
+  };
 
-        // Не принимаем города/административные центры за конкретные объекты
-        // вроде мечети: иначе маршрут может вести в центр города.
-        const placeKind = String(p.osm_value || '').toLowerCase();
-        const isLocality = String(p.osm_key || '').toLowerCase() === 'place' && localityOnly.has(placeKind);
-        if (isLocality && !explicitCity) continue;
+  // Photon: ищем сразу несколькими формулировками, а не ждём ответа каждой по очереди.
+  await Promise.allSettled(searches.map(async search => {
+    const url = 'https://photon.komoot.io/api/?lang=ru&limit=15&lat=43.9052&lon=42.7168&q=' + encodeURIComponent(search);
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) return;
+    const json = await response.json();
+    for (const feature of json.features || []) {
+      const p = feature.properties || {};
+      const coords = feature.geometry?.coordinates || [];
+      const placeKind = String(p.osm_value || '').toLowerCase();
+      const isLocality = String(p.osm_key || '').toLowerCase() === 'place' && localityOnly.has(placeKind);
+      if (isLocality && !explicitCity) continue;
+      if (!explicitCity && p.country && !/россия|russia/i.test(p.country)) continue;
+      const name = p.name || p.street || p.locality || p.city || clean;
+      const city = p.city || p.town || p.village || p.locality;
+      const label = [name, p.housenumber, city && city !== name ? city : null].filter(Boolean).join(', ');
+      const detail = [p.district, city, p.state, p.country].filter((v, i, arr) => v && arr.indexOf(v) === i).join(', ');
+      addResult({
+        id: String(p.osm_type || '') + ':' + String(p.osm_id || '') + ':' + Number(coords[1]).toFixed(5) + ':' + Number(coords[0]).toFixed(5),
+        label, detail, latitude: coords[1], longitude: coords[0]
+      }, 'photon');
+    }
+  }));
 
-        const name = p.name || p.street || p.locality || p.city || clean;
-        const city = p.city || p.town || p.village || p.locality;
-        const label = [name, p.housenumber, city && city !== name ? city : null].filter(Boolean).join(', ');
-        const detail = [p.district, city, p.state, p.country].filter((v, i, arr) => v && arr.indexOf(v) === i).join(', ');
-        const key = String(p.osm_type || '') + ':' + String(p.osm_id || '') + ':' + latitude.toFixed(5) + ':' + longitude.toFixed(5);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        found.push({
-          id: key,
-          label,
-          detail: detail || 'Россия',
-          latitude,
-          longitude,
-          localRank: /ставропольский край|карачаево-черкес/i.test(detail) ? 0 : 1
+  // Резервный поиск OpenStreetMap запускается, только если Photon ничего не вернул.
+  if (found.length === 0) {
+    const fallbackQueries = explicitCity ? [clean] : [clean + ', Кисловодск, Россия', clean + ', Россия'];
+    for (const fallbackQuery of fallbackQueries) {
+      try {
+        const params = [
+          'format=jsonv2', 'addressdetails=1', 'limit=12', 'countrycodes=ru',
+          'accept-language=ru', 'q=' + encodeURIComponent(fallbackQuery)
+        ].join('&');
+        const response = await fetch('https://nominatim.openstreetmap.org/search?' + params, {
+          headers: { Accept: 'application/json', 'Accept-Language': 'ru' }
         });
-      }
-    } catch (_) {}
+        if (!response.ok) continue;
+        const rows = await response.json();
+        for (const row of rows || []) {
+          const a = row.address || {};
+          const city = a.city || a.town || a.village || a.municipality || a.hamlet || '';
+          const street = a.road || a.pedestrian || a.residential || a.street || '';
+          const number = a.house_number || '';
+          const label = street
+            ? [street, number, city].filter(Boolean).join(', ')
+            : String(row.name || row.display_name || clean).split(',').slice(0, 2).join(', ');
+          const detail = [a.suburb, city, a.state, a.country].filter(Boolean).join(', ');
+          addResult({
+            id: 'nominatim:' + String(row.place_id || row.osm_id || row.lat + ':' + row.lon),
+            label, detail, latitude: row.lat, longitude: row.lon
+          }, 'nominatim');
+        }
+        if (found.length) break;
+      } catch (_) {}
+    }
   }
 
-  // Для общих названий сначала показываем реальные объекты КМВ, затем другие города.
-  if (!explicitCity) found.sort((a, b) => a.localRank - b.localRank);
-  return found.slice(0, 12).map(({ localRank, ...item }) => item);
+  found.sort((a, b) => a.localRank - b.localRank);
+  return found.slice(0, 12).map(({ localRank, source, ...item }) => item);
 }
 
 function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, allowPickDestination = true }) {
