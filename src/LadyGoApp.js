@@ -1115,9 +1115,7 @@ function LadyGoAppContent() {
   useEffect(() => {
     if (authorTapCount >= 7) {
       setAuthorTapCount(0);
-      Alert.alert('Секрет LadyGo 🌸', 'Ты нашёл пасхалку! Спасибо, что поддерживаешь независимый проект.
-
-LadyGo создано с заботой — @acyma');
+      Alert.alert('Секрет LadyGo 🌸', 'Ты нашёл пасхалку! Спасибо, что поддерживаешь независимый проект.\n\nLadyGo создано с заботой — @acyma');
     }
   }, [authorTapCount]);
 
