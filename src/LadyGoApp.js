@@ -67,7 +67,14 @@ const TARIFFS = [
   { id: 'comfort', name: 'Комфорт', detail: 'Больше пространства' },
   { id: 'comfort_plus', name: 'Комфорт+', detail: 'Максимум пространства' },
 ];
-const detectVehicleClass = (make, model) => {\n  const v = (String(make || '') + ' ' + String(model || '')).toLowerCase();\n  if (/(mercedes|мерседес|bmw|бмв|audi|ауди|lexus|лексус|genesis|генезис|volvo|вольво|cadillac|кадиллак|porsche|порше|jaguar|ягуар|infiniti|инфинити|tesla|тесла|range rover|land rover|escalade|s.?class|e.?class|7.?series|5.?series|a8|a6|gle|gls|glc|x[34567]|q[578])/.test(v)) return 'comfort_plus';\n  if (/(toyota|тойота|camry|камри|rav4|highlander|skoda|шкода|octavia|superb|volkswagen|фольксваген|passat|tiguan|kia|киа|k5|optima|sorento|hyundai|хендай|sonata|santa fe|nissan|ниссан|teana|x-trail|mazda|мазда|cx.?5|honda|хонда|accord|cr.?v|ford|форд|mondeo|chevrolet|шевроле|malibu|cruze|mitsubishi|митсубиси|outlander|subaru|субару|legacy|peugeot|пежо|508|citroen|ситроен|c5)/.test(v)) return 'comfort';\n  return 'economy';\n};\nconst vehicleClassName = value => value === 'comfort_plus' ? 'Комфорт+' : value === 'comfort' ? 'Комфорт' : 'Эконом';\nconst PRICE_OPTIONS = [
+const detectVehicleClass = (make, model) => {
+  const v = (String(make || '') + ' ' + String(model || '')).toLowerCase();
+  if (/(mercedes|мерседес|bmw|бмв|audi|ауди|lexus|лексус|genesis|генезис|volvo|вольво|cadillac|кадиллак|porsche|порше|jaguar|ягуар|infiniti|инфинити|tesla|тесла|range rover|land rover|escalade|s.?class|e.?class|7.?series|5.?series|a8|a6|gle|gls|glc|x[34567]|q[578])/.test(v)) return 'comfort_plus';
+  if (/(toyota|тойота|camry|камри|rav4|highlander|skoda|шкода|octavia|superb|volkswagen|фольксваген|passat|tiguan|kia|киа|k5|optima|sorento|hyundai|хендай|sonata|santa fe|nissan|ниссан|teana|x-trail|mazda|мазда|cx.?5|honda|хонда|accord|cr.?v|ford|форд|mondeo|chevrolet|шевроле|malibu|cruze|mitsubishi|митсубиси|outlander|subaru|субару|legacy|peugeot|пежо|508|citroen|ситроен|c5)/.test(v)) return 'comfort';
+  return 'economy';
+};
+const vehicleClassName = value => value === 'comfort_plus' ? 'Комфорт+' : value === 'comfort' ? 'Комфорт' : 'Эконом';
+const PRICE_OPTIONS = [
   { id: 'child_seat', label: 'Детское кресло / бустер', price: 45 },
   { id: 'pet', label: 'Перевозка домашнего животного', price: 35 },
   { id: 'bulky_luggage', label: 'Крупный багаж / лыжи / сноуборд', price: 35 },
@@ -774,13 +781,15 @@ function TripChat({ order, userId }) {
 
 const shareTripDetails = async order => {
   const tariffName = TARIFFS.find(item => item.id === order.tariff_id)?.name || 'Поездка';
-  const stops = Array.isArray(order.stops) ? order.stops.map((stop, index) => (index + 1) + '. ' + stop.address).join('\n') : '';
+  const stops = Array.isArray(order.stops) ? order.stops.map((stop, index) => (index + 1) + '. ' + stop.address).join('
+') : '';
   const details = [
     'LadyGo — детали поездки',
     'Номер заказа: ' + order.id,
     'Дата: ' + new Date(order.created_at).toLocaleString(),
     'Откуда: ' + order.pickup_address,
-    stops ? 'Остановки:\n' + stops : '',
+    stops ? 'Остановки:
+' + stops : '',
     'Куда: ' + order.destination_address,
     'Услуга: ' + (order.service_type === 'courier' ? 'Курьерская доставка' : 'Поездка'),
     order.door_to_door ? 'От двери до двери' : '',
@@ -788,7 +797,8 @@ const shareTripDetails = async order => {
     'Стоимость: ' + money(order.price_rub),
     'Оплата: ' + (order.payment_method === 'transfer_to_driver' ? 'Перевод водителю' : 'Наличными'),
     'Статус: ' + (STATUS[order.status] || order.status),
-  ].filter(Boolean).join('\n');
+  ].filter(Boolean).join('
+');
   try {
     await Share.share({ message: details });
   } catch (_) {
@@ -1108,7 +1118,9 @@ function LadyGoAppContent() {
   useEffect(() => {
     if (authorTapCount >= 7) {
       setAuthorTapCount(0);
-      Alert.alert('Секрет LadyGo 🌸', 'Ты нашёл пасхалку! Спасибо, что поддерживаешь независимый проект.\n\nLadyGo создано с заботой — @acyma');
+      Alert.alert('Секрет LadyGo 🌸', 'Ты нашёл пасхалку! Спасибо, что поддерживаешь независимый проект.
+
+LadyGo создано с заботой — @acyma');
     }
   }, [authorTapCount]);
 
@@ -1793,7 +1805,8 @@ function LadyGoAppContent() {
     if (!pickup.trim() || !destinationText) return Alert.alert('Маршрут', 'Укажи адрес подачи и назначения.');
     setLocationBusy(true);
     try {
-      const addresses = [pickup.trim(), ...stopsText.split(/\n+/).map(x => x.trim()).filter(Boolean), destinationText];
+      const addresses = [pickup.trim(), ...stopsText.split(/
++/).map(x => x.trim()).filter(Boolean), destinationText];
       if (addresses.length > 22) throw new Error('Можно добавить не больше 20 промежуточных точек.');
       const points = [];
       for (let i = 0; i < addresses.length; i++) {
@@ -1847,7 +1860,8 @@ function LadyGoAppContent() {
     setDestination(order.destination_address || '');
     setServiceType(order.service_type === 'courier' ? 'courier' : 'ride');
     setDoorToDoor(Boolean(order.door_to_door));
-    setStopsText(Array.isArray(order.stops) ? order.stops.map(stop => stop.address).filter(Boolean).join('\n') : '');
+    setStopsText(Array.isArray(order.stops) ? order.stops.map(stop => stop.address).filter(Boolean).join('
+') : '');
     setTariff(TARIFFS.some(item => item.id === order.tariff_id) ? order.tariff_id : 'economy');
     setPaymentMethod(order.payment_method || 'cash');
     setPhone('');
@@ -1882,7 +1896,8 @@ function LadyGoAppContent() {
       if (!start || !Number.isFinite(Number(start.latitude)) || !Number.isFinite(Number(start.longitude))) {
         throw new Error('Не удалось точно определить адрес подачи. Укажи адрес ещё раз или выбери своё местоположение.');
       }
-      const stopAddresses = stopsText.split(/\n+/).map(x => x.trim()).filter(Boolean);
+      const stopAddresses = stopsText.split(/
++/).map(x => x.trim()).filter(Boolean);
       if (stopAddresses.length > 20) throw new Error('Можно добавить не больше 20 промежуточных точек.');
       const structuredStops = [];
       for (let i = 0; i < stopAddresses.length; i++) {
@@ -2604,10 +2619,14 @@ function LadyGoAppContent() {
         <Text style={s.label}>Быстрые пожелания</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
           {['Позвонить по прибытии', 'Написать вместо звонка', 'Помочь с багажом', 'Встречать у входа'].map(note => {
-            const selected = comment.split('\n').includes(note);
+            const selected = comment.split('
+').includes(note);
             return <TouchableOpacity key={note} onPress={() => setComment(current => {
-              const lines = current.split('\n').map(line => line.trim()).filter(Boolean);
-              return selected ? lines.filter(line => line !== note).join('\n') : [...lines, note].join('\n');
+              const lines = current.split('
+').map(line => line.trim()).filter(Boolean);
+              return selected ? lines.filter(line => line !== note).join('
+') : [...lines, note].join('
+');
             })} style={[s.savedChip, selected && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
               <Text style={s.savedChipText}>{selected ? '✓ ' : '+ '}{note}</Text>
             </TouchableOpacity>;
@@ -2825,7 +2844,9 @@ function LadyGoAppContent() {
         <Input label="Телефон" value={driverProfileDraft.phone || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, phone: value }))} keyboardType="phone-pad" />
         <Input label="Опыт" value={driverProfileDraft.experience || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, experience: value }))} />
         <Input label="Марка автомобиля" value={driverProfileDraft.vehicle_make || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_make: value }))} />
-        <Input label="Модель автомобиля" value={driverProfileDraft.vehicle_model || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_model: value }))} />\n        <Pill color={C.green}>Автоматически определённый класс: {vehicleClassName(detectVehicleClass(driverProfileDraft.vehicle_make, driverProfileDraft.vehicle_model))}</Pill>\n        <Text style={s.muted}>Класс определяется по марке и модели. Администратор проверяет автомобиль перед допуском к заказам.</Text>
+        <Input label="Модель автомобиля" value={driverProfileDraft.vehicle_model || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_model: value }))} />
+        <Pill color={C.green}>Автоматически определённый класс: {vehicleClassName(detectVehicleClass(driverProfileDraft.vehicle_make, driverProfileDraft.vehicle_model))}</Pill>
+        <Text style={s.muted}>Класс определяется по марке и модели. Администратор проверяет автомобиль перед допуском к заказам.</Text>
         <Input label="Цвет автомобиля" value={driverProfileDraft.vehicle_color || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_color: value }))} />
         <Input label="Государственный номер" value={driverProfileDraft.vehicle_plate || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_plate: value }))} />
         <Input label="Год выпуска" value={driverProfileDraft.vehicle_year || ''} onChangeText={value => setDriverProfileDraft(p => ({ ...p, vehicle_year: value }))} keyboardType="number-pad" />
@@ -2843,7 +2864,9 @@ function LadyGoAppContent() {
         <Button title={applicationAvatarUri ? 'Изменить фотографию' : 'Добавить фотографию'} secondary compact onPress={() => chooseProfilePhoto(setApplicationAvatarUri)} />
         <Text style={s.section}>Автомобиль</Text>
         <Input label="Марка" value={applicationVehicleMake} onChangeText={setApplicationVehicleMake} placeholder="Например, Kia" />
-        <Input label="Модель" value={applicationVehicleModel} onChangeText={setApplicationVehicleModel} placeholder="Например, Rio" />\n        <Pill color={C.green}>Предварительный тариф автомобиля: {vehicleClassName(detectVehicleClass(applicationVehicleMake, applicationVehicleModel))}</Pill>\n        <Text style={s.muted}>Класс определится автоматически по марке и модели, а администратор подтвердит его при проверке заявки.</Text>
+        <Input label="Модель" value={applicationVehicleModel} onChangeText={setApplicationVehicleModel} placeholder="Например, Rio" />
+        <Pill color={C.green}>Предварительный тариф автомобиля: {vehicleClassName(detectVehicleClass(applicationVehicleMake, applicationVehicleModel))}</Pill>
+        <Text style={s.muted}>Класс определится автоматически по марке и модели, а администратор подтвердит его при проверке заявки.</Text>
         <Input label="Цвет" value={applicationVehicleColor} onChangeText={setApplicationVehicleColor} />
         <Input label="Государственный номер" value={applicationVehiclePlate} onChangeText={setApplicationVehiclePlate} />
         <Input label="Год выпуска" value={applicationVehicleYear} onChangeText={setApplicationVehicleYear} keyboardType="number-pad" />
@@ -2910,7 +2933,8 @@ function LadyGoAppContent() {
           </View>
           <Button title={busy ? 'Обрабатываем…' : '✓  Принять заказ'} disabled={busy} onPress={() => acceptOfferedOrder(incomingOffer)} />
           <Button title="Отказать" secondary danger disabled={busy} onPress={() => skipOfferedOrder(incomingOffer)} />
-          {incomingOffer.tariff_id === 'economy' && driverProfile?.vehicle_class !== 'economy' && <Text style={[s.muted, { color: C.green, textAlign: 'center' }]}>Заказ «Эконом»: твой автомобиль предложен по цене «Эконом», потому что рядом нет свободных машин этого класса.</Text>}\n          <Text style={[s.muted, { textAlign: 'center' }]}>Если не ответить за 30 секунд, предложение перейдёт следующему водителю.</Text>
+          {incomingOffer.tariff_id === 'economy' && driverProfile?.vehicle_class !== 'economy' && <Text style={[s.muted, { color: C.green, textAlign: 'center' }]}>Заказ «Эконом»: твой автомобиль предложен по цене «Эконом», потому что рядом нет свободных машин этого класса.</Text>}
+          <Text style={[s.muted, { textAlign: 'center' }]}>Если не ответить за 30 секунд, предложение перейдёт следующему водителю.</Text>
         </View>
       </View>
     </Modal>}
