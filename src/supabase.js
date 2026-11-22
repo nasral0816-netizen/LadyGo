@@ -11,7 +11,7 @@ export const isConfigured =
   typeof SUPABASE_URL === 'string' &&
   SUPABASE_URL.startsWith('https://') &&
   typeof SUPABASE_KEY === 'string' &&
-  SUPABASE_KEY.startsWith('sb_publishable_');
+  (SUPABASE_KEY.startsWith('sb_publishable_') || SUPABASE_KEY.startsWith('eyJ'));
 
 export const supabase = isConfigured
   ? createClient(SUPABASE_URL, SUPABASE_KEY, {
