@@ -467,11 +467,53 @@ export default function LadyGoApp() {
     if (profile?.role !== 'admin' || !supabase) return;
     setAdminLoading(true);
     try {
-      const { data, error } = await supabase.from('orders').select('id,pickup_address,destination_address,status,price_rub,estimated_price_rub,created_at,passenger_id,driver_id').order('created_at', { ascending: false }).limit(100);
-      if (error) throw error;
-      setAdminOrders(data || []);
+      // Загружаем всю историю порциями, чтобы старые поездки не терялись из-за лимита Supabase.
+      const allOrders = [];
+      const pageSize = 500;
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase.from('orders')
+          .select('id,pickup_address,destination_address,status,price_rub,estimated_price_rub,created_at,passenger_id,driver_id,passenger_phone,requested_for,notes')
+          .order('created_at', { ascending: false }).range(from, from + pageSize - 1);
+        if (error) throw error;
+        allOrders.push(...(data || []));
+        if (!data || data.length < pageSize) break;
+      }
+
+      const driverIds = [...new Set(allOrders.map(o => o.driver_id).filter(Boolean))];
+      let profiles = [];
+      let applications = [];
+      if (driverIds.length) {
+        const [profileResult, applicationResult] = await Promise.all([
+          supabase.from('driver_profiles')
+            .select('driver_id,display_name,phone,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year')
+            .in('driver_id', driverIds),
+          supabase.from('driver_applications')
+            .select('user_id,full_name,phone,vehicle_make,vehicle_model,vehicle_plate,vehicle_color,vehicle_year,status')
+            .in('user_id', driverIds).eq('status', 'approved')
+        ]);
+        if (profileResult.error) throw profileResult.error;
+        if (applicationResult.error) throw applicationResult.error;
+        profiles = profileResult.data || [];
+        applications = applicationResult.data || [];
+      }
+      const profileById = new Map(profiles.map(d => [d.driver_id, d]));
+      const applicationById = new Map(applications.map(d => [d.user_id, d]));
+      setAdminOrders(allOrders.map(order => {
+        const driver = profileById.get(order.driver_id) || {};
+        const application = applicationById.get(order.driver_id) || {};
+        return {
+          ...order,
+          driver_full_name: application.full_name || driver.display_name || 'Имя не указано',
+          driver_phone: driver.phone || application.phone || '',
+          driver_vehicle_make: driver.vehicle_make || application.vehicle_make || '',
+          driver_vehicle_model: driver.vehicle_model || application.vehicle_model || '',
+          driver_vehicle_plate: driver.vehicle_plate || application.vehicle_plate || '',
+          driver_vehicle_color: driver.vehicle_color || application.vehicle_color || '',
+          driver_vehicle_year: driver.vehicle_year || application.vehicle_year || ''
+        };
+      }));
     } catch (e) {
-      Alert.alert('Не удалось загрузить заказы', translateError(e));
+      Alert.alert('Не удалось загрузить историю поездок', translateError(e));
     } finally {
       setAdminLoading(false);
     }
@@ -1134,12 +1176,18 @@ export default function LadyGoApp() {
         </View>)}
       </>}
       {adminSection==='orders' && <>
-        <View style={st.rowBetween}><Text style={st.heading}>Последние заказы</Text></View>
-        {adminOrders.length===0?<View style={st.emptyCard}><Text style={st.heading}>Заказов пока нет</Text></View>:adminOrders.map(o=><View key={o.id} style={st.orderCard}>
+        <View style={st.rowBetween}><Text style={st.heading}>История всех поездок</Text><Text style={st.muted}>{adminOrders.length} всего</Text></View>
+        {adminOrders.length===0?<View style={st.emptyCard}><Text style={st.heading}>Поездок пока нет</Text></View>:adminOrders.map(o=><View key={o.id} style={st.orderCard}>
           <View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status]||o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleString('ru-RU')}</Text></View>
           <Text style={st.orderAddress}>● {o.pickup_address||'Место подачи не указано'}</Text>
           <Text style={st.orderAddress}>● {o.destination_address||'Назначение не указано'}</Text>
-          <View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub?fmt(o.price_rub):o.estimated_price_rub?fmt(o.estimated_price_rub):'Цена не указана'}</Text><Text style={st.muted}>{o.driver_id?'Водитель назначен':'Без водителя'}</Text></View>
+          <View style={{backgroundColor:P.pale,borderRadius:12,padding:11,marginTop:8,gap:5}}>
+            <Text style={st.adminDetail}>Водитель: {o.driver_id ? o.driver_full_name : 'Не назначен'}</Text>
+            {o.driver_id ? <Text style={st.adminDetail}>Автомобиль: {[o.driver_vehicle_color,o.driver_vehicle_make,o.driver_vehicle_model].filter(Boolean).join(' ')||'Данные не указаны'}</Text> : null}
+            {o.driver_id ? <Text style={st.adminDetail}>Госномер: {o.driver_vehicle_plate||'Не указан'}</Text> : null}
+            {o.driver_id && o.driver_phone ? <Text style={st.adminDetail}>Телефон водителя: {o.driver_phone}</Text> : null}
+          </View>
+          <View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub?fmt(o.price_rub):o.estimated_price_rub?fmt(o.estimated_price_rub):'Цена не указана'}</Text><Text style={st.muted}>ID: {String(o.id).slice(0,8)}</Text></View>
         </View>)}
       </>}
       <Text style={st.footnote}>Решение об одобрении принимается после личной проверки возраста, водительских документов и автомобиля.</Text>
