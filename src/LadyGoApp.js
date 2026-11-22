@@ -2377,6 +2377,17 @@ function LadyGoAppContent() {
             </Text>
           </TouchableOpacity>
           <Text style={s.muted}>Откроется поиск адреса с выбором города</Text>
+          {savedPlaces.length > 0 && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 5 }}>
+            {savedPlaces.slice(0, 4).map(place => <TouchableOpacity key={'dest-' + place.id} onPress={async () => {
+              setDestination(place.address);
+              setDestinationCoords(null);
+              setRoute([]);
+              setRouteInfo(null);
+              const point = await geocodeAddress(place.address);
+              if (point) setDestinationCoords(point);
+              else Alert.alert('Не удалось найти адрес', 'Выбери точную точку назначения через поиск адресов.');
+            }} style={s.savedChip}><Text style={s.savedChipText}>↗ {place.label || 'Избранное'}</Text></TouchableOpacity>)}
+          </View>}
         </View>
         <Modal visible={destinationSearchOpen} animationType="slide" presentationStyle="fullScreen"
           onRequestClose={() => { setDestinationSearchOpen(false); setDestinationSuggestions([]); }}>
@@ -2474,6 +2485,18 @@ function LadyGoAppContent() {
       <Card><Text style={s.section}>Дополнительная информация</Text>
         <Input label="Телефон для связи (необязательно)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+7…" />
         <Input label="Комментарий водителю" value={comment} onChangeText={setComment} multiline placeholder="Например, подъехать к главному входу" />
+        <Text style={s.label}>Быстрые пожелания</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+          {['Позвонить по прибытии', 'Написать вместо звонка', 'Помочь с багажом', 'Встречать у входа'].map(note => {
+            const selected = comment.split('\n').includes(note);
+            return <TouchableOpacity key={note} onPress={() => setComment(current => {
+              const lines = current.split('\n').map(line => line.trim()).filter(Boolean);
+              return selected ? lines.filter(line => line !== note).join('\n') : [...lines, note].join('\n');
+            })} style={[s.savedChip, selected && { borderWidth: 1, borderColor: C.pink, backgroundColor: C.pale }]}>
+              <Text style={s.savedChipText}>{selected ? '✓ ' : '+ '}{note}</Text>
+            </TouchableOpacity>;
+          })}
+        </View>
         <Button title={busy ? 'Отправляем…' : 'Заказать поездку'} onPress={createOrder} disabled={busy} />
         <Text style={s.disclaimer}>Перед подтверждением водитель согласует с тобой итоговую стоимость и способ оплаты.</Text>
       </Card>
