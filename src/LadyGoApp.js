@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.9.6';
+const APP_VERSION = '6.7.9.7';
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
 const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
 const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
@@ -63,9 +63,18 @@ const PHONE = '+79911121227';
 const SUPPORT = 'ladygosupport@gmail.com';
 
 const TARIFFS = [
-  { id: 'economy', name: 'Эконом', detail: 'Для повседневных поездок', factor: 1 },
-  { id: 'comfort', name: 'Комфорт', detail: 'Больше пространства', factor: 1.35 },
-  { id: 'child', name: 'С детьми', detail: 'Поездка с ребёнком', factor: 1.2 },
+  { id: 'economy', name: 'Эконом', detail: 'Для повседневных поездок' },
+  { id: 'comfort', name: 'Комфорт', detail: 'Больше пространства' },
+  { id: 'comfort_plus', name: 'Комфорт+', detail: 'Максимум пространства' },
+];
+const PRICE_OPTIONS = [
+  { id: 'child_seat', label: 'Детское кресло / бустер', price: 45 },
+  { id: 'pet', label: 'Перевозка домашнего животного', price: 35 },
+  { id: 'bulky_luggage', label: 'Крупный багаж / лыжи / сноуборд', price: 35 },
+  { id: 'luggage_help', label: 'Помощь с багажом', price: 0 },
+  { id: 'text_only', label: 'Общение только текстом', price: 0 },
+  { id: 'quiet_ride', label: 'Тихая поездка', price: 0 },
+  { id: 'wheelchair', label: 'Инвалидное кресло', price: 0 },
 ];
 const ACTIVE = ['new', 'accepted', 'arrived', 'in_progress'];
 const STATUS = {
@@ -952,6 +961,10 @@ function LadyGoAppContent() {
   const [requestedFor, setRequestedFor] = useState('Как можно скорее');
   const [stopsText, setStopsText] = useState('');
   const [tariff, setTariff] = useState('economy');
+  const [selectedOptions, setSelectedOptions] = useState([]);
+  const [priceQuote, setPriceQuote] = useState(null);
+  const [priceLoading, setPriceLoading] = useState(false);
+  const [priceDetailsOpen, setPriceDetailsOpen] = useState(false);
   const [serviceType, setServiceType] = useState('ride');
   const [doorToDoor, setDoorToDoor] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('cash');
@@ -1112,23 +1125,8 @@ function LadyGoAppContent() {
   const driverCompletedOrders = useMemo(() => orders.filter(order => order.status === 'completed'), [orders]);
   const driverRecentEarnings = useMemo(() => driverCompletedOrders.reduce((sum, order) => sum + Number(order.price_rub || 0), 0), [driverCompletedOrders]);
   const unreadCount = notifications.filter(item => !item.read_at).length;
-  const selectedTariffRate = tariffRates.find(rate => rate.tariff_id === tariff && rate.is_active);
-  const fixedFare = null;
-  const hasCustomRate = selectedTariffRate && (
-    Number(selectedTariffRate.minimum_fare_rub) > 0 ||
-    Number(selectedTariffRate.base_fare_rub) > 0 ||
-    Number(selectedTariffRate.per_km_rub) > 0
-  );
-  const estimatedPrice = (() => {
-    if (!routeInfo || !selectedTariffRate) return null;
-    const km = Number(routeInfo.km);
-    const base = Number(selectedTariffRate.base_fare_rub || 0);
-    const perKm = Number(selectedTariffRate.per_km_rub || 0);
-    const minimum = Number(selectedTariffRate.minimum_fare_rub || 0);
-    if (!Number.isFinite(km) || km <= 0 || (base <= 0 && perKm <= 0 && minimum <= 0)) return null;
-    const factor = Number(TARIFFS.find(item => item.id === tariff)?.factor || 1);
-    return Math.round(Math.max(minimum, base + km * perKm) * factor);
-  })();
+  const estimatedPrice = priceQuote?.amount_rub ?? null;
+  const priceBreakdown = priceQuote?.breakdown || null;
 
   const loadProfile = useCallback(async currentUser => {
     if (!currentUser || !supabase) return null;
@@ -1797,6 +1795,7 @@ function LadyGoAppContent() {
       setCoords(start); setDestinationCoords(end); setStopCoords(points.slice(1, -1));
       setRoute(r.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })));
       setRouteInfo({ km: (r.distance / 1000).toFixed(1), minutes: Math.max(1, Math.round(r.duration / 60)) });
+      setPriceQuote(null);
     } catch (e) {
       setRoute([]); setRouteInfo(null); setStopCoords([]);
       Alert.alert('Не удалось построить маршрут', errorText(e));
@@ -1858,6 +1857,7 @@ function LadyGoAppContent() {
       return Alert.alert('Уточни адрес назначения', 'Выбери точный адрес из подсказок. Так LadyGo сохранит правильную точку на карте и построит маршрут без догадок.');
     }
     if (activeOrder) return Alert.alert('У тебя уже есть активный заказ', 'Заверши или отмени текущую поездку перед новым заказом.');
+    if (!priceQuote?.price_token || !priceQuote?.expires_at || new Date(priceQuote.expires_at).getTime() <= Date.now()) return Alert.alert('Цена устарела', 'Обнови расчёт стоимости перед оформлением заказа.');
     setBusy(true);
     try {
       let start = coords, end = destinationCoords;
@@ -1901,6 +1901,7 @@ function LadyGoAppContent() {
         service_type: serviceType,
         door_to_door: doorToDoor,
         estimated_price_rub: estimatedPrice,
+        price_quote_id: priceQuote?.price_token,
         payment_method: paymentMethod,
         status: 'new',
         ...(start ? { pickup_lat: start.latitude, pickup_lng: start.longitude } : {}),
