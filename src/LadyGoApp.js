@@ -508,7 +508,7 @@ function TripProgress({ status }) {
 function Card({ children, style }) { return <View style={[s.card, style]}>{children}</View>; }
 
 
-function MapLibreMap({ points = [], route = [], height = 245, followPoint = null, followLabel = 'Моё местоположение' }) {
+function MapLibreMap({ points = [], route = [], height = 245, followPoint = null, followLabel = 'Моё местоположение', initialCenter = null, onMapPress = null }) {
   const cameraRef = useRef(null);
   const [zoom, setZoom] = useState(13);
   const [following, setFollowing] = useState(false);
@@ -538,7 +538,7 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
         (Math.min(...allCoordinates.map(point => point[0])) + Math.max(...allCoordinates.map(point => point[0]))) / 2,
         (Math.min(...allCoordinates.map(point => point[1])) + Math.max(...allCoordinates.map(point => point[1]))) / 2,
       ]
-    : [42.7, 43.9];
+    : (initialCenter && Number.isFinite(Number(initialCenter.longitude)) && Number.isFinite(Number(initialCenter.latitude)) ? [Number(initialCenter.longitude), Number(initialCenter.latitude)] : [42.7, 43.9]);
   const spread = allCoordinates.length > 1
     ? Math.max(
         Math.max(...allCoordinates.map(point => point[0])) - Math.min(...allCoordinates.map(point => point[0])),
@@ -599,6 +599,7 @@ function MapLibreMap({ points = [], route = [], height = 245, followPoint = null
   return <View style={{ height, borderRadius: 15, overflow: 'hidden', backgroundColor: C.map }}>
     <MapLibreView
       style={{ flex: 1 }}
+      onPress={onMapPress ? event => { const coordinates = event?.geometry?.coordinates; if (Array.isArray(coordinates) && coordinates.length >= 2) onMapPress({ latitude: Number(coordinates[1]), longitude: Number(coordinates[0]) }); } : undefined}
       mapStyle={mapStyles[styleIndex].url}
       androidView="texture"
       attribution
@@ -2597,22 +2598,20 @@ function LadyGoAppContent() {
               <Text style={[s.muted, { fontSize: 13, lineHeight: 20 }]}>Введи улицу и дом. Затем нажми на подходящий вариант в списке ниже — адрес добавится в маршрут.</Text>
               <Text style={[s.label, { marginTop: 2 }]}>ИЛИ ВЫБЕРИ ТОЧКУ НА КАРТЕ</Text>
               <View style={{ height: 285, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: C.line }}>
-                <MapView mapType="none" style={{ flex: 1 }} region={destinationPickerRegion} onRegionChangeComplete={setDestinationPickerRegion} onPress={async event => {
-                  const point = event.nativeEvent.coordinate;
-                  setDestinationMapPoint(point);
-                  setDestinationMapAddress('Определяем адрес точки…');
-                  try {
-                    const results = await Location.reverseGeocodeAsync(point);
-                    const item = results?.[0] || {};
-                    const label = [item.street, item.streetNumber, item.city || item.subregion, item.region].filter(Boolean).join(', ');
-                    setDestinationMapAddress(label || `Точка ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`);
-                  } catch (_) {
-                    setDestinationMapAddress(`Точка ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`);
-                  }
-                }}>
-                  <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
-                  {destinationMapPoint && <Marker coordinate={destinationMapPoint} title="Пункт назначения" pinColor={C.pink} />}
-                </MapView>
+                <MapLibreMap height={285} initialCenter={destinationPickerRegion}
+                  points={destinationMapPoint ? [{ ...destinationMapPoint, label: 'Пункт назначения', color: C.pink }] : []}
+                  onMapPress={async point => {
+                    setDestinationMapPoint(point);
+                    setDestinationMapAddress('Определяем адрес точки…');
+                    try {
+                      const results = await Location.reverseGeocodeAsync(point);
+                      const item = results?.[0] || {};
+                      const label = [item.street, item.streetNumber, item.city || item.subregion, item.region].filter(Boolean).join(', ');
+                      setDestinationMapAddress(label || `Точка ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`);
+                    } catch (_) {
+                      setDestinationMapAddress(`Точка ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`);
+                    }
+                  }} />
               </View>
               <Text style={[s.muted, { fontSize: 10 }]}>© OpenStreetMap contributors</Text>
               <Text style={s.muted}>{destinationMapPoint ? destinationMapAddress || 'Точка выбрана' : 'Передвинь карту и нажми на нужное место — появится метка.'}</Text>
