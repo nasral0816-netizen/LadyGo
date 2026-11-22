@@ -55,7 +55,7 @@ const C = {
   white: '#FFFFFF', green: '#26865A', red: '#C34F63',
   blue: '#477FD1', map: '#F6F1ED',
 };
-const APP_VERSION = '6.7.9.12';
+const APP_VERSION = '6.7.9.14';
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY || '';
 const PROTOMAPS_STYLE_URL = process.env.EXPO_PUBLIC_PROTOMAPS_STYLE_URL || '';
 const DEFAULT_MAP_STYLE_URL = PROTOMAPS_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
@@ -2382,13 +2382,22 @@ function LadyGoAppContent() {
       <View><Text style={s.brandSmall}>LadyGo</Text><Text style={s.topSub}>Поездки с заботой</Text></View>
       <TouchableOpacity style={s.avatar} onPress={() => setTab('profile')}><Text style={s.avatarText}>{(profile?.email || 'L')[0].toUpperCase()}</Text></TouchableOpacity>
     </View>
-    <View style={s.rolebar}>
+    {(isDriver || isAdmin) && <View style={s.rolebar}>
+      <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700', paddingHorizontal: 8 }}>Режим приложения</Text>
       <TouchableOpacity activeOpacity={0.82} hitSlop={3} android_ripple={{ color: '#F5DCE6' }} accessibilityRole="button" accessibilityState={{ selected: mode === 'passenger' }} onPress={() => { setMode('passenger'); setTab('ride'); }} style={[s.roleButton, mode === 'passenger' && s.roleActive]}><Text style={[s.roleText, mode === 'passenger' && s.roleTextActive]}>Пассажир</Text></TouchableOpacity>
       {isDriver && <TouchableOpacity activeOpacity={0.82} hitSlop={3} android_ripple={{ color: '#F5DCE6' }} accessibilityRole="button" accessibilityState={{ selected: mode === 'driver' }} onPress={() => { setMode('driver'); setTab('ride'); }} style={[s.roleButton, mode === 'driver' && s.roleActive]}><Text style={[s.roleText, mode === 'driver' && s.roleTextActive]}>Водитель</Text></TouchableOpacity>}
       {isAdmin && <TouchableOpacity onPress={() => { setMode('admin'); setTab('ride'); }} style={[s.roleButton, mode === 'admin' && s.roleActive]}><Text style={[s.roleText, mode === 'admin' && s.roleTextActive]}>Администратор</Text></TouchableOpacity>}
-    </View>
+    </View>}
 
     {mode === 'passenger' && tab === 'ride' && <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
+      {!activeOrder && <Card>
+        <Text style={s.title}>Заказать поездку легко</Text>
+        <Text style={s.address}>1. Укажи, где тебя забрать.</Text>
+        <Text style={s.address}>2. Выбери, куда нужно приехать.</Text>
+        <Text style={s.address}>3. Проверь маршрут и нажми «Заказать поездку».</Text>
+        <Text style={s.muted}>Если нужна помощь, позвони водителю — он подскажет, как оформить заказ.</Text>
+        <Button title="Позвонить и заказать по телефону" secondary onPress={() => Linking.openURL('tel:' + PHONE)} />
+      </Card>}
       {activeOrder && <Card><View style={s.rowBetween}><Pill>{STATUS[activeOrder.status] || activeOrder.status}</Pill><Text style={s.price}>{money(activeOrder.price_rub)}</Text></View><Text style={s.address}>Откуда: {activeOrder.pickup_address}</Text><Text style={s.address}>Куда: {activeOrder.destination_address}</Text><TripProgress status={activeOrder.status} /><TripMap order={activeOrder} driverLocation={driverLocation} assignedDriver={assignedDriver} />{activeOrder.status === 'new' && <Text style={s.muted}>Ищем свободного водителя. Как только заказ примут, появятся автомобиль и примерное время прибытия.</Text>}
         {['new','accepted','arrived'].includes(activeOrder.status) && <Button title={busy ? 'Отменяем…' : 'Отменить поездку'} danger secondary compact disabled={busy} onPress={() => cancelOrder(activeOrder)} />}
         <View style={s.row}>
@@ -2791,6 +2800,13 @@ function LadyGoAppContent() {
 
     {mode === 'driver' && <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.pink} />} >
       <Text style={s.title}>Рабочий экран</Text>
+      <Card>
+        <Text style={s.heading}>Как начать работу</Text>
+        <Text style={s.address}>1. Нажми «Выйти на линию».</Text>
+        <Text style={s.address}>2. Разреши доступ к геопозиции.</Text>
+        <Text style={s.address}>3. Когда придёт заказ, проверь адреса и нажми «Принять заказ».</Text>
+        <Text style={s.muted}>Когда закончишь работу, нажми «Завершить смену».</Text>
+      </Card>
       <View style={s.stats}>
         <Card style={s.stat}><Text style={s.statNum}>{driverCompletedOrders.length}</Text><Text style={s.muted}>Завершено</Text></Card>
         <Card style={s.stat}><Text style={s.statNum}>{Math.round(driverRecentEarnings).toLocaleString('ru-RU')} ₽</Text><Text style={s.muted}>Получено по завершённым</Text></Card>
@@ -3159,18 +3175,18 @@ const s = StyleSheet.create({
   locButton: { position: 'absolute', bottom: 12, right: 12, backgroundColor: C.white, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, elevation: 3 },
   locText: { color: C.ink, fontSize: 12, fontWeight: '700' },
   card: { backgroundColor: C.white, borderRadius: 18, borderWidth: 1, borderColor: '#EEE8EB', padding: 17, gap: 13, shadowColor: '#33232A', shadowOpacity: 0.025, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
-  title: { fontSize: 24, fontWeight: '800', color: C.ink, letterSpacing: -0.6, lineHeight: 30 },
-  heading: { fontSize: 19, fontWeight: '800', color: C.ink, letterSpacing: -0.25 },
+  title: { fontSize: 26, fontWeight: '800', color: C.ink, letterSpacing: -0.6, lineHeight: 33 },
+  heading: { fontSize: 21, fontWeight: '800', color: C.ink, letterSpacing: -0.25 },
   section: { color: C.ink, fontSize: 16, fontWeight: '750', marginTop: 5, letterSpacing: -0.15 },
   field: { gap: 6, marginTop: 4 },
-  label: { color: '#81757C', fontSize: 12, fontWeight: '700', letterSpacing: 0.1 },
-  input: { borderWidth: 1, borderColor: '#E8E1E5', borderRadius: 14, paddingHorizontal: 15, paddingVertical: 14, color: C.ink, backgroundColor: '#FFFFFF', fontSize: 16, minHeight: 50 },
-  button: { backgroundColor: C.pink, paddingVertical: 15, paddingHorizontal: 18, minHeight: 52, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 5, overflow: 'hidden', shadowColor: C.pinkDark, shadowOpacity: 0.1, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  label: { color: '#71656C', fontSize: 14, fontWeight: '800', letterSpacing: 0.1 },
+  input: { borderWidth: 1, borderColor: '#E8E1E5', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 16, color: C.ink, backgroundColor: '#FFFFFF', fontSize: 17, minHeight: 56 },
+  button: { backgroundColor: C.pink, paddingVertical: 17, paddingHorizontal: 18, minHeight: 58, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 5, overflow: 'hidden', shadowColor: C.pinkDark, shadowOpacity: 0.1, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   buttonSecondary: { backgroundColor: '#FFF8FA', borderWidth: 1, borderColor: '#F0DCE4' },
   buttonDisabled: { opacity: 0.42, elevation: 0, shadowOpacity: 0 },
   buttonDanger: { backgroundColor: '#FFF5F6', borderColor: '#F1D6DC' },
-  buttonText: { color: C.white, fontWeight: '800', fontSize: 14, letterSpacing: 0.05 },
-  muted: { color: '#877B82', fontSize: 13, lineHeight: 19 },
+  buttonText: { color: C.white, fontWeight: '800', fontSize: 16, letterSpacing: 0.05 },
+  muted: { color: '#746870', fontSize: 14, lineHeight: 21 },
   routeInfo: { color: C.pinkDark, fontWeight: '800', fontSize: 13, paddingTop: 4 },
   tariff: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderRadius: 16, borderWidth: 1, borderColor: C.line, backgroundColor: C.white },
   tariffSelected: { borderColor: C.pink, backgroundColor: C.pale },
@@ -3194,7 +3210,7 @@ const s = StyleSheet.create({
   navBadge: { position: 'absolute', top: -5, right: -12, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: C.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3, borderWidth: 1, borderColor: C.white },
   navBadgeText: { color: C.white, fontSize: 9, fontWeight: '900' },
   navIcon: { color: C.muted, fontSize: 22, fontWeight: '700' },
-  navLabel: { color: C.muted, fontSize: 11, fontWeight: '600' },
+  navLabel: { color: '#71656C', fontSize: 12, fontWeight: '700' },
   savedChip: { backgroundColor: C.pale, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   savedChipText: { color: C.pinkDark, fontWeight: '700', fontSize: 12 },
 });
