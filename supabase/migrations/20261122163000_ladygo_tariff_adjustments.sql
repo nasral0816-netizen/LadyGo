@@ -1,5 +1,10 @@
 -- LadyGo Kislovodsk tariff adjustments.
--- Детский is 25% above Женский on all distance/time/waiting rates.
+-- Женский retains its existing price; Детский is 25% above it on distance/time/waiting rates.
+
+update public.city_tariff_configs
+set name = 'Женский', updated_at = now()
+where city_id = 'kislovodsk' and tariff_id = 'economy';
+
 -- Delivery starts at 300 RUB and includes 2 km / 5 minutes, then uses
 -- moderate distance/time rates. Existing fixed courier route price remains 300 RUB.
 
