@@ -42,7 +42,7 @@ pass('Driver media bucket is private', /set public = false/i.test(securityMigrat
 pass('Assigned passenger media access is scoped to active trips', /o\.passenger_id\s*=\s*\(select auth\.uid\(\)\)/.test(securityMigration) && /o\.status in \('accepted','arrived','in_progress'\)/.test(securityMigration));
 pass('Driver cannot override stored fare', /Driver cannot change the quoted order price/.test(securityMigration));
 pass('Drivers can only read their live offers and assigned trips', /drop policy if exists "driver read orders"/.test(orderVisibilityMigration) && /oo\.status = 'pending'/.test(orderVisibilityMigration) && /orders\.driver_id = \(select auth\.uid\(\)\)/.test(orderVisibilityMigration));
-pass('Dispatch loop requires a server-only secret and calls the dispatch RPC', /LADYGO_DISPATCH_SECRET/.test(dispatchLoop) && /x-ladygo-dispatch-secret/.test(dispatchLoop) && /ladygo_dispatch_next_driver/.test(dispatchLoop) && /service_role/.test(dispatchLoop));
+pass('Dispatch loop requires a server-only secret and calls the dispatch RPC', /LADYGO_DISPATCH_SECRET/.test(dispatchLoop) && /x-ladygo-dispatch-secret/.test(dispatchLoop) && /ladygo_dispatch_next_driver/.test(dispatchLoop) && /SUPABASE_SERVICE_ROLE_KEY/.test(dispatchLoop));
 pass('Dispatch loop JWT bypass is protected by a dedicated secret', /\[functions\.dispatch-loop\][\s\S]*verify_jwt = false/.test(supabaseConfig));
 pass('Push function verifies webhook secret server-side', /ladygo_verify_push_webhook_secret/.test(pushFunction) && /SUPABASE_SERVICE_ROLE_KEY/.test(pushFunction));
 pass('Push token cleanup is restricted to the authenticated account', /where user_id = auth\.uid\(\)/.test(pushTokenMigration) && /where driver_id = auth\.uid\(\)/.test(pushTokenMigration));
