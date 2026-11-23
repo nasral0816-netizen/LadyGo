@@ -26,6 +26,10 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Report npm dependency advisories
+        run: |
+          npm audit --json > /tmp/ladygo-npm-audit.json || true
+          node -e 'const a=require("/tmp/ladygo-npm-audit.json"); const v=a.vulnerabilities||{}; console.log(JSON.stringify({summary:a.metadata?.vulnerabilities, packages:Object.entries(v).map(([name,x])=>({name,severity:x.severity,range:x.range,fixAvailable:x.fixAvailable}))},null,2));'
       - name: Validate LadyGo security and dispatch contracts
         run: node scripts/validate-ladygo.mjs
       - name: Setup Deno for Supabase Edge Function checks
