@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Platform, SafeAreaView, ScrollView,
-  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image, Vibration
+  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image
 } from 'react-native';
 import { YandexMapView, Marker, Polyline, geocodeAddress, findDrivingRoutes } from 'expo-yandex-mapkit';
 import * as Location from 'expo-location';
@@ -77,7 +77,7 @@ const TARIFFS = [
   { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '♡' },
   { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '⌂' }
 ];
-const STATUS = { new: 'Ищем водителя', accepted: 'Водитель назначен', arrived: 'Водитель на месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
+const STATUS = { draft: 'Маршрут сохранён', new: 'Заявка', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
 
 const translateError = error => {
@@ -252,8 +252,6 @@ export default function LadyGoApp() {
   const [quote, setQuote] = useState(null);
   const [orders, setOrders] = useState([]);
   const [presentationOrders, setPresentationOrders] = useState([]);
-  const [offerState, setOfferState] = useState(null);
-  const [offerSeconds, setOfferSeconds] = useState(15);
   const [activeOrder, setActiveOrder] = useState(null);
   const [phone, setPhone] = useState('');
   const [driverOrders, setDriverOrders] = useState([]);
@@ -840,61 +838,21 @@ export default function LadyGoApp() {
     return () => { alive = false; };
   }, [pickup, destination, routeInfo, tariff]);
 
-  const virtualDrivers = ['Тестовый водитель №1', 'Тестовый водитель №2', 'Тестовый водитель №3'];
-  const rejectVirtualOffer = (reason = 'Отказ') => {
-    setOfferState(current => {
-      if (!current) return null;
-      const nextIndex = current.driverIndex + 1;
-      if (nextIndex >= virtualDrivers.length) {
-        setPresentationOrders(rows => rows.map(row => row.id === current.orderId ? { ...row, status: 'no_virtual_driver' } : row));
-        return null;
-      }
-      return { ...current, driverIndex: nextIndex, token: Date.now() };
-    });
-    setOfferSeconds(15);
-  };
-  const acceptVirtualOffer = () => {
-    if (!offerState) return;
-    setPresentationOrders(rows => rows.map(row => row.id === offerState.orderId ? { ...row, status: 'accepted', virtual_driver: virtualDrivers[offerState.driverIndex] } : row));
-    Vibration.cancel();
-    setOfferState(null);
-    Alert.alert('Тестовый водитель принял заказ', 'Назначение сохранено только в локальной тестовой истории.');
-  };
-  useEffect(() => {
-    if (!offerState) { Vibration.cancel(); return; }
-    setOfferSeconds(15);
-    Vibration.vibrate([0, 500, 350, 500, 350, 500], true);
-    const started = Date.now();
-    const timer = setInterval(() => {
-      const left = Math.max(0, 15 - Math.floor((Date.now() - started) / 1000));
-      setOfferSeconds(left);
-      if (left <= 0) {
-        clearInterval(timer);
-        Vibration.cancel();
-        rejectVirtualOffer('Тайм-аут');
-      }
-    }, 250);
-    return () => { clearInterval(timer); Vibration.cancel(); };
-  }, [offerState?.token]);
-
   const createOrder = async () => {
     if (!session?.user) return;
     if (!pickup || !destination || !routeInfo) return Alert.alert('Укажи маршрут', 'Выбери оба адреса и дождись построения маршрута.');
-    // Локальная презентационная запись: не отправляется водителям и не сохраняется на сервере.
     const km = Number(routeInfo.km) || 0;
     const tariffFactor = tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1;
-    // Только локальная тестовая оценка, не тариф для реальных поездок.
     const amount = Math.round((55 + km * 14 + (Number(routeInfo.minutes) || 0) * 1.5) * tariffFactor / 5) * 5;
-    const localOrder = {
-      id: 'local-' + Date.now(), localPresentation: true,
+    const savedRoute = {
+      id: 'route-' + Date.now(), localPresentation: true, status: 'draft',
       pickup_address: pickupText, destination_address: destinationText,
-      estimated_price_rub: amount, price_rub: amount, status: 'new',
+      estimated_price_rub: amount, price_rub: amount,
       payment_method: payment, created_at: new Date().toISOString(), tariff_id: tariff
     };
-    setPresentationOrders(current => [localOrder, ...current]);
-    setOfferState({ orderId: localOrder.id, driverIndex: 0, token: Date.now() });
+    setPresentationOrders(current => [savedRoute, ...current]);
     setTab('orders');
-    Alert.alert('Маршрут сохранён', 'Запись сохранена только на этом устройстве. Заказ не отправляется водителям.');
+    Alert.alert('Маршрут сохранён', 'Маршрут и предварительная стоимость сохранены на этом устройстве. Заказ водителю не отправляется.');
   };
 
   const signOut = async () => { await supabase.auth.signOut(); setTab('ride'); };
@@ -1000,17 +958,6 @@ export default function LadyGoApp() {
       </TouchableOpacity>}
       <TouchableOpacity style={st.avatar} onPress={() => setTab('profile')}><Text style={st.avatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></TouchableOpacity>
     </View>
-    {offerState && <View style={{ marginHorizontal: 14, marginTop: 10, padding: 15, borderRadius: 18, backgroundColor: '#FFF0F5', borderWidth: 1, borderColor: P.pink, gap: 8 }}>
-      <Text style={{ color: P.pinkDark, fontSize: 11, fontWeight: '900' }}>ТЕСТОВАЯ ЗАЯВКА · ВИРТУАЛЬНЫЙ ВОДИТЕЛЬ</Text>
-      <Text style={{ color: P.ink, fontSize: 18, fontWeight: '900' }}>{virtualDrivers[offerState.driverIndex]}</Text>
-      <Text style={{ color: P.muted, fontSize: 13 }}>Новый заказ · сигнал и ожидание ответа</Text>
-      <Text style={{ color: P.pinkDark, fontSize: 28, fontWeight: '900', textAlign: 'center' }}>{offerSeconds} сек.</Text>
-      <View style={{ flexDirection: 'row', gap: 9 }}>
-        <TouchableOpacity onPress={acceptVirtualOffer} style={{ flex: 1, backgroundColor: P.green, borderRadius: 12, padding: 13, alignItems: 'center' }}><Text style={{ color: '#FFF', fontWeight: '900' }}>Принять</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => { Vibration.cancel(); rejectVirtualOffer(); }} style={{ flex: 1, backgroundColor: '#FFFFFF', borderColor: P.line, borderWidth: 1, borderRadius: 12, padding: 13, alignItems: 'center' }}><Text style={{ color: P.ink, fontWeight: '900' }}>Отказать</Text></TouchableOpacity>
-      </View>
-      <Text style={{ color: P.muted, fontSize: 10 }}>При отказе или тайм-ауте карточка перейдёт следующему виртуальному водителю. Это локальная симуляция.</Text>
-    </View>}
     {tab === 'ride' && <View style={{ flex: 1 }}>
       <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination}/>
       <ScrollView style={st.sheet} contentContainerStyle={st.sheetContent} keyboardShouldPersistTaps="handled">
@@ -1030,7 +977,7 @@ export default function LadyGoApp() {
         <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>Р</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
         <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || busy}>
-          {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
+          {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Сохранить маршрут</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={st.phoneOrderBtn} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com?subject=Поддержка%20LadyGo')}>
           <Text style={st.phoneOrderText}>✉  Написать в поддержку</Text>
@@ -1060,7 +1007,7 @@ export default function LadyGoApp() {
         </View>
         {renderTripChat()}
       </>}
-      {orders.length + presentationOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет поездок</Text><Text style={st.muted}>Оформленные заказы появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Заказать поездку</Text></TouchableOpacity></View> :
+      {orders.length + presentationOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет поездок</Text><Text style={st.muted}>Оформленные заказы появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Сохранить маршрут</Text></TouchableOpacity></View> :
         [...presentationOrders, ...orders].map(o => {
           const driverStats = o.driver_id ? driverRatingStats[o.driver_id] : null;
           const canRate = o.status === 'completed' && o.driver_id && !ratedOrderIds.includes(o.id);
