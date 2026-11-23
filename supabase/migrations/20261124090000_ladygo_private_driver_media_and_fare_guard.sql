@@ -21,7 +21,11 @@ using (
   bucket_id = 'ladygo-driver-media'
   and (
     (storage.foldername(name))[1] = (select auth.uid()::text)
-    or public.ladygo_is_admin()
+    or exists (
+      select 1 from public.profiles admin_profile
+      where admin_profile.id = (select auth.uid())
+        and admin_profile.role = 'admin'
+    )
     or exists (
       select 1
       from public.driver_profiles dp
