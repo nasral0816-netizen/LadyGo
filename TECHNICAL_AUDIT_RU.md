@@ -24,8 +24,8 @@
 1. Push-token registration/deletion через authenticated RPC и foreground notification handler.
 2. Private driver media bucket migration с ограничением доступа.
 3. Ограничение видимости заказов водителем и запрет водителю переопределять цену при accept.
-4. Проверки статуса водительской анкеты в серверных процедурах исходной dispatch-модели — не применять к live DB без review и не включать реальную диспетчеризацию.
-5. Добавленные в ходе работы dispatch-loop и scheduler удалены из PR по последнему ограничению владельца.
+4. Серверные проверки approved driver application, атомарное принятие offer, state machine статусов, GPS trip track и contact lease; требуют live DB review и multi-device E2E.
+5. Защищённая Edge Function dispatch-loop и pg_cron/pg_net/Vault scheduler включены в PR; deployment и cron execution ещё не подтверждены.
 6. Server quote/create-order migration и Edge Function подготовлены как часть защищённого сохранения заявки; live deployment не выполнялся, тарификация не подтверждена дорожным маршрутом.
 7. Документы: правовой чек-лист, интеграции/эксплуатация, матрица приёмки.
 
@@ -60,5 +60,5 @@
 6. Проверить поддержку, вложения, ответы и уведомления.
 7. Проверить push, offline/reconnect и резервное восстановление.
 8. Провести E2E на синтетических аккаунтах и двух Android устройствах.
-9. Оставить real dispatch, trip coordination и payments за пределами этого этапа согласно ограничению владельца.
+9. Завершить и проверить real dispatch/trip coordination на staging и двух синтетических аккаунтах; реальные платежи не включать без провайдера и отдельной приёмки.
 10. Получить независимый legal/privacy/security sign-off до любого пилота.
