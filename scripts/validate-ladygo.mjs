@@ -13,6 +13,9 @@ const supabaseConfig = read('supabase/config.toml');
 const pushTokenMigration = read('supabase/migrations/20261124100000_ladygo_push_token_lifecycle.sql');
 const orderVisibilityMigration = read('supabase/migrations/20261124110000_ladygo_limit_order_visibility_to_offers.sql');
 const verifiedDriverMigration = read('supabase/migrations/20261124120000_ladygo_verified_driver_dispatch_and_trip_audit.sql');
+const pricingMigration = read('supabase/migrations/20261124130000_ladygo_signed_price_quotes.sql');
+const pricingFunction = read('supabase/functions/pricing-service/index.ts');
+const schedulerMigration = read('supabase/migrations/20261124140000_ladygo_dispatch_scheduler.sql');
 
 const checks = [];
 const pass = (name, ok, detail = '') => checks.push({ name, ok: Boolean(ok), detail });
