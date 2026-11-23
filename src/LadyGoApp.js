@@ -1336,7 +1336,7 @@ export default function LadyGoApp() {
 
       <TouchableOpacity style={st.profileRow} onPress={() => { setTab('support'); loadMyTickets(); }}><Text style={st.profileRowIcon}>?</Text><Text style={st.profileRowText}>Поддержка и обращения</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.logout} onPress={signOut}><Text style={st.logoutText}>Выйти из аккаунта</Text></TouchableOpacity>
-      <Text style={st.footnote}>LadyGo · 6.8.0 · Создано независимым автором @acyma</Text>
+      <Text style={st.footnote}>LadyGo · 6.9.0 · Создано независимым автором @acyma</Text>
     </ScrollView>}
     <View style={st.bottomNav}>
       {([['ride','⌖','Заказать'],['orders','◷','Поездки'],['profile','○','Профиль']]).map(([id,icon,label]) => <TouchableOpacity key={id} style={st.navItem} onPress={() => setTab(id)}><Text style={[st.navIcon, tab === id && st.navActive]}>{icon}</Text><Text style={[st.navLabel, tab === id && st.navActive]}>{label}</Text></TouchableOpacity>)}
