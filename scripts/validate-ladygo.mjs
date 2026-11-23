@@ -35,7 +35,7 @@ pass('Assigned passenger media access is scoped to active trips', /o\.passenger_
 pass('Driver cannot override stored fare', /Driver cannot change the quoted order price/.test(securityMigration));
 pass('Drivers can only read their live offers and assigned trips', /drop policy if exists "driver read orders"/.test(orderVisibilityMigration) && /oo\.status = 'pending'/.test(orderVisibilityMigration) && /orders\.driver_id = \(select auth\.uid\(\)\)/.test(orderVisibilityMigration));
 pass('Push function verifies webhook secret server-side', /ladygo_verify_push_webhook_secret/.test(pushFunction) && /SUPABASE_SERVICE_ROLE_KEY/.test(pushFunction));
-pass('Push token ownership is exclusive across accounts', /delete from public\.user_push_tokens/.test(pushTokenMigration) && /delete from public\.driver_push_tokens/.test(pushTokenMigration));
+pass('Push token cleanup is restricted to the authenticated account', /where user_id = auth\.uid\(\)/.test(pushTokenMigration) && /where driver_id = auth\.uid\(\)/.test(pushTokenMigration));
 
 const failed = checks.filter(check => !check.ok);
 for (const check of checks) {
