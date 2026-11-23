@@ -785,9 +785,18 @@ export default function LadyGoApp() {
     if (!register && !isEmail && (phoneDigits.length < 10 || phoneDigits.length > 15)) {
       return Alert.alert('Проверь номер', 'Укажи номер телефона в международном формате.');
     }
-    // Временная схема без SMS: телефон преобразуется в технический email для Supabase Auth.
-    // Вход по email оставлен для существующего аккаунта администратора.
-    const authEmail = isEmail && !register ? identifier.toLowerCase() : 'phone-' + phoneDigits + '@auth.ladygo.app';
+    // Для двух существующих аккаунтов телефон служит новым логином:
+    // авторизация идёт в прежний Supabase Auth аккаунт, поэтому пароль и ID сохраняются.
+    // Остальные телефонные аккаунты используют технический email; SMS-кода здесь нет.
+    const legacyPhoneLogins = {
+      '79911124353': 'nasral08.16@gmail.com',
+      '79911116922': 'ladygoadmin@gmail.com',
+    };
+    const authEmail = isEmail && !register
+      ? identifier.toLowerCase()
+      : (!register && legacyPhoneLogins[phoneDigits]
+        ? legacyPhoneLogins[phoneDigits]
+        : 'phone-' + phoneDigits + '@auth.ladygo.app');
     setBusy(true);
     try {
       const result = register
