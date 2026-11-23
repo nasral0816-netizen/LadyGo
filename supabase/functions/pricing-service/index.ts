@@ -46,7 +46,7 @@ Deno.serve(async(req:Request)=>{
       if(claims.sub!==userData.user.id||!claims.quote_id)return reply({error:"Price quote does not belong to this passenger"},403);
       const idem=String(body.idempotency_key??"");if(idem.length<12||idem.length>128)return reply({error:"Invalid idempotency key"},400);
       const hash=toHex(new Uint8Array(await crypto.subtle.digest("SHA-256",enc.encode(token))));
-      const {data:order,error:orderError}=await admin.rpc("ladygo_create_order_from_quote",{p_passenger_id:userData.user.id,p_quote_id:claims.quote_id,p_token_hash:hash,p_idempotency_key:idem,p_pickup_address:String(body.pickup_address??""),p_destination_address:String(body.destination_address??""),p_payment_method:body.payment_method==="card"?"card":"cash"});
+      const {data:order,error:orderError}=await admin.rpc("ladygo_create_order_from_quote",{p_passenger_id:userData.user.id,p_quote_id:claims.quote_id,p_token_hash:hash,p_idempotency_key:idem,p_pickup_address:String(body.pickup_address??""),p_destination_address:String(body.destination_address??""),p_payment_method:body.payment_method==="transfer_to_driver"?"transfer_to_driver":"cash"});
       if(orderError){if(/quote|expired|already used/i.test(orderError.message??""))return reply({error:"Price quote expired. Request a new quote."},409);if(/active order|duplicate|unique/i.test(orderError.message??""))return reply({error:"An active order already exists"},409);throw orderError;}
       return reply({order});
     }
