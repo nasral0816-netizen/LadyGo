@@ -26,16 +26,27 @@ function calculatePolylineKm(points) {
 }
 
 function parseRouteMinutes(value, fallbackKm) {
+  // Запасная оценка для тестового интерфейса: не допускаем абсурдные
+  // значения вроде 1 минуты на сотни километров.
+  const fallback = Math.max(1, Math.round((fallbackKm / 45) * 60 + 5));
+  let candidate = null;
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    return Math.max(1, Math.round(value > 600 ? value / 60 : value));
+    candidate = Math.round(value > 600 ? value / 60 : value);
+  } else if (value && typeof value === 'object') {
+    const nested = value.minutes ?? value.durationMinutes ?? value.seconds ?? value.durationSeconds ?? value.value ?? value.text;
+    if (nested != null && nested !== value) return parseRouteMinutes(nested, fallbackKm);
+  } else {
+    const text = String(value || '').toLowerCase();
+    const hours = Number(text.match(/(\\d+)\\s*(?:ч|час)/)?.[1] || 0);
+    const minutes = Number(text.match(/(\\d+)\\s*(?:м|мин)/)?.[1] || 0);
+    const compact = text.match(/(\\d+)\\s*h(?:ours?)?\\s*(?:(\\d+)\\s*m)?/);
+    if (hours || minutes) candidate = hours * 60 + minutes;
+    else if (compact) candidate = Number(compact[1]) * 60 + Number(compact[2] || 0);
   }
-  const text = String(value || '').toLowerCase();
-  const hours = Number(text.match(/(\\d+)\\s*(?:ч|час)/)?.[1] || 0);
-  const minutes = Number(text.match(/(\\d+)\\s*(?:м|мин)/)?.[1] || 0);
-  if (hours || minutes) return hours * 60 + minutes;
-  const compact = text.match(/(\\d+)\\s*h(?:ours?)?\\s*(?:(\\d+)\\s*m)?/);
-  if (compact) return Number(compact[1]) * 60 + Number(compact[2] || 0);
-  return Math.max(1, Math.round((fallbackKm / 30) * 60 + 3));
+  // Время маршрута не может означать среднюю скорость выше 120 км/ч.
+  const physicallyPlausibleMinimum = Math.max(1, Math.ceil((fallbackKm / 120) * 60));
+  if (!Number.isFinite(candidate) || candidate < physicallyPlausibleMinimum) return fallback;
+  return candidate;
 }
 
 function decodeBase64Image(base64) {
@@ -884,7 +895,8 @@ export default function LadyGoApp() {
     // Локальная презентационная запись: не отправляется водителям и не сохраняется на сервере.
     const km = Number(routeInfo.km) || 0;
     const tariffFactor = tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1;
-    const amount = Math.max(150, Math.round((120 + km * 32 + (Number(routeInfo.minutes) || 0) * 3) * tariffFactor / 10) * 10);
+    // Только локальная тестовая оценка, не тариф для реальных поездок.
+    const amount = Math.max(250, Math.round((250 + km * 42 + (Number(routeInfo.minutes) || 0) * 3) * tariffFactor / 50) * 50);
     const localOrder = {
       id: 'local-' + Date.now(), localPresentation: true,
       pickup_address: pickupText, destination_address: destinationText,
@@ -994,7 +1006,7 @@ export default function LadyGoApp() {
   </View>;
 
   const previewFare = routeInfo
-    ? Math.max(150, Math.round((120 + (Number(routeInfo.km) || 0) * 32 + (Number(routeInfo.minutes) || 0) * 3) * (tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1) / 10) * 10)
+    ? Math.max(250, Math.round((250 + (Number(routeInfo.km) || 0) * 42 + (Number(routeInfo.minutes) || 0) * 3) * (tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1) / 50) * 50)
     : null;
 
   if (boot) return <View style={st.loading}><ActivityIndicator size="large" color={P.pink}/><Text style={st.muted}>Загружаем LadyGo…</Text></View>;
@@ -1046,9 +1058,9 @@ export default function LadyGoApp() {
         {routeInfo && <View style={st.routeMeta}><Text style={st.routeMetaText}>Маршрут {routeInfo.km} км</Text><Text style={st.routeMetaText}>Около {routeInfo.minutes} мин</Text></View>}
         <Text style={st.sectionTitle}>Выберите тариф</Text>
         <View style={st.tariffs}>{TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[st.tariff, tariff === t.id && st.tariffSelected]}>
-          <Text style={st.tariffIcon}>{t.icon}</Text><Text style={st.tariffName}>{t.name}</Text>{(quote?.amount_rub || previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(quote?.amount_rub || previewFare)}</Text> : null}
+          <Text style={st.tariffIcon}>{t.icon}</Text><Text style={st.tariffName}>{t.name}</Text>{(previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
         </TouchableOpacity>)}</View>
-        <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>{(quote?.amount_rub || previewFare) ? 'Предварительная стоимость' : 'Стоимость поездки'}</Text><Text style={st.priceHint}>{(quote?.amount_rub || previewFare) ? 'Расчёт по длине и времени маршрута' : 'Укажи оба адреса для расчёта'}</Text></View><Text style={st.priceValue}>{quote?.amount_rub ? fmt(quote.amount_rub) : previewFare ? fmt(previewFare) : '—'}</Text></View>
+        <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>{(previewFare) ? 'Предварительная стоимость' : 'Стоимость поездки'}</Text><Text style={st.priceHint}>{(previewFare) ? 'Расчёт по длине и времени маршрута' : 'Укажи оба адреса для расчёта'}</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
         <Text style={st.sectionTitle}>Способ оплаты</Text>
         <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>₽</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
