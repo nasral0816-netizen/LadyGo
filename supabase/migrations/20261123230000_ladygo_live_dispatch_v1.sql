@@ -540,3 +540,28 @@ begin
 exception when undefined_object then
   raise notice 'supabase_realtime publication is not available; enable it in Supabase';
 end $$;
+
+
+-- The existing push Edge Function verifies the webhook secret through this
+-- service-role-only RPC; the secret itself stays in Supabase Vault.
+create or replace function public.ladygo_verify_push_webhook_secret(p_candidate text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = 'public', 'vault', 'pg_temp'
+as $function$
+declare v_secret text;
+begin
+  if p_candidate is null or length(p_candidate) < 24 then return false; end if;
+  select decrypted_secret into v_secret
+  from vault.decrypted_secrets
+  where name = 'ladygo_push_webhook_secret'
+  limit 1;
+  return v_secret is not null and p_candidate = v_secret;
+exception when others then
+  return false;
+end;
+$function$;
+revoke all on function public.ladygo_verify_push_webhook_secret(text) from public, anon, authenticated;
+grant execute on function public.ladygo_verify_push_webhook_secret(text) to service_role;
