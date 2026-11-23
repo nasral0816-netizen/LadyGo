@@ -28,11 +28,16 @@ pass('Package and app versions match', pkg.version === expo.version);
 pass('Supabase client persists session securely', /persistSession:\s*true/.test(supabaseClient) && /AsyncStorage/.test(supabaseClient));
 pass('No service-role credential in client source', !/service_role|SUPABASE_SERVICE_ROLE_KEY/i.test(supabaseClient + app));
 pass('Tracked environment file is removed and ignored', !fs.existsSync('.env') && read('.gitignore').includes('.env') && read('.env.example').includes('YOUR_SUPABASE_PUBLISHABLE_KEY'));
-pass('Passenger creates a real orders row', /from\('orders'\)\s*\.insert\(payload\)/.test(app));
+pass('Passenger creates orders only through the server pricing function', /functions\\.invoke\\('pricing-service'/.test(app) && !/from\\('orders'\\)\\s*\\.insert\\(payload\\)/.test(app));
 const createOrderStart = app.indexOf('const createOrder = async');
 const createOrderEnd = app.indexOf('const signOut = async', createOrderStart);
 const createOrder = app.slice(createOrderStart, createOrderEnd);
-pass('Order requires a server price token', /quote\?\.price_token/.test(createOrder) && !/previewFare/.test(createOrder));
+pass('Order requires a server price token', /quote\\?\\.price_token/.test(createOrder) && /action:\\s*'create_order'/.test(createOrder) && !/previewFare/.test(createOrder));
+pass('Pricing quote is HMAC-signed and short-lived', /HMAC/.test(pricingFunction) && /LADYGO_PRICING_SECRET/.test(pricingFunction) && /\\+90/.test(pricingFunction));
+pass('Price quote is bound to passenger and single-use in database', /ladygo_price_quotes/.test(pricingMigration) && /token_hash/.test(pricingMigration) && /consumed_at is null/.test(pricingMigration));
+pass('Order creation is idempotent and service-role-only', /ladygo_order_requests/.test(pricingMigration) && /pg_advisory_xact_lock/.test(pricingMigration) && /to service_role/.test(pricingMigration));
+pass('Final fare is calculated server-side from GPS track and trip time', /actual_distance_km/.test(pricingMigration) && /actual_duration_min/.test(pricingMigration) && /trip_tracks/.test(pricingMigration) && /final_price_rub/.test(pricingMigration));
+pass('Dispatch scheduler checks pg_cron, pg_net and Vault before scheduling', /pg_cron/.test(schedulerMigration) && /pg_net/.test(schedulerMigration) && /ladygo_dispatch_secret/.test(schedulerMigration));
 pass('Driver acceptance does not submit a client-selected price', /rpc\('ladygo_accept_order',\s*\{\s*p_order_id:\s*order\.id\s*\}\)/.test(app));
 pass('Driver GPS heartbeat is connected', /ladygo_driver_heartbeat/.test(app) && /startLocationUpdatesAsync/.test(app));
 pass('Driver offers are loaded from Supabase', /from\('order_offers'\)/.test(app));
@@ -51,6 +56,7 @@ pass('Driver cannot override stored fare', /Driver cannot change the quoted orde
 pass('Drivers can only read their live offers and assigned trips', /drop policy if exists "driver read orders"/.test(orderVisibilityMigration) && /oo\.status = 'pending'/.test(orderVisibilityMigration) && /orders\.driver_id = \(select auth\.uid\(\)\)/.test(orderVisibilityMigration));
 pass('Dispatch loop requires a server-only secret and calls the dispatch RPC', /LADYGO_DISPATCH_SECRET/.test(dispatchLoop) && /x-ladygo-dispatch-secret/.test(dispatchLoop) && /ladygo_dispatch_next_driver/.test(dispatchLoop) && /SUPABASE_SERVICE_ROLE_KEY/.test(dispatchLoop));
 pass('Dispatch loop JWT bypass is protected by a dedicated secret', /\[functions\.dispatch-loop\][\s\S]*verify_jwt = false/.test(supabaseConfig));
+pass('Pricing function requires authenticated JWT', /\\[functions\\.pricing-service\\][\\s\\S]*verify_jwt = true/.test(supabaseConfig));
 pass('Push function verifies webhook secret server-side', /ladygo_verify_push_webhook_secret/.test(pushFunction) && /SUPABASE_SERVICE_ROLE_KEY/.test(pushFunction));
 pass('Push token cleanup is restricted to the authenticated account', /where user_id = auth\.uid\(\)/.test(pushTokenMigration) && /where driver_id = auth\.uid\(\)/.test(pushTokenMigration));
 
