@@ -560,17 +560,24 @@ export default function LadyGoApp() {
   }, [profile?.role, session?.user?.id, loadDriverOrders]);
 
   useEffect(() => {
-    if (profile?.role !== 'driver' || !session?.user?.id || !supabase || !Device.isDevice) return;
+    if (!profile?.role || !session?.user?.id || !supabase || !Device.isDevice) return;
     let alive = true;
     (async () => {
       try {
         if (Platform.OS === 'android') {
-          await Notifications.setNotificationChannelAsync('driver-orders', {
-            name: 'Заказы LadyGo',
-            importance: Notifications.AndroidImportance.MAX,
-            vibrationPattern: [0, 250, 150, 250],
-            sound: 'default'
-          });
+          await Promise.all([
+            Notifications.setNotificationChannelAsync('driver-orders', {
+              name: 'Заказы LadyGo',
+              importance: Notifications.AndroidImportance.MAX,
+              vibrationPattern: [0, 250, 150, 250],
+              sound: 'default'
+            }),
+            Notifications.setNotificationChannelAsync('trip-updates', {
+              name: 'Обновления LadyGo',
+              importance: Notifications.AndroidImportance.DEFAULT,
+              sound: 'default'
+            })
+          ]);
         }
         let permission = await Notifications.getPermissionsAsync();
         if (permission.status !== 'granted') permission = await Notifications.requestPermissionsAsync();
@@ -579,26 +586,41 @@ export default function LadyGoApp() {
           projectId: '95ac82ec-010d-4770-9aba-9f52878e1b3b'
         });
         if (!alive || !tokenResult?.data) return;
-        const { error } = await supabase.from('driver_push_tokens').upsert({
-          driver_id: session.user.id,
+        const token = {
           expo_push_token: tokenResult.data,
           device_platform: Platform.OS === 'ios' ? 'ios' : 'android',
           updated_at: new Date().toISOString()
-        }, { onConflict: 'driver_id,expo_push_token' });
-        if (error) console.warn('LadyGo push token registration failed:', error.message);
+        };
+        const { error: userTokenError } = await supabase.from('user_push_tokens').upsert({
+          user_id: session.user.id, ...token
+        }, { onConflict: 'user_id,expo_push_token' });
+        if (userTokenError) console.warn('LadyGo user push token registration failed:', userTokenError.message);
+        if (profile.role === 'driver') {
+          const { error: driverTokenError } = await supabase.from('driver_push_tokens').upsert({
+            driver_id: session.user.id, ...token
+          }, { onConflict: 'driver_id,expo_push_token' });
+          if (driverTokenError) console.warn('LadyGo driver push token registration failed:', driverTokenError.message);
+        }
       } catch (error) {
         console.warn('LadyGo push registration unavailable:', error?.message);
       }
     })();
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
-      setTab('driver');
-      loadDriverOrders();
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response?.notification?.request?.content?.data || {};
+      if (profile.role === 'driver') {
+        setTab('driver');
+        loadDriverOrders();
+      } else {
+        setTab('orders');
+        loadOrders();
+      }
+      if (data.orderId) setTab(profile.role === 'driver' ? 'driver' : 'orders');
     });
     return () => {
       alive = false;
       responseSubscription.remove();
     };
-  }, [profile?.role, session?.user?.id, loadDriverOrders]);
+  }, [profile?.role, session?.user?.id, loadDriverOrders, loadOrders]);
 
   useEffect(() => { if (session?.user) { loadOrders(); loadDemoOrders(); } }, [session, loadOrders, loadDemoOrders]);
 
@@ -1073,7 +1095,7 @@ export default function LadyGoApp() {
     setBusy(true);
     try {
       const { error } = await supabase.rpc('ladygo_accept_order', {
-        p_order_id: order.id, p_price_rub: price
+        p_order_id: order.id
       });
       if (error) throw error;
       await loadDriverOrders();
@@ -1234,7 +1256,8 @@ export default function LadyGoApp() {
   useEffect(() => {
     let alive = true;
     const getQuote = async () => {
-      if (!pickup || !destination || !routeInfo || !supabase) { setQuote(null); return; }
+      setQuote(null);
+      if (!pickup || !destination || !routeInfo || !supabase) return;
       try {
         const { data, error } = await supabase.functions.invoke('pricing-service', {
           body: { action: 'quote', city_id: 'kislovodsk', tariff_id: tariff, points: [pickup, destination], options: [] }
@@ -1256,9 +1279,9 @@ export default function LadyGoApp() {
       setTab('orders');
       return Alert.alert('У тебя уже есть активный заказ', 'Сначала заверши или отмени текущую поездку.');
     }
-    const amount = Number(quote?.amount_rub || quote?.price_rub || previewFare);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return Alert.alert('Не удалось рассчитать стоимость', 'Проверь маршрут и тариф. Заказ без рассчитанной стоимости не будет отправлен.');
+    const amount = Number(quote?.amount_rub ?? quote?.price_rub);
+    if (!quote?.price_token || !Number.isFinite(amount) || amount <= 0) {
+      return Alert.alert('Нет подтверждённой цены', 'Сервер тарификации не вернул действующее предложение. Предварительная оценка на экране не является ценой заказа. Попробуй ещё раз позже.');
     }
     setBusy(true);
     try {
@@ -1375,7 +1398,7 @@ export default function LadyGoApp() {
         <Text style={st.sectionTitle}>Способ оплаты</Text>
         <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>Р</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
-        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || busy}>
+        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || !quote?.price_token || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || !quote?.price_token || busy}>
           {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={st.phoneOrderBtn} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com?subject=Поддержка%20LadyGo')}>
