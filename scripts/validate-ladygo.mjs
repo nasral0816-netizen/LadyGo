@@ -9,6 +9,7 @@ const dispatchMigration = read('supabase/migrations/20261123230000_ladygo_live_d
 const securityMigration = read('supabase/migrations/20261124090000_ladygo_private_driver_media_and_fare_guard.sql');
 const pushFunction = read('supabase/functions/send-driver-offer-push/index.ts');
 const pushTokenMigration = read('supabase/migrations/20261124100000_ladygo_push_token_lifecycle.sql');
+const orderVisibilityMigration = read('supabase/migrations/20261124110000_ladygo_limit_order_visibility_to_offers.sql');
 
 const checks = [];
 const pass = (name, ok, detail = '') => checks.push({ name, ok: Boolean(ok), detail });
@@ -32,6 +33,7 @@ pass('Server dispatch migration includes atomic acceptance', /for update/i.test(
 pass('Driver media bucket is private', /set public = false/i.test(securityMigration));
 pass('Assigned passenger media access is scoped to active trips', /o\.passenger_id\s*=\s*\(select auth\.uid\(\)\)/.test(securityMigration) && /o\.status in \('accepted','arrived','in_progress'\)/.test(securityMigration));
 pass('Driver cannot override stored fare', /Driver cannot change the quoted order price/.test(securityMigration));
+pass('Drivers can only read their live offers and assigned trips', /drop policy if exists "driver read orders"/.test(orderVisibilityMigration) && /oo\.status = 'pending'/.test(orderVisibilityMigration) && /orders\.driver_id = \(select auth\.uid\(\)\)/.test(orderVisibilityMigration));
 pass('Push function verifies webhook secret server-side', /ladygo_verify_push_webhook_secret/.test(pushFunction) && /SUPABASE_SERVICE_ROLE_KEY/.test(pushFunction));
 pass('Push token ownership is exclusive across accounts', /delete from public\.user_push_tokens/.test(pushTokenMigration) && /delete from public\.driver_push_tokens/.test(pushTokenMigration));
 
