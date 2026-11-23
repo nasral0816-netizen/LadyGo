@@ -419,7 +419,7 @@ export default function LadyGoApp() {
       if (driverIds.length) {
         const [profileResult, applicationResult] = await Promise.all([
           supabase.from('driver_profiles')
-            .select('driver_id,display_name,phone,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year')
+            .select('driver_id,display_name,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year')
             .in('driver_id', driverIds),
           supabase.from('driver_applications')
             .select('user_id,full_name,phone,vehicle_make,vehicle_model,vehicle_plate,vehicle_color,vehicle_year,status')
@@ -1072,7 +1072,7 @@ export default function LadyGoApp() {
         </TouchableOpacity>
       </View>
       <View style={st.adminStats}>
-        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminApplications.filter(x=>x.status==='pending').length}</Text><Text style={st.adminStatLabel}>Заявки отключены</Text></View>
+        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminApplications.filter(x=>x.status==='pending').length}</Text><Text style={st.adminStatLabel}>Заявки на проверке</Text></View>
         <View style={st.adminStat}><Text style={st.adminStatValue}>{adminDrivers.length}</Text><Text style={st.adminStatLabel}>Водители</Text></View>
         <View style={st.adminStat}><Text style={st.adminStatValue}>{adminOrders.filter(o=>['new','accepted','arrived','in_progress'].includes(o.status)).length}</Text><Text style={st.adminStatLabel}>Поездки отключены</Text></View>
       </View>
@@ -1097,8 +1097,8 @@ export default function LadyGoApp() {
             {item.license_info ? <Text style={st.adminDetail}>Документы: {item.license_info}</Text>:null}
             <Text style={st.adminDate}>Подана: {new Date(item.created_at).toLocaleString('ru-RU')}</Text>
             <View style={st.adminPhotoRow}>
-              {item.avatar_url?<Image source={{uri:item.avatar_url}} style={st.adminPhoto}/>:null}
-              {item.vehicle_photo_url?<Image source={{uri:item.vehicle_photo_url}} style={st.adminCarPhoto}/>:null}
+              {item.avatar_signed_url?<Image source={{uri:item.avatar_signed_url}} style={st.adminPhoto}/>:null}
+              {item.vehicle_photo_signed_url?<Image source={{uri:item.vehicle_photo_signed_url}} style={st.adminCarPhoto}/>:null}
             </View>
             {item.status==='pending' && <View style={st.adminActionRow}>
               <TouchableOpacity style={st.adminApprove} onPress={()=>reviewDriverApplication(item,'approved')}><Text style={st.adminActionText}>✓ Одобрить</Text></TouchableOpacity>
@@ -1118,7 +1118,6 @@ export default function LadyGoApp() {
                 <Text style={st.adminApplicantName}>{d.display_name||'Водитель LadyGo'}</Text>
                 <Text style={st.adminTabText}>{expanded ? 'Скрыть ▲' : 'История ▼'}</Text>
               </View>
-              <Text style={st.adminDetail}>{d.phone||'Телефон не указан'}</Text>
               <Text style={st.adminDetail}>{[d.vehicle_color,d.vehicle_make,d.vehicle_model].filter(Boolean).join(' ')||'Автомобиль не заполнен'}</Text>
               <Text style={st.adminDetail}>{d.vehicle_plate||'Номер не указан'} {d.vehicle_year||''}</Text>
               <Text style={[st.adminDetail,{marginTop:6,fontWeight:'700',color:P.pink}]}>Поездок: {driverTrips.length} · Нажмите, чтобы открыть историю</Text>
@@ -1131,7 +1130,6 @@ export default function LadyGoApp() {
                 </View>
                 <Text style={st.orderAddress}>● {o.pickup_address||'Место подачи не указано'}</Text>
                 <Text style={st.orderAddress}>● {o.destination_address||'Назначение не указано'}</Text>
-                {o.passenger_phone ? <Text style={st.adminDetail}>Телефон пассажира: {o.passenger_phone}</Text> : null}
                 <View style={st.rowBetween}>
                   <Text style={st.orderPrice}>{o.price_rub?fmt(o.price_rub):o.estimated_price_rub?fmt(o.estimated_price_rub):'Цена не указана'}</Text>
                   <Text style={st.muted}>ID: {String(o.id).slice(0,8)}</Text>
@@ -1162,7 +1160,6 @@ export default function LadyGoApp() {
             <Text style={st.adminDetail}>Водитель: {o.driver_id ? o.driver_full_name : 'Не назначен'}</Text>
             {o.driver_id ? <Text style={st.adminDetail}>Автомобиль: {[o.driver_vehicle_color,o.driver_vehicle_make,o.driver_vehicle_model].filter(Boolean).join(' ')||'Данные не указаны'}</Text> : null}
             {o.driver_id ? <Text style={st.adminDetail}>Госномер: {o.driver_vehicle_plate||'Не указан'}</Text> : null}
-            {o.driver_id && o.driver_phone ? <Text style={st.adminDetail}>Телефон водителя: {o.driver_phone}</Text> : null}
           </View>
           <View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub?fmt(o.price_rub):o.estimated_price_rub?fmt(o.estimated_price_rub):'Цена не указана'}</Text><Text style={st.muted}>ID: {String(o.id).slice(0,8)}</Text></View>
         </View>)}
@@ -1283,7 +1280,6 @@ export default function LadyGoApp() {
       {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><Text style={st.profileRowIcon}>🚘</Text><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}
 
       <TouchableOpacity style={st.profileRow} onPress={() => { setTab('support'); loadMyTickets(); }}><Text style={st.profileRowIcon}>?</Text><Text style={st.profileRowText}>Поддержка и обращения</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
-      <TouchableOpacity style={st.profileRow} onPress={() => Linking.openURL('tel:+79911121227')}><Text style={st.profileRowIcon}>☎</Text><Text style={st.profileRowText}>Заказать по телефону</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.logout} onPress={signOut}><Text style={st.logoutText}>Выйти из аккаунта</Text></TouchableOpacity>
       <Text style={st.footnote}>LadyGo · 6.8.0 · Создано независимым автором @acyma</Text>
     </ScrollView>}
