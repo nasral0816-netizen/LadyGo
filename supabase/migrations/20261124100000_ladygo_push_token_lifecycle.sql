@@ -1,6 +1,5 @@
--- Keep a physical device push token attached to exactly one signed-in account.
--- This prevents a shared Android device from continuing to receive the previous
--- account's passenger notifications or driver offers after account switching.
+-- Centralize push token registration and logout cleanup in authenticated RPCs.
+-- The RPCs only write/delete rows owned by the current auth.uid().
 
 create or replace function public.ladygo_register_push_token(
   p_expo_push_token text,
@@ -34,11 +33,6 @@ begin
   where id = v_user_id;
   if v_role is null then raise exception 'Profile not found'; end if;
 
-  -- Expo tokens are device-specific. Remove stale ownership before claiming it.
-  delete from public.user_push_tokens
-  where expo_push_token = p_expo_push_token
-    and user_id <> v_user_id;
-
   insert into public.user_push_tokens(
     user_id, expo_push_token, device_platform, updated_at
   ) values (
@@ -49,10 +43,6 @@ begin
                 updated_at = now();
 
   if v_role = 'driver' then
-    delete from public.driver_push_tokens
-    where expo_push_token = p_expo_push_token
-      and driver_id <> v_user_id;
-
     insert into public.driver_push_tokens(
       driver_id, expo_push_token, device_platform, updated_at
     ) values (
