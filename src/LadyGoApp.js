@@ -78,7 +78,7 @@ const TARIFFS = [
   { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '⌂' }
 ];
 const STATUS = { new: 'Ищем водителя', accepted: 'Водитель назначен', arrived: 'Водитель на месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
-const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' ₽';
+const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' Р';
 
 const translateError = error => {
   const raw = String(error?.message || error || '').trim();
@@ -1112,7 +1112,7 @@ export default function LadyGoApp() {
         </TouchableOpacity>)}</View>
         <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>{(previewFare) ? 'Предварительная стоимость' : 'Стоимость поездки'}</Text><Text style={st.priceHint}>{(previewFare) ? 'Расчёт по длине и времени маршрута' : 'Укажи оба адреса для расчёта'}</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
         <Text style={st.sectionTitle}>Способ оплаты</Text>
-        <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>₽</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
+        <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>Р</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
         <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || busy}>
           {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
@@ -1324,7 +1324,7 @@ export default function LadyGoApp() {
             <Text style={st.driverEarningsValue}>{fmt(earnings)}</Text>
             <Text style={st.driverEarningsNote}>По данным завершённых заказов</Text>
           </View>
-          <Text style={st.driverEarningsIcon}>₽</Text>
+          <Text style={st.driverEarningsIcon}>Р</Text>
         </View>
         <View style={st.vehicleEditorCard}>
           <View style={st.rowBetween}><Text style={st.heading}>Фото водителя</Text><Text style={st.vehicleEditorHint}>Для карточки поездки</Text></View>
@@ -1391,7 +1391,7 @@ export default function LadyGoApp() {
             <View style={{alignItems:'flex-end'}}><Text style={st.driverRouteCaption}>ОПЛАТА</Text><Text style={st.driverOrderPayment}>{o.payment_method==='cash'?'Наличные':o.payment_method?'Перевод':'По договорённости'}</Text></View>
           </View>
           {o.status==='new'&&!o.driver_id ? <View style={st.driverActions}>
-            <TextInput style={st.phoneInput} keyboardType="numeric" placeholder="Согласованная стоимость, ₽" value={driverPrices[o.id]||String(o.estimated_price_rub||'')} onChangeText={v=>setDriverPrices(p=>({...p,[o.id]:v}))}/>
+            <TextInput style={st.phoneInput} keyboardType="numeric" placeholder="Согласованная стоимость, Р" value={driverPrices[o.id]||String(o.estimated_price_rub||'')} onChangeText={v=>setDriverPrices(p=>({...p,[o.id]:v}))}/>
             <TouchableOpacity style={st.primaryBtn} onPress={()=>acceptDriverOrder(o)} disabled={busy}><Text style={st.primaryText}>{busy?'Обработка…':'Принять заявку'}</Text></TouchableOpacity>
           </View> : o.driver_id===session.user.id && <View style={st.driverActions}>
             {o.status==='accepted'&&<TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'arrived')} disabled={busy}><Text style={st.primaryText}>Отметить прибытие</Text></TouchableOpacity>}
