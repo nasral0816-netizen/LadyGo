@@ -36,9 +36,9 @@ function parseRouteMinutes(value, fallbackKm) {
     if (nested != null && nested !== value) return parseRouteMinutes(nested, fallbackKm);
   } else {
     const text = String(value || '').toLowerCase();
-    const hours = Number(text.match(/(\\d+)\\s*(?:ч|час)/)?.[1] || 0);
-    const minutes = Number(text.match(/(\\d+)\\s*(?:м|мин)/)?.[1] || 0);
-    const compact = text.match(/(\\d+)\\s*h(?:ours?)?\\s*(?:(\\d+)\\s*m)?/);
+    const hours = Number(text.match(/(\d+)\s*(?:ч|час)/)?.[1] || 0);
+    const minutes = Number(text.match(/(\d+)\s*(?:м|мин)/)?.[1] || 0);
+    const compact = text.match(/(\d+)\s*h(?:ours?)?\s*(?:(\d+)\s*m)?/);
     if (hours || minutes) candidate = hours * 60 + minutes;
     else if (compact) candidate = Number(compact[1]) * 60 + Number(compact[2] || 0);
   }
@@ -99,7 +99,7 @@ const translateError = error => {
 };
 
 async function findAddresses(q) {
-  const clean = String(q || '').replace(/\\s+/g, ' ').trim();
+  const clean = String(q || '').replace(/\s+/g, ' ').trim();
   if (clean.length < 2) return [];
   const results = await geocodeAddress(clean, {
     userPosition: { latitude: 43.9052, longitude: 42.7168 },
