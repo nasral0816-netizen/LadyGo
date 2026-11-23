@@ -308,7 +308,7 @@ export default function LadyGoApp() {
     if (!session?.user || !supabase) return;
     const { data, error } = await supabase.from('orders').select('*').eq('passenger_id', session.user.id).order('created_at', { ascending: false }).limit(30);
     if (error) return;
-    setOrders(data || []);
+    setOrders((data || []).filter(o => ['completed','cancelled','declined'].includes(o.status)));
     const orderRows = data || [];
     const { data: ownRatings } = await supabase.from('order_ratings').select('order_id').eq('passenger_id', session.user.id);
     setRatedOrderIds((ownRatings || []).map(r => r.order_id));
@@ -870,52 +870,7 @@ export default function LadyGoApp() {
   };
 
   const chatOrder = null;
-
-  useEffect(() => {
-    if (!chatOrder?.id || !session?.user?.id || !supabase) {
-      setChatMessages([]);
-      return;
-    }
-    let alive = true;
-    const loadMessages = async () => {
-      const { data, error } = await supabase.from('trip_messages')
-        .select('id,order_id,sender_id,message,created_at')
-        .eq('order_id', chatOrder.id)
-        .order('created_at', { ascending: true })
-        .limit(100);
-      if (alive && !error) setChatMessages(data || []);
-    };
-    loadMessages();
-    const channel = supabase.channel('trip-chat-' + chatOrder.id)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trip_messages', filter: 'order_id=eq.' + chatOrder.id }, () => loadMessages())
-      .subscribe();
-    return () => { alive = false; supabase.removeChannel(channel); };
-  }, [chatOrder?.id, session?.user?.id]);
-
-  const sendTripMessage = async () => {
-    Alert.alert('Чат поездки отключён', 'В этой версии нет связи пассажира с водителем через приложение.');
-  };
-
-  const renderTripChat = () => !chatOrder ? null : <View style={st.chatCard}>
-    <View style={st.rowBetween}>
-      <Text style={st.heading}>💬 Чат поездки</Text>
-      <Text style={st.chatHint}>Только участники заказа</Text>
-    </View>
-    <ScrollView style={st.chatMessages} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-      {chatMessages.length === 0 ? <Text style={st.chatEmpty}>Напиши водителю, чтобы уточнить детали поездки.</Text> :
-        chatMessages.map(item => <View key={item.id} style={[st.chatBubble, item.sender_id === session?.user?.id ? st.chatMine : st.chatOther]}>
-          <Text style={st.chatSender}>{item.sender_id === session?.user?.id ? 'Вы' : 'Собеседник'}</Text>
-          <Text style={st.chatMessage}>{item.message}</Text>
-          <Text style={st.chatTime}>{new Date(item.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</Text>
-        </View>)}
-    </ScrollView>
-    <View style={st.chatComposer}>
-      <TextInput style={st.chatInput} value={chatDraft} onChangeText={setChatDraft} placeholder="Сообщение…" multiline maxLength={2000}/>
-      <TouchableOpacity style={[st.chatSend, (!chatDraft.trim() || chatSending) && st.disabled]} onPress={sendTripMessage} disabled={!chatDraft.trim() || chatSending}>
-        {chatSending ? <ActivityIndicator color="#fff" size="small"/> : <Text style={st.chatSendText}>➤</Text>}
-      </TouchableOpacity>
-    </View>
-  </View>;
+  const renderTripChat = () => null;
 
   const previewFare = routeInfo
     ? Math.round((55 + (Number(routeInfo.km) || 0) * 14 + (Number(routeInfo.minutes) || 0) * 1.5) * (tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1) / 5) * 5
@@ -1007,7 +962,7 @@ export default function LadyGoApp() {
         </View>
         {renderTripChat()}
       </>}
-      {orders.length + presentationOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет поездок</Text><Text style={st.muted}>Оформленные заказы появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Сохранить маршрут</Text></TouchableOpacity></View> :
+      {orders.length + presentationOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Нет сохранённых маршрутов</Text><Text style={st.muted}>Сохранённые маршруты появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Сохранить маршрут</Text></TouchableOpacity></View> :
         [...presentationOrders, ...orders].map(o => {
           const driverStats = o.driver_id ? driverRatingStats[o.driver_id] : null;
           const canRate = o.status === 'completed' && o.driver_id && !ratedOrderIds.includes(o.id);
@@ -1217,46 +1172,13 @@ export default function LadyGoApp() {
             {driverLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.driverRefreshText}>↻</Text>}
           </TouchableOpacity>
         </View>
-        <View style={[st.driverModeHint, !driverOnline && { backgroundColor: '#F7F5F6', borderColor: P.line }]}>
+        <View style={[st.driverModeHint, { backgroundColor: '#F7F5F6', borderColor: P.line }]}>
           <Text style={st.driverModeIcon}>🚘</Text>
           <View style={{flex:1}}>
-            <Text style={st.driverModeTitle}>{driverOnline ? 'Ты на линии' : 'Ты не на линии'}</Text>
-            <Text style={st.driverModeSub}>{driverOnline ? 'Приём заявок отключён' : 'Данные профиля можно редактировать ниже'}</Text>
+            <Text style={st.driverModeTitle}>Профиль водителя</Text>
+            <Text style={st.driverModeSub}>Приём заказов и сопровождение поездок отключены</Text>
           </View>
-          <View style={[st.driverOnlineDot, !driverOnline && { backgroundColor: '#B8B0B5' }]}/>
-        </View>
-        <TouchableOpacity
-          style={[st.shiftButton, driverOnline && st.shiftButtonOff, driverPresenceLoading && st.disabled]}
-          onPress={toggleDriverShift}
-          disabled={driverPresenceLoading}
-        >
-          {driverPresenceLoading ? <ActivityIndicator color={P.white}/> : <Text style={st.shiftButtonText}>{driverOnline ? 'Завершить смену' : 'Выйти на линию'}</Text>}
-        </TouchableOpacity>
-        <View style={st.driverStatsGrid}>
-          <View style={st.driverStatCard}>
-            <Text style={st.driverStatValue}>{available.length}</Text>
-            <Text style={st.driverStatLabel}>Новые заявки</Text>
-          </View>
-          <View style={st.driverStatCard}>
-            <Text style={st.driverStatValue}>{active.length}</Text>
-            <Text style={st.driverStatLabel}>Активные поездки</Text>
-          </View>
-          <View style={st.driverStatCard}>
-            <Text style={st.driverStatValue}>{history.filter(o=>o.status==='completed').length}</Text>
-            <Text style={st.driverStatLabel}>Завершено</Text>
-          </View>
-        </View>
-        <View style={st.ratingDriverCard}>
-          <Text style={st.ratingDriverLabel}>ТВОЙ РЕЙТИНГ</Text>
-          <View style={st.rowBetween}><Text style={st.ratingDriverValue}>★ {driverRatingStats[session.user.id]?.average_rating ? Number(driverRatingStats[session.user.id].average_rating).toFixed(2) : '—'}</Text><Text style={st.ratingDriverCount}>{driverRatingStats[session.user.id]?.rating_count || 0} оценок</Text></View>
-        </View>
-        <View style={st.driverEarningsCard}>
-          <View style={{flex:1}}>
-            <Text style={st.driverEarningsLabel}>ЗАВЕРШЁННЫЕ ПОЕЗДКИ · СУММА</Text>
-            <Text style={st.driverEarningsValue}>{fmt(earnings)}</Text>
-            <Text style={st.driverEarningsNote}>По данным завершённых заказов</Text>
-          </View>
-          <Text style={st.driverEarningsIcon}>Р</Text>
+          <View style={[st.driverOnlineDot, { backgroundColor: '#B8B0B5' }]}/>
         </View>
         <View style={st.vehicleEditorCard}>
           <View style={st.rowBetween}><Text style={st.heading}>Фото водителя</Text><Text style={st.vehicleEditorHint}>Для карточки поездки</Text></View>
@@ -1290,48 +1212,10 @@ export default function LadyGoApp() {
             {vehicleSaving ? <ActivityIndicator color={P.white}/> : <Text style={st.vehicleSaveText}>Сохранить данные автомобиля</Text>}
           </TouchableOpacity>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.driverTabs}>
-          {tabs.map(([id,label]) => <TouchableOpacity key={id} onPress={()=>setDriverSection(id)} style={[st.driverTab,driverSection===id&&st.driverTabActive]}>
-            <Text style={[st.driverTabText,driverSection===id&&st.driverTabTextActive]}>{label}{id==='available'&&available.length>0?'  '+available.length:''}</Text>
-          </TouchableOpacity>)}
-        </ScrollView>
-        <View style={st.rowBetween}>
-          <Text style={st.heading}>{driverSection==='available'?'Новые заявки':driverSection==='active'?'Мои активные поездки':driverSection==='history'?'История поездок':'Ближайшие действия'}</Text>
-          {driverLoading && <ActivityIndicator color={P.pink}/>}
+        <View style={st.emptyCard}>
+          <Text style={st.heading}>Профиль водителя</Text>
+          <Text style={st.muted}>Здесь можно изменить фотографию и данные автомобиля. Получение заявок, принятие заказов, чат и отслеживание поездок в этой версии не работают.</Text>
         </View>
-        {shown.length===0 ? <View style={st.emptyCard}>
-          <Text style={st.emptyIcon}>{driverSection==='history'?'◷':'⌁'}</Text>
-          <Text style={st.heading}>{driverSection==='available'?'Новых заявок пока нет':driverSection==='active'?'Активных поездок нет':driverSection==='history'?'История пока пуста':'Всё спокойно'}</Text>
-          <Text style={st.muted}>{driverSection==='available'?'Получение заказов в этой версии отключено.':driverSection==='active'?'Обработка поездок в этой версии отключена.':driverSection==='history'?'Завершённые поездки появятся здесь.':'Панель используется для настройки профиля водителя.'}</Text>
-          <TouchableOpacity style={st.driverSecondaryBtn} onPress={loadDriverOrders}><Text style={st.driverSecondaryText}>Обновить список</Text></TouchableOpacity>
-        </View> : shown.map(o => <View key={o.id} style={st.driverOrderCard}>
-          <View style={st.rowBetween}>
-            <View style={[st.driverStatusPill, o.status==='new'?st.driverStatusNew:o.status==='completed'?st.driverStatusDone:st.driverStatusActive]}>
-              <Text style={st.driverStatusText}>{STATUS[o.status]||o.status}</Text>
-            </View>
-            <Text style={st.orderDate}>{new Date(o.created_at).toLocaleString('ru-RU',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</Text>
-          </View>
-          <View style={st.driverRouteBlock}>
-            <View style={st.driverRouteRail}><View style={st.driverRouteDotStart}/><View style={st.driverRouteLine}/><View style={st.driverRouteDotEnd}/></View>
-            <View style={{flex:1,gap:12}}>
-              <View><Text style={st.driverRouteCaption}>ОТКУДА</Text><Text style={st.driverRouteAddress}>{o.pickup_address||'Адрес подачи не указан'}</Text></View>
-              <View><Text style={st.driverRouteCaption}>КУДА</Text><Text style={st.driverRouteAddress}>{o.destination_address||'Адрес назначения не указан'}</Text></View>
-            </View>
-          </View>
-          <View style={st.driverOrderMeta}>
-            <View><Text style={st.driverRouteCaption}>СТОИМОСТЬ</Text><Text style={st.driverOrderPrice}>{o.price_rub?fmt(o.price_rub):o.estimated_price_rub?fmt(o.estimated_price_rub):'Уточняется'}</Text></View>
-            <View style={{alignItems:'flex-end'}}><Text style={st.driverRouteCaption}>ОПЛАТА</Text><Text style={st.driverOrderPayment}>{o.payment_method==='cash'?'Наличные':o.payment_method?'Перевод':'По договорённости'}</Text></View>
-          </View>
-          {o.status==='new'&&!o.driver_id ? <View style={st.driverActions}>
-            <TextInput style={st.phoneInput} keyboardType="numeric" placeholder="Согласованная стоимость, руб." value={driverPrices[o.id]||String(o.estimated_price_rub||'')} onChangeText={v=>setDriverPrices(p=>({...p,[o.id]:v}))}/>
-            <TouchableOpacity style={st.primaryBtn} onPress={()=>acceptDriverOrder(o)} disabled={busy}><Text style={st.primaryText}>{busy?'Обработка…':'Принять заявку'}</Text></TouchableOpacity>
-          </View> : o.driver_id===session.user.id && <View style={st.driverActions}>
-            {o.status==='accepted'&&<TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'arrived')} disabled={busy}><Text style={st.primaryText}>Отметить прибытие</Text></TouchableOpacity>}
-            {o.status==='arrived'&&<TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'in_progress')} disabled={busy}><Text style={st.primaryText}>Начать поездку</Text></TouchableOpacity>}
-            {o.status==='in_progress'&&<TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'completed')} disabled={busy}><Text style={st.primaryText}>Завершить поездку</Text></TouchableOpacity>}
-            {chatOrder?.id===o.id&&renderTripChat()}
-          </View>}
-        </View>)}
         <Text style={st.footnote}>Панель профиля водителя. Приём и сопровождение заказов отключены.</Text>
       </ScrollView>;
     })()}
