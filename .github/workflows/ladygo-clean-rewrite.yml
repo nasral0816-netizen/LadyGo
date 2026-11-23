@@ -37,6 +37,7 @@ jobs:
           deno check supabase/functions/pricing-service/index.ts
           deno check supabase/functions/dispatch-loop/index.ts
           deno check supabase/functions/send-driver-offer-push/index.ts
+          deno check supabase/functions/payment-service/index.ts
       - name: Validate Expo config
         run: npx expo config --type public
       - name: Check Expo dependency compatibility
