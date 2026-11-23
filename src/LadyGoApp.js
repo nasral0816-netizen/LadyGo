@@ -595,21 +595,11 @@ export default function LadyGoApp() {
           projectId: '95ac82ec-010d-4770-9aba-9f52878e1b3b'
         });
         if (!alive || !tokenResult?.data) return;
-        const token = {
-          expo_push_token: tokenResult.data,
-          device_platform: Platform.OS === 'ios' ? 'ios' : 'android',
-          updated_at: new Date().toISOString()
-        };
-        const { error: userTokenError } = await supabase.from('user_push_tokens').upsert({
-          user_id: session.user.id, ...token
-        }, { onConflict: 'user_id,expo_push_token' });
-        if (userTokenError) console.warn('LadyGo user push token registration failed:', userTokenError.message);
-        if (profile.role === 'driver') {
-          const { error: driverTokenError } = await supabase.from('driver_push_tokens').upsert({
-            driver_id: session.user.id, ...token
-          }, { onConflict: 'driver_id,expo_push_token' });
-          if (driverTokenError) console.warn('LadyGo driver push token registration failed:', driverTokenError.message);
-        }
+        const { error: tokenError } = await supabase.rpc('ladygo_register_push_token', {
+          p_expo_push_token: tokenResult.data,
+          p_device_platform: Platform.OS === 'ios' ? 'ios' : 'android'
+        });
+        if (tokenError) console.warn('LadyGo push token registration failed:', tokenError.message);
       } catch (error) {
         console.warn('LadyGo push registration unavailable:', error?.message);
       }
@@ -1330,7 +1320,25 @@ export default function LadyGoApp() {
     } finally { setBusy(false); }
   };
 
-  const signOut = async () => { await supabase.auth.signOut(); setTab('ride'); };
+  const signOut = async () => {
+    if (session?.user?.id && Device.isDevice && supabase) {
+      try {
+        const tokenResult = await Notifications.getExpoPushTokenAsync({
+          projectId: '95ac82ec-010d-4770-9aba-9f52878e1b3b'
+        });
+        if (tokenResult?.data) {
+          const { error } = await supabase.rpc('ladygo_unregister_push_token', {
+            p_expo_push_token: tokenResult.data
+          });
+          if (error) console.warn('LadyGo push token cleanup failed:', error.message);
+        }
+      } catch (error) {
+        console.warn('LadyGo push token cleanup unavailable:', error?.message);
+      }
+    }
+    await supabase.auth.signOut();
+    setTab('ride');
+  };
   const cancelOrder = async order => {
     if (!order?.id || !session?.user?.id) return;
     Alert.alert('Отменить поездку?', 'Заказ будет отменён. Если водитель уже назначен, он получит обновлённый статус.', [
