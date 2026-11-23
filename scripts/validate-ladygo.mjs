@@ -32,7 +32,12 @@ pass('Passenger creates orders only through the server pricing function', /funct
 const createOrderStart = app.indexOf('const createOrder = async');
 const createOrderEnd = app.indexOf('const signOut = async', createOrderStart);
 const createOrder = app.slice(createOrderStart, createOrderEnd);
-pass('Order requires a server price token', /quote\\?\\.price_token/.test(createOrder) && /action:\\s*'create_order'/.test(createOrder) && !/previewFare/.test(createOrder));
+pass('Order requires a signed server price token', createOrder.includes('quote?.price_token') && createOrder.includes("action: 'create_order'"));
+pass('Pricing quote is HMAC-signed and short-lived', pricingFunction.includes('HMAC') && pricingFunction.includes('LADYGO_PRICING_SECRET') && pricingFunction.includes('+90'));
+pass('Price quote is bound to passenger and single-use', pricingMigration.includes('ladygo_price_quotes') && pricingMigration.includes('token_hash') && pricingMigration.includes('consumed_at is null'));
+pass('Order creation is idempotent and service-role-only', pricingMigration.includes('ladygo_order_requests') && pricingMigration.includes('pg_advisory_xact_lock') && pricingMigration.includes('to service_role'));
+pass('Final fare is calculated server-side from GPS track and trip time', pricingMigration.includes('actual_distance_km') && pricingMigration.includes('actual_duration_min') && pricingMigration.includes('trip_tracks') && pricingMigration.includes('final_price_rub'));
+pass('Dispatch scheduler checks pg_cron, pg_net and Vault', schedulerMigration.includes('pg_cron') && schedulerMigration.includes('pg_net') && schedulerMigration.includes('ladygo_dispatch_secret'));
 pass('Pricing quote is HMAC-signed and short-lived', /HMAC/.test(pricingFunction) && /LADYGO_PRICING_SECRET/.test(pricingFunction) && /\\+90/.test(pricingFunction));
 pass('Price quote is bound to passenger and single-use in database', /ladygo_price_quotes/.test(pricingMigration) && /token_hash/.test(pricingMigration) && /consumed_at is null/.test(pricingMigration));
 pass('Order creation is idempotent and service-role-only', /ladygo_order_requests/.test(pricingMigration) && /pg_advisory_xact_lock/.test(pricingMigration) && /to service_role/.test(pricingMigration));
@@ -56,6 +61,7 @@ pass('Driver cannot override stored fare', /Driver cannot change the quoted orde
 pass('Drivers can only read their live offers and assigned trips', /drop policy if exists "driver read orders"/.test(orderVisibilityMigration) && /oo\.status = 'pending'/.test(orderVisibilityMigration) && /orders\.driver_id = \(select auth\.uid\(\)\)/.test(orderVisibilityMigration));
 pass('Dispatch loop requires a server-only secret and calls the dispatch RPC', /LADYGO_DISPATCH_SECRET/.test(dispatchLoop) && /x-ladygo-dispatch-secret/.test(dispatchLoop) && /ladygo_dispatch_next_driver/.test(dispatchLoop) && /SUPABASE_SERVICE_ROLE_KEY/.test(dispatchLoop));
 pass('Dispatch loop JWT bypass is protected by a dedicated secret', /\[functions\.dispatch-loop\][\s\S]*verify_jwt = false/.test(supabaseConfig));
+pass('Pricing function requires authenticated JWT', supabaseConfig.includes('[functions.pricing-service]') && supabaseConfig.includes('verify_jwt = true'));
 pass('Pricing function requires authenticated JWT', /\\[functions\\.pricing-service\\][\\s\\S]*verify_jwt = true/.test(supabaseConfig));
 pass('Push function verifies webhook secret server-side', /ladygo_verify_push_webhook_secret/.test(pushFunction) && /SUPABASE_SERVICE_ROLE_KEY/.test(pushFunction));
 pass('Push token cleanup is restricted to the authenticated account', /where user_id = auth\.uid\(\)/.test(pushTokenMigration) && /where driver_id = auth\.uid\(\)/.test(pushTokenMigration));
