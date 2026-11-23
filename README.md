@@ -20,6 +20,7 @@ LadyGo — Android-приложение сервиса поездок с фир�
 - TECHNICAL_AUDIT_RU.md — технический аудит.
 - DISPATCH_SETUP_RU.md — архитектура и deployment checklist реальной диспетчеризации.
 - docs/requirements-registry-ru.md — единый реестр всех требований из доступной истории.
+- docs/passenger-guide-ru.md, docs/driver-guide-ru.md, docs/admin-guide-ru.md — инструкции по ролям.
 
 ## Установка
 
