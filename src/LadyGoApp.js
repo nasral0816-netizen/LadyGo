@@ -895,12 +895,23 @@ export default function LadyGoApp() {
 
   const signOut = async () => { await supabase.auth.signOut(); setTab('ride'); };
   const cancelOrder = async order => {
-    Alert.alert('Отменить заказ?', 'Водитель ещё не должен был принять поездку.', [
+    Alert.alert('Отменить заказ?', 'Подтверди отмену этой заявки.', [
       { text: 'Не отменять', style: 'cancel' },
       { text: 'Отменить', style: 'destructive', onPress: async () => {
-        const { error } = await supabase.rpc('cancel_my_order', { order_id: order.id });
-        if (error) Alert.alert('Не удалось отменить', translateError(error));
-        else loadOrders();
+        try {
+          const { error } = await supabase.rpc('ladygo_cancel_active_order', {
+            p_order_id: order.id,
+            p_reason: 'Отмена пассажиром'
+          });
+          if (error) {
+            Alert.alert('Не удалось отменить', translateError(error));
+            return;
+          }
+          await loadOrders();
+          Alert.alert('Заказ отменён', 'Заявка успешно отменена.');
+        } catch (error) {
+          Alert.alert('Не удалось отменить', translateError(error));
+        }
       }}
     ]);
   };
