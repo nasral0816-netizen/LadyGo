@@ -59,9 +59,7 @@ create table if not exists public.driver_presence (
 alter table public.driver_presence enable row level security;
 drop policy if exists "drivers read own presence" on public.driver_presence;
 create policy "drivers read own presence" on public.driver_presence
-for select to authenticated using (
-  driver_id = (select auth.uid()) or public.ladygo_is_admin()
-);
+for select to authenticated using (driver_id = (select auth.uid()));
 
 create table if not exists public.driver_locations (
   driver_id uuid primary key references public.profiles(id) on delete cascade,
