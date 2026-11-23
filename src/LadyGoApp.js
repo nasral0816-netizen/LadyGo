@@ -11,6 +11,15 @@ import * as Device from 'expo-device';
 import * as TaskManager from 'expo-task-manager';
 import { supabase } from './supabase';
 
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false
+  })
+});
+
 function calculatePolylineKm(points) {
   const toRad = value => value * Math.PI / 180;
   let meters = 0;
