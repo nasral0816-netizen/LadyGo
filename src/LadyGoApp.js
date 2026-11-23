@@ -353,6 +353,7 @@ export default function LadyGoApp() {
   const [applicationSaving, setApplicationSaving] = useState(false);
   const [myApplication, setMyApplication] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
+  const [tripContact, setTripContact] = useState(null);
   const [chatDraft, setChatDraft] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [ratedOrderIds, setRatedOrderIds] = useState([]);
@@ -1382,6 +1383,27 @@ export default function LadyGoApp() {
     ? driverOrders.find(order => ['accepted','arrived','in_progress'].includes(order.status)) || null
     : (activeOrder && ['accepted','arrived','in_progress'].includes(activeOrder.status) ? activeOrder : null);
 
+  useEffect(() => {
+    let alive = true;
+    if (!chatOrder?.id || !session?.user?.id || !supabase) {
+      setTripContact(null);
+      return;
+    }
+    const rpcName = profile?.role === 'driver'
+      ? 'ladygo_get_assigned_passenger_contact'
+      : 'ladygo_get_assigned_driver_contact';
+    supabase.rpc(rpcName, { p_order_id: chatOrder.id }).then(({ data, error }) => {
+      if (!alive) return;
+      if (error) {
+        console.warn('LadyGo trip contact lookup failed:', error.message);
+        setTripContact(null);
+        return;
+      }
+      setTripContact(Array.isArray(data) ? (data[0] || null) : (data || null));
+    });
+    return () => { alive = false; };
+  }, [chatOrder?.id, profile?.role, session?.user?.id]);
+
   const loadTripMessages = useCallback(async () => {
     if (!chatOrder?.id || !session?.user?.id || !supabase) {
       setChatMessages([]);
@@ -1437,6 +1459,13 @@ export default function LadyGoApp() {
   const renderTripChat = order => {
     if (!order?.id || order.id !== chatOrder?.id) return null;
     return <View style={st.chatCard}>
+      {tripContact?.phone ? <View style={{ gap: 6, padding: 12, borderRadius: 12, backgroundColor: P.pale }}>
+        <Text style={st.heading}>{tripContact.full_name || (profile?.role === 'driver' ? 'Пассажир' : 'Водитель')}</Text>
+        <Text style={st.muted}>{tripContact.phone}</Text>
+        <TouchableOpacity onPress={() => Linking.openURL('tel:' + String(tripContact.phone).replace(/[^+0-9]/g,''))} style={st.primaryBtn}>
+          <Text style={st.primaryText}>{profile?.role === 'driver' ? 'Позвонить пассажиру' : 'Позвонить водителю'}</Text>
+        </TouchableOpacity>
+      </View> : null}
       <View>
         <Text style={st.heading}>Чат поездки</Text>
         <Text style={st.chatHint}>Сообщения доступны пассажиру и назначенному водителю</Text>
