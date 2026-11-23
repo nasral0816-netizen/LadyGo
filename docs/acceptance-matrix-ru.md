@@ -17,13 +17,13 @@
 | Фото/документы | Да | Storage upload и signed URLs есть | Применить private bucket migration, MIME/size/AV |
 | Проверка водителя | Частично | Approved application материализует driver_profiles; новая миграция фильтрует verified driver | Применить и проверить блокировку невалидного driver |
 | Автомобильный профиль | Да | UI + driver_profiles | Проверить редактирование и signed URLs |
-| Создание заказа | Частично | INSERT orders и dispatch trigger есть | Server RPC с проверкой подписанного quote и idempotency |
+| Создание заказа | Добавлено в ветке | Клиент вызывает pricing-service; HMAC quote проверяется Edge Function; RPC атомарно создаёт заказ и сохраняет idempotency key | Развернуть Edge Function, задать LADYGO_PRICING_SECRET и применить миграцию на staging/live |
 | История поездок | Да | orders + загрузка/realtime код | Проверить RLS, пагинацию, multi-device |
 | Тестовые заявки | Да | demo_orders отдельно от orders | Маркировка и запрет dispatch для demo |
 | Отмена | Да | RPC ladygo_cancel_my_order | Проверить каждый статус и освобождение водителя |
-| Подбор водителя | Да | Ближайший свежий online driver | Scheduler, регион, рейтинг и acceptance rate |
+| Подбор водителя | Да, в SQL ветки | Ближайший свежий online verified driver; персональный TTL offer и атомарный accept | Развернуть dispatch-loop и scheduler; улучшить ranking и региональную географию |
 | Гонка accept | Да | FOR UPDATE в RPC | Интеграционный тест двух водителей |
-| TTL оффера | Да | 25 секунд; expire при следующем dispatch | Scheduler нужен при закрытом passenger app |
+| TTL оффера | Да, в SQL ветки | 25 секунд; expire при следующем dispatch | Настроить scheduler; pg_cron fallback — раз в минуту |
 | Допуск только проверенных водителей | Добавлено в ветке | SQL проверяет approved application + driver_profiles | Применить миграцию и негативный тест |
 | GPS водителя | Да | Expo foreground/background task + heartbeat | Реальный Android тест обязателен |
 | GPS пассажиру | Частично | Passenger подписывается на driver_locations | Проверить Realtime и stale state |
@@ -34,8 +34,8 @@
 | Push токены | Да | Register/unregister RPC в ветке | Применить и проверить token lifecycle |
 | Push доставка | Частично | Edge Function и trigger есть | Deploy, Vault/pg_net, Android test |
 | Карты/геокодирование | Да | Yandex MapKit | Проверить ключ, лицензию, маршруты |
-| Серверная тарификация | Не завершено | Клиент вызывает pricing-service, исходника нет | Реализовать функцию и подписанный quote |
-| Server final fare | Не найдено | Нет подтверждённого расчёта | Расчёт по фактическому маршруту/тарифу |
+| Серверная тарификация | Частично реализована в ветке | Подписанный quote, тарифные snapshot и single-use token; оценка пока геодезическая, не дорожная | Подключить server-side Directions API и задать утверждённые тарифы |
+| Server final fare | Добавлено в ветке | RPC рассчитывает distance по trip_tracks, duration по времени и final_price по snapshot тарифу | Применить миграцию; проверить GPS трек и итоговую цену на двух устройствах |
 | Способ оплаты | Частично | payment_method UI | Не считать оплатой |
 | Реальные платежи | Нет | Не реализуются в этой задаче | Отдельный PaymentProvider/PCI DSS |
 | Поддержка | Да | Tickets/replies/UI есть | Проверить вложения, статусы и push |
@@ -49,7 +49,7 @@
 | RLS/Storage | Частично | Миграции есть, private bucket fix в PR; .env исключён из текущего дерева | Проверить live policies/grants и Git history secrets |
 | Антивирус документов | Нет | Не найден | Hook/scan before approval |
 | Android config | Да | Expo SDK 55, RN 0.83.10, permissions | Проверить rationale/target SDK |
-| APK | CI в процессе проверки | Expo export success; APK build был in progress | Дождаться результата и установить |
+| APK | CI выполняется | На последнем commit проверка/сборка ещё не завершена | Дождаться Gradle и загрузки артефакта, затем установить на Android |
 | Android device test | Нет | Физического устройства нет | Два устройства/два аккаунта |
 | Юридическая готовность | Нет | Legal checklist подготовлен | Независимый sign-off |
 
@@ -60,7 +60,7 @@ Expo SDK 55 и Supabase client; UI пассажира/водителя/адми�
 Реальные заказы, назначение водителя, push, GPS, чат, водительские документы, администрирование, тарификация и синхронизация. Нужны применение миграций и интеграционные тесты.
 
 ## Отсутствует или не подтверждено
-pricing-service и server quote verification; server create_order; server final fare; гарантированный dispatch scheduler; подключённая запись trip_tracks; contact UI; полноценный SMS OTP/recovery; admin audit log и лимит 15; offline/outbox; restore test; Android device test.
+production Directions API для цены; server pricing-service требует deploy/secret; signed create_order и GPS final fare добавлены в PR, но ещё не применены; scheduler требует Vault secret и deployment; подключённая запись trip_tracks; contact UI; полноценный SMS OTP/recovery; admin audit log и лимит 15; offline/outbox; restore test; Android device test.
 
 ## Внешние сервисы
 Supabase Auth/Postgres/Storage/Realtime/Edge/Vault/pg_net, Expo Push, Yandex Maps или другой региональный провайдер, SMS OTP, антивирус/модерация. Эквайринг — отдельный этап.
