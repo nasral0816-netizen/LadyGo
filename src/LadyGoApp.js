@@ -280,6 +280,7 @@ export default function LadyGoApp() {
   const [supportSending, setSupportSending] = useState(false);
   const [myTickets, setMyTickets] = useState([]);
   const [adminTickets, setAdminTickets] = useState([]);
+  const [adminReplyDrafts, setAdminReplyDrafts] = useState({});
   const [adminSelectedDriverId, setAdminSelectedDriverId] = useState(null);
   const [adminSection, setAdminSection] = useState('applications');
   const [application, setApplication] = useState({ full_name: '', phone: '', experience: '', vehicle_make: '', vehicle_model: '', vehicle_color: '', vehicle_plate: '', vehicle_year: '', license_info: '' });
@@ -458,7 +459,18 @@ export default function LadyGoApp() {
     try {
       const { data, error } = await supabase.from('driver_applications').select('*').order('created_at', { ascending: false }).limit(100);
       if (error) throw error;
-      setAdminApplications(data || []);
+      const withSignedPhotos = await Promise.all((data || []).map(async item => {
+        const [avatarResult, vehicleResult] = await Promise.all([
+          item.avatar_url ? supabase.storage.from('ladygo-driver-media').createSignedUrl(item.avatar_url, 3600) : Promise.resolve({ data: null }),
+          item.vehicle_photo_url ? supabase.storage.from('ladygo-driver-media').createSignedUrl(item.vehicle_photo_url, 3600) : Promise.resolve({ data: null })
+        ]);
+        return {
+          ...item,
+          avatar_signed_url: avatarResult.data?.signedUrl || null,
+          vehicle_photo_signed_url: vehicleResult.data?.signedUrl || null
+        };
+      }));
+      setAdminApplications(withSignedPhotos);
     } catch (e) { Alert.alert('Не удалось загрузить заявки', translateError(e)); }
     finally { setAdminLoading(false); }
   }, [profile?.role]);
