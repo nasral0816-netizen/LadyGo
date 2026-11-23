@@ -4,7 +4,7 @@
 
 | Функция | Есть в проекте | Работает / подтверждено | Что исправить / проверить |
 |---|---|---|---|
-| LadyGo, #E84F87, слоган | Частично | Цвет есть; единый слоган не подтверждён | Проверить бренд и контраст |
+| LadyGo, #E84F87, слоган | Да в клиенте и Expo config | Фирменный цвет выровнен в app.json и UI; слоган отображается в шапке | Финально проверить контраст и маркетинговые экраны |
 | Регистрация/вход | Да | Supabase Auth код есть; live-тест не выполнен | Проверить подтверждение email и rate limits |
 | Восстановление пароля | Не найдено | Нет | Добавить reset flow и deep link |
 | Телефон/SMS OTP | Частично | Синтетический email mapping в клиенте | Перейти на Phone Auth/OTP, безопасно мигрировать аккаунты |
@@ -46,7 +46,7 @@
 | Язык/тема | Частично | Фиксированная светлая тема | Реализовать или убрать inert controls |
 | Offline/retry/drafts | Частично | Перевод сетевых ошибок | Outbox, retry, draft persistence |
 | Backup/restore | Не подтверждено | Нет operational proof | Настроить backup и restore drill |
-| RLS/Storage | Частично | Миграции есть, private bucket fix в PR | Проверить live policies/grants |
+| RLS/Storage | Частично | Миграции есть, private bucket fix в PR; .env исключён из текущего дерева | Проверить live policies/grants и Git history secrets |
 | Антивирус документов | Нет | Не найден | Hook/scan before approval |
 | Android config | Да | Expo SDK 55, RN 0.83.10, permissions | Проверить rationale/target SDK |
 | APK | CI в процессе проверки | Expo export success; APK build был in progress | Дождаться результата и установить |
