@@ -21,6 +21,8 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Validate LadyGo security and dispatch contracts
+        run: node scripts/validate-ladygo.mjs
       - name: Validate Expo config
         run: npx expo config --type public
       - name: Check Expo dependency compatibility
