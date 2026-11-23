@@ -16,6 +16,7 @@ const verifiedDriverMigration = read('supabase/migrations/20261124120000_ladygo_
 const pricingMigration = read('supabase/migrations/20261124130000_ladygo_signed_price_quotes.sql');
 const pricingFunction = read('supabase/functions/pricing-service/index.ts');
 const schedulerMigration = read('supabase/migrations/20261124140000_ladygo_dispatch_scheduler.sql');
+const finalizationGuard = read('supabase/migrations/20261124150000_ladygo_trip_finalization_guard.sql');
 
 const checks = [];
 const pass = (name, ok, detail = '') => checks.push({ name, ok: Boolean(ok), detail });
@@ -58,6 +59,7 @@ pass('Pricing quote is HMAC-signed and short-lived', pricingFunction.includes('H
 pass('Price quote is bound to passenger and single-use', pricingMigration.includes('ladygo_price_quotes') && pricingMigration.includes('token_hash') && pricingMigration.includes('consumed_at is null'));
 pass('Order creation is idempotent and service-role-only', pricingMigration.includes('ladygo_order_requests') && pricingMigration.includes('pg_advisory_xact_lock') && pricingMigration.includes('to service_role'));
 pass('Final fare is calculated server-side from GPS track and trip time', pricingMigration.includes('actual_distance_km') && pricingMigration.includes('actual_duration_min') && pricingMigration.includes('trip_tracks') && pricingMigration.includes('final_price_rub'));
+pass('Final fare update passes the order guard only through the completion RPC', pricingMigration.includes("set_config('ladygo.finalize_order_id'") && finalizationGuard.includes("current_setting('ladygo.finalize_order_id'") && finalizationGuard.includes('new.price_rub = new.final_price_rub'));
 pass('Dispatch scheduler checks pg_cron, pg_net and Vault', schedulerMigration.includes('pg_cron') && schedulerMigration.includes('pg_net') && schedulerMigration.includes('ladygo_dispatch_secret'));
 pass('Pricing function requires authenticated JWT', supabaseConfig.includes('[functions.pricing-service]') && supabaseConfig.includes('verify_jwt = true'));
 const failed = checks.filter(check => !check.ok);
