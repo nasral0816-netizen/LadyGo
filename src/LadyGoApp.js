@@ -1054,7 +1054,7 @@ export default function LadyGoApp() {
   </View>;
 
   const previewFare = routeInfo
-    ? Math.round((55 + (Number(routeInfo.km) || 0) * 14 + (Number(routeInfo.minutes) || 0) * 1.5) * (tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1) / 5) * 5)
+    ? Math.round((55 + (Number(routeInfo.km) || 0) * 14 + (Number(routeInfo.minutes) || 0) * 1.5) * (tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1) / 5) * 5
     : null;
 
   if (boot) return <View style={st.loading}><ActivityIndicator size="large" color={P.pink}/><Text style={st.muted}>Загружаем LadyGo…</Text></View>;
