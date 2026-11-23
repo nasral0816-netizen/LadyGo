@@ -393,20 +393,7 @@ export default function LadyGoApp() {
  
   useEffect(() => { if (session?.user) { loadOrders(); loadDemoOrders(); } }, [session, loadOrders, loadDemoOrders]);
 
-  useEffect(() => {
-    if (!session?.user?.id || !supabase) return;
-    const isAdmin = profile?.role === 'admin';
-    const channel = supabase.channel('ladygo-demo-orders-' + session.user.id)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'demo_orders',
-        ...(isAdmin ? {} : { filter: 'user_id=eq.' + session.user.id })
-      }, () => {
-        loadDemoOrders();
-        if (isAdmin) loadAdminOrders();
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [session?.user?.id, profile?.role, loadDemoOrders, loadAdminOrders]);
+
   useEffect(() => {
     if (!session?.user?.id || profile?.role !== 'passenger' || !supabase) { setMyApplication(null); return; }
     let alive = true;
@@ -489,6 +476,21 @@ export default function LadyGoApp() {
       setAdminLoading(false);
     }
   }, [profile?.role]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !supabase) return;
+    const isAdmin = profile?.role === 'admin';
+    const channel = supabase.channel('ladygo-demo-orders-' + session.user.id)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'demo_orders',
+        ...(isAdmin ? {} : { filter: 'user_id=eq.' + session.user.id })
+      }, () => {
+        loadDemoOrders();
+        if (isAdmin) loadAdminOrders();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [session?.user?.id, profile?.role, loadDemoOrders, loadAdminOrders]);
 
   const loadAdminApplications = useCallback(async () => {
     if (profile?.role !== 'admin' || !supabase) return;
