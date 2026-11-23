@@ -934,7 +934,7 @@ export default function LadyGoApp() {
     const km = Number(routeInfo.km) || 0;
     const tariffFactor = tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1;
     // Только локальная тестовая оценка, не тариф для реальных поездок.
-    const amount = Math.max(250, Math.round((250 + km * 42 + (Number(routeInfo.minutes) || 0) * 3) * tariffFactor / 50) * 50);
+    const amount = Math.max(100, Math.round((60 + km * 14 + (Number(routeInfo.minutes) || 0) * 1.5) * tariffFactor / 5) * 5);
     const localOrder = {
       id: 'local-' + Date.now(), localPresentation: true,
       pickup_address: pickupText, destination_address: destinationText,
@@ -1045,7 +1045,7 @@ export default function LadyGoApp() {
   </View>;
 
   const previewFare = routeInfo
-    ? Math.max(250, Math.round((250 + (Number(routeInfo.km) || 0) * 42 + (Number(routeInfo.minutes) || 0) * 3) * (tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1) / 50) * 50)
+    ? Math.max(100, Math.round((60 + (Number(routeInfo.km) || 0) * 14 + (Number(routeInfo.minutes) || 0) * 1.5) * (tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1) / 5) * 5)
     : null;
 
   if (boot) return <View style={st.loading}><ActivityIndicator size="large" color={P.pink}/><Text style={st.muted}>Загружаем LadyGo…</Text></View>;
