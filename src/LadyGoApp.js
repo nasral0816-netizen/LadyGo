@@ -7,7 +7,6 @@ import { YandexMapView, Marker, Polyline, geocodeAddress, findDrivingRoutes } fr
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from './supabase';
-import LadyGoPreview from './LadyGoPreview';
 
 function calculatePolylineKm(points) {
   const toRad = value => value * Math.PI / 180;
@@ -1377,14 +1376,12 @@ export default function LadyGoApp() {
       </TouchableOpacity>
       <Text style={st.footnote}>К работе допускаются только совершеннолетние кандидаты после проверки документов администратором.</Text>
     </ScrollView>}
-    {tab === 'preview' && <LadyGoPreview onBack={() => setTab('profile')} />}
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
       <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.phone || profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.phone || profile?.email || 'Аккаунт LadyGo'}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
       <TouchableOpacity style={st.profileRow} onPress={() => setTab('orders')}><Text style={st.profileRowIcon}>◷</Text><Text style={st.profileRowText}>История поездок</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
       {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><Text style={st.profileRowIcon}>🚘</Text><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}
 
-      <TouchableOpacity style={st.profileRow} onPress={() => setTab('preview')}><Text style={st.profileRowIcon}>✦</Text><Text style={st.profileRowText}>Предпросмотр интерфейса</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.profileRow} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com')}><Text style={st.profileRowIcon}>?</Text><Text style={st.profileRowText}>Поддержка</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.profileRow} onPress={() => Linking.openURL('tel:+79911121227')}><Text style={st.profileRowIcon}>☎</Text><Text style={st.profileRowText}>Заказать по телефону</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.logout} onPress={signOut}><Text style={st.logoutText}>Выйти из аккаунта</Text></TouchableOpacity>
