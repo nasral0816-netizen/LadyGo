@@ -406,7 +406,7 @@ export default function LadyGoApp() {
       const pageSize = 500;
       for (let from = 0; ; from += pageSize) {
         const { data, error } = await supabase.from('orders')
-          .select('id,pickup_address,destination_address,status,price_rub,estimated_price_rub,created_at,passenger_id,driver_id,passenger_phone,requested_for,notes')
+          .select('id,pickup_address,destination_address,status,price_rub,estimated_price_rub,created_at,driver_id,requested_for,notes')
           .order('created_at', { ascending: false }).range(from, from + pageSize - 1);
         if (error) throw error;
         allOrders.push(...(data || []));
@@ -422,7 +422,7 @@ export default function LadyGoApp() {
             .select('driver_id,display_name,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year')
             .in('driver_id', driverIds),
           supabase.from('driver_applications')
-            .select('user_id,full_name,phone,vehicle_make,vehicle_model,vehicle_plate,vehicle_color,vehicle_year,status')
+            .select('user_id,full_name,vehicle_make,vehicle_model,vehicle_plate,vehicle_color,vehicle_year,status')
             .in('user_id', driverIds).eq('status', 'approved')
         ]);
         if (profileResult.error) throw profileResult.error;
@@ -438,7 +438,6 @@ export default function LadyGoApp() {
         return {
           ...order,
           driver_full_name: application.full_name || driver.display_name || 'Имя не указано',
-          driver_phone: driver.phone || application.phone || '',
           driver_vehicle_make: driver.vehicle_make || application.vehicle_make || '',
           driver_vehicle_model: driver.vehicle_model || application.vehicle_model || '',
           driver_vehicle_plate: driver.vehicle_plate || application.vehicle_plate || '',
