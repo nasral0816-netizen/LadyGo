@@ -1,17 +1,54 @@
 # LadyGo
 
-## Релиз 6.7.6.9
+LadyGo — Android-приложение сервиса поездок с фирменным стилем #E84F87 и слоганом «Поездки с заботой».
 
-- Обновлена версия приложения до 6.7.6.9 (Android versionCode 11).
-- Добавлен раздел «О приложении» с версией и подписью независимого автора @acyma.
-- Добавлена пасхалка: нажми на подпись автора 7 раз.
-- Улучшены подсказки при ограничении частоты писем авторизации и при истёкшем коде подтверждения.
-- Сохранены карта OpenStreetMap, построение маршрута, предварительный заказ, избранные адреса, чат поездки, уведомления, оценки и поддержка.
+## Технологии
 
-## Проверка перед публичным запуском
+- React Native / Expo SDK 55
+- Supabase Auth, PostgreSQL, Storage, Realtime, Edge Functions
+- GitHub Actions / Gradle Android APK
+- MapLibre / OpenStreetMap и внешние картографические провайдеры
 
-Успешная сборка APK подтверждает компиляцию и создание файла, но не заменяет проверку на реальных устройствах. Перед публикацией необходимо проверить вход/регистрацию и восстановление пароля, создание и отмену заказа, фиксированные тарифы, GPS и отображение карты, push-уведомления, чат, работу водителя и администратора, а также правила обработки персональных данных и юридические требования к перевозкам.
+## Структура
 
-## Сборка
+- src/LadyGoApp.js — основное приложение и роли пользователя.
+- supabase/migrations/ — SQL миграции (перед применением сверять с live schema).
+- supabase/functions/ — Edge Functions.
+- docs/acceptance-matrix-ru.md — матрица требований и приёмки.
+- docs/legal-and-compliance.md — юридический и privacy чек-лист.
+- docs/integrations-and-operations-ru.md — внешние сервисы и эксплуатация.
+- TECHNICAL_AUDIT_RU.md — технический аудит.
+- DISPATCH_SETUP_RU.md — архитектурная спецификация, не инструкция включения реальной диспетчеризации.
 
-Android APK собирается GitHub Actions из ветки `main`. Артефакт сборки доступен в разделе Actions.
+## Установка
+
+Требуются Node.js 22, npm, Java 17 и Android SDK (для локальной сборки).
+
+```bash
+npm install
+cp .env.example .env
+npx expo-doctor
+npx expo start
+```
+
+Заполните только публичные клиентские переменные, которые использует приложение. Никогда не помещайте Supabase service_role key, signing secrets, webhook secrets или приватные API keys в EXPO_PUBLIC_* и клиентский bundle.
+
+## Android APK
+
+Release APK собирается GitHub Actions workflow .github/workflows/android-apk.yml. Для сборки из ветки откройте Actions и запустите workflow вручную или дождитесь PR workflow. Загруженный artifact — временный CI artifact; проверяйте commit SHA, дату, размер и checksum перед распространением. APK не является подтверждением E2E/production готовности.
+
+## Текущий статус
+
+- PR #10 содержит изменения безопасности и технической валидации; он не объединён в main.
+- Успешные статические проверки и Expo export не подтверждают состояние удалённого Supabase.
+- Миграции не применялись к live базе в рамках этого сеанса.
+- Реальные пассажирские перевозки, автоматическая диспетчеризация, координация поездок и платежи запрещены к включению в текущем этапе. См. DISPATCH_SETUP_RU.md.
+- Перед релизом обязательны проверки RLS/Storage, auth recovery, push, admin RBAC, backup restore, Android devices и legal/privacy.
+
+## Важные документы
+
+- docs/acceptance-matrix-ru.md
+- docs/legal-and-compliance.md
+- docs/integrations-and-operations-ru.md
+- TECHNICAL_AUDIT_RU.md
+- DISPATCH_SETUP_RU.md
