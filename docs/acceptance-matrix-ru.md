@@ -12,7 +12,7 @@
 | Профиль пассажира | Частично | Чтение есть | Проверить редактирование/валидацию |
 | Passenger/driver/admin роли | Да | UI и SQL проверки есть | Проверить все grants/RLS на live DB |
 | Главный админ | Частично | UI ожидает is_super_admin и admin RPC | Проверить definitions и запрет self-escalation |
-| Лимит 15 админов | Не подтверждено | Полная SQL гарантия не найдена | Добавить транзакционный лимит |
+| Лимит 15 админов | Исторически заявлено в GitHub Issue #7: миграция add_main_admin_hierarchy применена и лимит реализован RPC | Live DB сейчас недоступна, факт не перепроверен | Получить schema snapshot и негативно проверить 16-го администратора и защиту главного админа |
 | Водительская анкета | Да | Форма и SQL review trigger есть | Проверить повторную подачу и блокировку после одобрения |
 | Фото/документы | Да | Storage upload и signed URLs есть | Применить private bucket migration, MIME/size/AV |
 | Проверка водителя | Частично | Approved application материализует driver_profiles; новая миграция фильтрует verified driver | Применить и проверить блокировку невалидного driver |
@@ -21,7 +21,7 @@
 | История поездок | Да | orders + загрузка/realtime код | Проверить RLS, пагинацию, multi-device |
 | Тестовые заявки | Да | demo_orders отдельно от orders | Маркировка и запрет dispatch для demo |
 | Отмена | Да | RPC ladygo_cancel_my_order | Проверить каждый статус и освобождение водителя |
-| Подбор водителя | Да, в SQL ветки | Ближайший свежий online verified driver; персональный TTL offer и атомарный accept | Развернуть dispatch-loop и scheduler; улучшить ranking и региональную географию |
+| Подбор водителя | Да, в SQL ветки | Триггер после создания заказа выбирает свежего online verified driver; персональный TTL offer, отказ/истечение ведут к следующему, atomic accept | Применить миграции, deploy dispatch-loop и cron, проверить конкуренцию на staging; улучшить ranking и региональную географию |
 | Гонка accept | Да | FOR UPDATE в RPC | Интеграционный тест двух водителей |
 | TTL оффера | Да, в SQL ветки | 25 секунд; expire при следующем dispatch | Настроить scheduler; pg_cron fallback — раз в минуту |
 | Допуск только проверенных водителей | Добавлено в ветке | SQL проверяет approved application + driver_profiles | Применить миграцию и негативный тест |
@@ -35,7 +35,7 @@
 | Push доставка | Частично | Edge Function и trigger есть | Deploy, Vault/pg_net, Android test |
 | Карты/геокодирование | Да | Yandex MapKit | Проверить ключ, лицензию, маршруты |
 | Серверная тарификация | Частично реализована в ветке | Подписанный quote, тарифные snapshot и single-use token; оценка пока геодезическая, не дорожная | Подключить server-side Directions API и задать утверждённые тарифы |
-| Server final fare | Добавлено в ветке | RPC рассчитывает distance по trip_tracks, duration по времени и final_price по snapshot тарифу | Применить миграцию; проверить GPS трек и итоговую цену на двух устройствах |
+| Server final fare | Добавлено в ветке | RPC рассчитывает distance по trip_tracks, duration по времени и final_price по snapshot тарифу; отдельная guard migration разрешает изменение суммы только через RPC завершения | Применить миграции; проверить GPS трек, trigger guard и итоговую цену на двух устройствах |
 | Способ оплаты | Частично | payment_method UI | Не считать оплатой |
 | Реальные платежи | Нет | Не реализуются в этой задаче | Отдельный PaymentProvider/PCI DSS |
 | Поддержка | Да | Tickets/replies/UI есть | Проверить вложения, статусы и push |
@@ -57,7 +57,7 @@
 Expo SDK 55 и Supabase client; UI пассажира/водителя/админа; анкета и поддержка; SQL/client foundation заказов, офферов и GPS; в PR добавлены статические проверки и SQL hardening.
 
 ## Частично реализовано
-Реальные заказы, назначение водителя, push, GPS, чат, водительские документы, администрирование, тарификация и синхронизация. Нужны применение миграций и интеграционные тесты.
+Реальные заказы, назначение водителя, push, GPS, чат, водительские документы, администрирование, тарификация и синхронизация. Диспетчеризация реализована в коде ветки (trigger + RPC + offer + scheduler), но live Supabase deployment и multi-device E2E ещё не выполнены.
 
 ## Отсутствует или не подтверждено
 production Directions API для цены; server pricing-service требует deploy/secret; signed create_order и GPS final fare добавлены в PR, но ещё не применены; scheduler требует Vault secret и deployment; подключённая запись trip_tracks; contact UI; полноценный SMS OTP/recovery; admin audit log и лимит 15; offline/outbox; restore test; Android device test.
