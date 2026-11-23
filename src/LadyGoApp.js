@@ -202,6 +202,21 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
   </View>;
 }
 
+function formatRussianPhone(value) {
+  const raw = String(value || '');
+  if (raw.includes('@')) return raw;
+  let digits = raw.replace(/\\D/g, '');
+  if (digits.startsWith('7') || digits.startsWith('8')) digits = digits.slice(1);
+  digits = digits.slice(0, 10);
+  if (!digits) return raw.trim().startsWith('+') ? '+7' : '';
+  let result = '+7-(' + digits.slice(0, 3);
+  if (digits.length >= 3) result += ')';
+  if (digits.length > 3) result += '-' + digits.slice(3, 6);
+  if (digits.length > 6) result += '-' + digits.slice(6, 8);
+  if (digits.length > 8) result += '-' + digits.slice(8, 10);
+  return result;
+}
+
 function Field({ label, value, onChangeText, placeholder, onFocus, icon, autoCapitalize = 'sentences' }) {
   return <View style={st.field}>
     <Text style={st.fieldIcon}>{icon}</Text>
@@ -1061,7 +1076,7 @@ export default function LadyGoApp() {
   if (!session) return <SafeAreaView style={st.auth}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
     <View style={st.authLogo}><Text style={st.logo}>LadyGo</Text><Text style={st.tagline}>Поездки с заботой</Text></View>
     <View style={st.authCard}><Text style={st.heading}>{register ? 'Создать аккаунт' : 'С возвращением'}</Text>
-      <TextInput style={st.authInput} value={email} onChangeText={setEmail} placeholder={register ? "Номер телефона" : "Номер телефона или email"} autoCapitalize="none" keyboardType={register || !email.includes("@") ? "phone-pad" : "email-address"} textContentType="telephoneNumber"/>
+      <TextInput style={st.authInput} value={email} onChangeText={(value) => setEmail(value.includes("@") ? value : formatRussianPhone(value))} placeholder={register ? "+7-(999)-999-99-99" : "Номер телефона или email"} autoCapitalize="none" keyboardType={register || !email.includes("@") ? "phone-pad" : "email-address"} textContentType="telephoneNumber"/>
       <TextInput style={st.authInput} value={password} onChangeText={setPassword} placeholder="Пароль" secureTextEntry/>
       <TouchableOpacity style={st.primaryBtn} onPress={signIn} disabled={busy}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>{register ? 'Зарегистрироваться' : 'Войти'}</Text>}</TouchableOpacity>
       <TouchableOpacity onPress={() => setRegister(!register)}><Text style={st.switchText}>{register ? 'Уже есть аккаунт? Войти' : 'Создать новый аккаунт'}</Text></TouchableOpacity>
