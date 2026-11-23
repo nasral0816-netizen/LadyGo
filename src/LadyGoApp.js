@@ -1219,15 +1219,21 @@ export default function LadyGoApp() {
                   style={{ backgroundColor: P.pink, borderRadius: 11, padding: 11, alignItems: 'center', marginTop: 4 }}>
                   <Text style={{ color: '#FFFFFF', fontWeight: '900' }}>Следующий этап (тест)</Text>
                 </TouchableOpacity>}
+                <View style={{ backgroundColor: '#FFFFFF', borderRadius: 10, padding: 10, gap: 4 }}>
+                  <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>Данные тестовой поездки</Text>
+                  <Text style={{ color: P.muted, fontSize: 11 }}>Тариф: {o.tariff_id === 'comfort' ? 'Комфорт' : o.tariff_id === 'comfort_plus' ? 'Комфорт +' : 'Эконом'}</Text>
+                  <Text style={{ color: P.muted, fontSize: 11 }}>Оплата: {o.payment_method === 'cash' ? 'Наличные' : o.payment_method === 'card' ? 'Карта (симуляция)' : (o.payment_method || 'Не выбрана')}</Text>
+                  <Text style={{ color: P.muted, fontSize: 11 }}>Расчётная стоимость: {fmt(o.estimated_price_rub || o.price_rub || 0)}</Text>
+                </View>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <View style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#E8DDE2', padding: 10, alignItems: 'center', opacity: 0.55 }}>
-                    <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>☎ Позвонить водителю</Text>
-                    <Text style={{ color: P.muted, fontSize: 10 }}>Недоступно в тесте</Text>
-                  </View>
-                  <View style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#E8DDE2', padding: 10, alignItems: 'center', opacity: 0.55 }}>
-                    <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>☎ Позвонить пассажиру</Text>
-                    <Text style={{ color: P.muted, fontSize: 10 }}>Недоступно в тесте</Text>
-                  </View>
+                  <TouchableOpacity onPress={() => Alert.alert('Тест звонка водителю', 'Проверка интерфейса завершена. Реальный вызов и передача номера не выполняются в локальном тестовом режиме.')} style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#E8DDE2', padding: 10, alignItems: 'center' }}>
+                    <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>☎ Тест звонка водителю</Text>
+                    <Text style={{ color: P.muted, fontSize: 10 }}>Без реального вызова</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => Alert.alert('Тест звонка пассажиру', 'Проверка интерфейса завершена. Реальный вызов и передача номера не выполняются в локальном тестовом режиме.')} style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#E8DDE2', padding: 10, alignItems: 'center' }}>
+                    <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>☎ Тест звонка пассажиру</Text>
+                    <Text style={{ color: P.muted, fontSize: 10 }}>Без реального вызова</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </>}
