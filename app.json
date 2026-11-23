@@ -2,17 +2,17 @@
   "expo": {
     "name": "LadyGo",
     "slug": "guga",
-    "version": "6.8.7",
+    "version": "6.8.8",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "ladygo",
-    "description": "LadyGo — сервис поездок с заботой: заказ поездки и доставки, предварительный заказ, карта, маршрут и связь с водителем.",
+    "description": "LadyGo — маршруты и расчёт стоимости, анкеты водителей, проверка заявок и поддержка.",
     "primaryColor": "#E85D91",
     "backgroundColor": "#E65B8A",
     "icon": "./icon.png",
     "android": {
       "package": "com.ladygo.app",
-      "versionCode": 48,
+      "versionCode": 49,
       "adaptiveIcon": {
         "foregroundImage": "./adaptive-icon.png",
         "backgroundColor": "#E80B87"
@@ -20,22 +20,14 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "POST_NOTIFICATIONS",
-        "ACCESS_BACKGROUND_LOCATION",
-        "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_LOCATION"
-      ],
-      "minSdkVersion": 26
+        "POST_NOTIFICATIONS"
+      ]
     },
     "plugins": [
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "LadyGo использует геолокацию для определения подачи и сопровождения поездки.",
-          "locationAlwaysAndWhenInUsePermission": "Когда водитель выходит на линию, LadyGo передаёт его местоположение пассажиру и диспетчеру даже при свёрнутом приложении.",
-          "isIosBackgroundLocationEnabled": true,
-          "isAndroidBackgroundLocationEnabled": true,
-          "isAndroidForegroundServiceEnabled": true
+          "locationWhenInUsePermission": "LadyGo использует геолокацию только для определения текущего местоположения при построении маршрута."
         }
       ],
       "expo-notifications",
