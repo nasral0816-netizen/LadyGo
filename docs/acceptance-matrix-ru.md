@@ -27,9 +27,9 @@
 | Допуск только проверенных водителей | Добавлено в ветке | SQL проверяет approved application + driver_profiles | Применить миграцию и негативный тест |
 | GPS водителя | Да | Expo foreground/background task + heartbeat | Реальный Android тест обязателен |
 | GPS пассажиру | Частично | Passenger подписывается на driver_locations | Проверить Realtime и stale state |
-| trip_tracks | Добавлено в ветке | Таблица, RLS, RPC; client recording ещё не подключён | Подключить клиент и retention |
+| trip_tracks | Добавлено в ветке | Таблица, RLS, RPC; водительские GPS-точки пишутся во время активной поездки | Подключить passenger track и утвердить retention |
 | order_events | Добавлено в ветке | DB trigger и RLS | Применить и проверить журнал |
-| contact_shares | Добавлено в ветке | Временный lease + RLS | Подключить выдачу телефона и dialer |
+| contact_shares | Добавлено в ветке | Lease + RLS; обе роли получают телефон через узкие RPC, UI показывает контакт и dialer только при активной поездке | Применить миграцию и проверить звонок на Android |
 | Чат поездки | Частично | trip_messages client code + realtime | Проверить миграцию, RLS и UI |
 | Push токены | Да | Register/unregister RPC в ветке | Применить и проверить token lifecycle |
 | Push доставка | Частично | Edge Function и trigger есть | Deploy, Vault/pg_net, Android test |
