@@ -281,6 +281,9 @@ export default function LadyGoApp() {
   const [myTickets, setMyTickets] = useState([]);
   const [adminTickets, setAdminTickets] = useState([]);
   const [adminReplyDrafts, setAdminReplyDrafts] = useState({});
+  const [adminAccounts, setAdminAccounts] = useState([]);
+  const [adminEmailDraft, setAdminEmailDraft] = useState('');
+  const [adminAccountsLoading, setAdminAccountsLoading] = useState(false);
   const [adminSelectedDriverId, setAdminSelectedDriverId] = useState(null);
   const [adminSection, setAdminSection] = useState('applications');
   const [application, setApplication] = useState({ full_name: '', phone: '', experience: '', vehicle_make: '', vehicle_model: '', vehicle_color: '', vehicle_plate: '', vehicle_year: '', license_info: '' });
@@ -493,6 +496,36 @@ export default function LadyGoApp() {
       Alert.alert('Не удалось загрузить водителей', translateError(e));
     }
   }, [profile?.role]);
+
+  const loadAdminAccounts = useCallback(async () => {
+    if (!profile?.is_super_admin || !supabase) return;
+    setAdminAccountsLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('ladygo_list_admins');
+      if (error) throw error;
+      setAdminAccounts(data || []);
+    } catch (e) {
+      Alert.alert('Не удалось загрузить администраторов', translateError(e));
+    } finally {
+      setAdminAccountsLoading(false);
+    }
+  }, [profile?.is_super_admin]);
+
+  const changeAdminAccess = async (email, grantAccess) => {
+    if (!profile?.is_super_admin || !supabase) return;
+    try {
+      const { error } = await supabase.rpc('ladygo_set_admin_by_email', {
+        target_email: email,
+        grant_access: grantAccess
+      });
+      if (error) throw error;
+      await loadAdminAccounts();
+      setAdminEmailDraft('');
+      Alert.alert(grantAccess ? 'Администратор назначен' : 'Права сняты', grantAccess ? 'Пользователь получил права администратора.' : 'Пользователь больше не администратор.');
+    } catch (e) {
+      Alert.alert('Не удалось изменить права', translateError(e));
+    }
+  };
 
   const loadMyTickets = useCallback(async () => {
     if (!session?.user?.id || !supabase) return;
@@ -938,7 +971,7 @@ export default function LadyGoApp() {
         <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>⌖  Пассажир</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>🚘  Водитель</Text></TouchableOpacity>
       </View>}
-      {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); }}>
+      {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}>
         <Text style={[st.adminTopButtonText, tab === 'admin' && st.adminTopButtonTextActive]}>⚙ Админ</Text>
       </TouchableOpacity>}
       <TouchableOpacity style={st.avatar} onPress={() => setTab('profile')}><Text style={st.avatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></TouchableOpacity>
@@ -1092,11 +1125,22 @@ export default function LadyGoApp() {
           ['applications','Заявки',adminApplications.filter(x=>x.status==='pending').length],
           ['drivers','Водители',adminDrivers.length],
           ['orders','Заказы',adminOrders.length],
-          ['support','Поддержка',adminTickets.filter(x=>x.status==='open').length]
+          ['support','Поддержка',adminTickets.filter(x=>x.status==='open').length],
+          ...(profile?.is_super_admin ? [['admins','Администраторы',adminAccounts.length]] : [])
         ].map(([id,label,count])=><TouchableOpacity key={id} onPress={()=>setAdminSection(id)} style={[st.adminTab,adminSection===id&&st.adminTabActive]}>
           <Text style={[st.adminTabText,adminSection===id&&st.adminTabTextActive]}>{label} · {count}</Text>
         </TouchableOpacity>)}
       </View>
+      {adminSection==='admins' && profile?.is_super_admin && <>
+        <View style={st.rowBetween}><Text style={st.heading}>Управление администраторами</Text>{adminAccountsLoading&&<ActivityIndicator color={P.pink}/>}</View>
+        <Text style={st.muted}>Главный администратор назначает и снимает права. Максимум — 15 обычных администраторов. Пользователь должен сначала зарегистрироваться в LadyGo.</Text>
+        <TextInput style={st.phoneInput} value={adminEmailDraft} onChangeText={setAdminEmailDraft} placeholder="Email зарегистрированного пользователя" autoCapitalize="none" keyboardType="email-address" maxLength={254}/>
+        <TouchableOpacity style={st.adminApprove} onPress={()=>changeAdminAccess(adminEmailDraft.trim(),true)}><Text style={st.adminActionText}>Назначить администратором</Text></TouchableOpacity>
+        {adminAccounts.map(item=><View key={item.user_id} style={st.adminApplicationCard}>
+          <View style={st.rowBetween}><Text style={st.adminApplicantName}>{item.email || 'Аккаунт без email'}</Text><Text style={st.adminStatus}>{item.is_super_admin?'Главный':'Обычный'}</Text></View>
+          {item.is_super_admin ? <Text style={st.muted}>Полные права управления. Снять их через панель нельзя.</Text> : <TouchableOpacity style={st.adminReject} onPress={()=>changeAdminAccess(item.email,false)}><Text style={st.adminRejectText}>Снять права администратора</Text></TouchableOpacity>}
+        </View>)}
+      </>}
       {adminSection==='applications' && <>
         <View style={st.rowBetween}><Text style={st.heading}>Заявки на подключение</Text>{adminLoading&&<ActivityIndicator color={P.pink}/>}</View>
         {adminApplications.length===0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>▤</Text><Text style={st.heading}>Заявок пока нет</Text><Text style={st.muted}>Новые анкеты кандидатов появятся здесь.</Text></View> :
@@ -1287,7 +1331,7 @@ export default function LadyGoApp() {
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
       <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.phone || profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.phone || profile?.email || 'Аккаунт LadyGo'}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
       <TouchableOpacity style={st.profileRow} onPress={() => setTab('orders')}><Text style={st.profileRowIcon}>◷</Text><Text style={st.profileRowText}>История поездок</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
-      {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
+      {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
       {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><Text style={st.profileRowIcon}>🚘</Text><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}
 
       <TouchableOpacity style={st.profileRow} onPress={() => { setTab('support'); loadMyTickets(); }}><Text style={st.profileRowIcon}>?</Text><Text style={st.profileRowText}>Поддержка и обращения</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
