@@ -560,12 +560,13 @@ export default function LadyGoApp() {
       const mime = ['image/jpeg','image/png','image/webp'].includes(asset.mimeType) ? asset.mimeType : 'image/jpeg';
       const bytes = decodeBase64Image(asset.base64);
       if (!bytes.length) throw new Error('Фото пустое или повреждено.');
+      if (bytes.length > 5 * 1024 * 1024) throw new Error('Файл больше 5 МБ. Выбери изображение меньшего размера.');
       const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
       const path = `${session.user.id}/application-${kind}-${Date.now()}.${ext}`;
       const { error } = await supabase.storage.from('ladygo-driver-media').upload(path, bytes, { contentType: mime, upsert: false });
       if (error) throw error;
-      const url = supabase.storage.from('ladygo-driver-media').getPublicUrl(path).data.publicUrl;
-      if (kind === 'avatar') setApplicationAvatar(url); else setApplicationVehiclePhoto(url);
+      // Bucket is private: save the object path, never a public URL.
+      if (kind === 'avatar') setApplicationAvatar(path); else setApplicationVehiclePhoto(path);
       Alert.alert('Фото добавлено', 'Фотография прикреплена к заявке.');
     } catch (e) { Alert.alert('Не удалось загрузить фото', translateError(e)); }
   };
@@ -630,6 +631,7 @@ export default function LadyGoApp() {
       const mime = ['image/jpeg', 'image/png', 'image/webp'].includes(asset.mimeType) ? asset.mimeType : 'image/jpeg';
       const bytes = decodeBase64Image(asset.base64);
       if (!bytes.length) throw new Error('Фото пустое или повреждено. Выбери другое изображение.');
+      if (bytes.length > 5 * 1024 * 1024) throw new Error('Файл больше 5 МБ. Выбери изображение меньшего размера.');
       const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
       const path = `${session.user.id}/vehicle-${Date.now()}.${ext}`;
       const { error } = await supabase.storage.from('ladygo-driver-media').upload(path, bytes, { contentType: mime, upsert: false });
@@ -654,6 +656,7 @@ export default function LadyGoApp() {
       const mime = ['image/jpeg', 'image/png', 'image/webp'].includes(asset.mimeType) ? asset.mimeType : 'image/jpeg';
       const bytes = decodeBase64Image(asset.base64);
       if (!bytes.length) throw new Error('Фото пустое или повреждено. Выбери другое изображение.');
+      if (bytes.length > 5 * 1024 * 1024) throw new Error('Файл больше 5 МБ. Выбери изображение меньшего размера.');
       const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
       const path = `${session.user.id}/avatar-${Date.now()}.${ext}`;
       const { error } = await supabase.storage.from('ladygo-driver-media').upload(path, bytes, { contentType: mime, upsert: false });
@@ -818,10 +821,8 @@ export default function LadyGoApp() {
         ? await supabase.auth.signUp({ email: authEmail, password, options: { data: { phone: phoneDigits } } })
         : await supabase.auth.signInWithPassword({ email: authEmail, password });
       if (result.error) throw result.error;
-      if (register && result.data.user) {
-        const { error: profileError } = await supabase.from('profiles').upsert({ id: result.data.user.id, email: null, phone: phoneDigits }, { onConflict: 'id' });
-        if (profileError) throw profileError;
-      }
+      // public.handle_new_user() creates the passenger profile transactionally.
+      // Do not upsert profiles from the client: profiles has no client INSERT/UPDATE policy.
       if (register && !result.data.session) Alert.alert('Требуется настройка', 'В Supabase включено подтверждение email. Для этого временного способа его нужно отключить; SMS-подтверждения пока нет.');
     } catch (e) { Alert.alert('Не удалось войти', translateError(e)); }
     finally { setBusy(false); }
