@@ -77,7 +77,7 @@ const TARIFFS = [
   { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '♡' },
   { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '⌂' }
 ];
-const STATUS = { draft: 'Маршрут сохранён', new: 'Заявка', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
+const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Заявка', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
 
 const translateError = error => {
@@ -252,6 +252,8 @@ export default function LadyGoApp() {
   const [quote, setQuote] = useState(null);
   const [orders, setOrders] = useState([]);
   const [presentationOrders, setPresentationOrders] = useState([]);
+  const [demoOrders, setDemoOrders] = useState([]);
+  const [adminDemoOrders, setAdminDemoOrders] = useState([]);
   const [activeOrder, setActiveOrder] = useState(null);
   const [phone, setPhone] = useState('');
   const [driverOrders, setDriverOrders] = useState([]);
@@ -307,6 +309,17 @@ export default function LadyGoApp() {
     setProfile(data || { id: u.id, email: u.email, role: 'passenger' });
     setPhone(data?.phone || u.user_metadata?.phone || '');
   }, []);
+
+  const loadDemoOrders = useCallback(async () => {
+    if (!session?.user || !supabase) return;
+    const { data, error } = await supabase.from('demo_orders')
+      .select('id,user_id,pickup_address,destination_address,estimated_price_rub,payment_method,tariff_id,status,created_at')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false }).limit(100);
+    if (!error) setDemoOrders((data || []).map(item => ({
+      ...item, localPresentation: true, price_rub: item.estimated_price_rub
+    })));
+  }, [session?.user?.id]);
 
   const loadOrders = useCallback(async () => {
     if (!session?.user || !supabase) return;
@@ -378,7 +391,22 @@ export default function LadyGoApp() {
   // В этой версии нет передачи геопозиции водителя или отслеживания поездки.
   useEffect(() => { setDriverLocation(null); }, [session?.user?.id]);
  
-  useEffect(() => { if (session?.user) loadOrders(); }, [session, loadOrders]);
+  useEffect(() => { if (session?.user) { loadOrders(); loadDemoOrders(); } }, [session, loadOrders, loadDemoOrders]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !supabase) return;
+    const isAdmin = profile?.role === 'admin';
+    const channel = supabase.channel('ladygo-demo-orders-' + session.user.id)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'demo_orders',
+        ...(isAdmin ? {} : { filter: 'user_id=eq.' + session.user.id })
+      }, () => {
+        loadDemoOrders();
+        if (isAdmin) loadAdminOrders();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [session?.user?.id, profile?.role, loadDemoOrders, loadAdminOrders]);
   useEffect(() => {
     if (!session?.user?.id || profile?.role !== 'passenger' || !supabase) { setMyApplication(null); return; }
     let alive = true;
@@ -416,6 +444,12 @@ export default function LadyGoApp() {
         allOrders.push(...(data || []));
         if (!data || data.length < pageSize) break;
       }
+
+      const { data: demoRows, error: demoError } = await supabase.from('demo_orders')
+        .select('id,user_id,pickup_address,destination_address,estimated_price_rub,payment_method,tariff_id,status,created_at')
+        .order('created_at', { ascending: false }).limit(500);
+      if (demoError) throw demoError;
+      setAdminDemoOrders(demoRows || []);
 
       const driverIds = [...new Set(allOrders.map(o => o.driver_id).filter(Boolean))];
       let profiles = [];
@@ -907,15 +941,26 @@ export default function LadyGoApp() {
     const km = Number(routeInfo.km) || 0;
     const tariffFactor = tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1;
     const amount = Math.round((55 + km * 14 + (Number(routeInfo.minutes) || 0) * 1.5) * tariffFactor / 5) * 5;
-    const savedRoute = {
-      id: 'route-' + Date.now(), localPresentation: true, status: 'draft',
-      pickup_address: pickupText, destination_address: destinationText,
-      estimated_price_rub: amount, price_rub: amount,
-      payment_method: payment, created_at: new Date().toISOString(), tariff_id: tariff
-    };
-    setPresentationOrders(current => [savedRoute, ...current]);
-    setTab('orders');
-    Alert.alert('Маршрут сохранён', 'Маршрут и предварительная стоимость сохранены на этом устройстве. Заказ водителю не отправляется.');
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.from('demo_orders').insert({
+        user_id: session.user.id,
+        pickup_address: pickupText,
+        destination_address: destinationText,
+        estimated_price_rub: amount,
+        payment_method: payment,
+        tariff_id: tariff,
+        status: 'saved'
+      }).select('id,user_id,pickup_address,destination_address,estimated_price_rub,payment_method,tariff_id,status,created_at').single();
+      if (error) throw error;
+      setDemoOrders(current => [{ ...data, localPresentation: true, price_rub: data.estimated_price_rub }, ...current]);
+      setTab('orders');
+      Alert.alert('Заявка сохранена', 'Запись сохранена в Supabase и доступна в истории этого аккаунта. Она не передана водителю и не является заказом на реальную поездку.');
+    } catch (error) {
+      Alert.alert('Не удалось сохранить заявку', translateError(error));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const signOut = async () => { await supabase.auth.signOut(); setTab('ride'); };
@@ -924,10 +969,13 @@ export default function LadyGoApp() {
       Alert.alert('Недоступно', 'Управление реальными заказами в этой версии отключено.');
       return;
     }
-    Alert.alert('Удалить тестовую запись?', 'Подтверди удаление этой локальной записи.', [
-      { text: 'Оставить', style: 'cancel' },
-      { text: 'Удалить', style: 'destructive', onPress: () => {
-        setPresentationOrders(current => current.filter(item => item.id !== order.id));
+    Alert.alert('Отменить тестовую заявку?', 'Она останется в истории со статусом «Отменена».', [
+      { text: 'Назад', style: 'cancel' },
+      { text: 'Отменить', style: 'destructive', onPress: async () => {
+        const { error } = await supabase.from('demo_orders')
+          .update({ status: 'cancelled' }).eq('id', order.id).eq('user_id', session.user.id);
+        if (error) return Alert.alert('Не удалось отменить заявку', translateError(error));
+        await loadDemoOrders();
       }}
     ]);
   };
@@ -1025,8 +1073,8 @@ export default function LadyGoApp() {
         </View>
         {renderTripChat()}
       </>}
-      {orders.length + presentationOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Нет сохранённых маршрутов</Text><Text style={st.muted}>Сохранённые маршруты появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Сохранить маршрут</Text></TouchableOpacity></View> :
-        [...presentationOrders, ...orders].map(o => {
+      {orders.length + demoOrders.length + presentationOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Нет сохранённых маршрутов</Text><Text style={st.muted}>Сохранённые маршруты появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Сохранить маршрут</Text></TouchableOpacity></View> :
+        [...demoOrders, ...presentationOrders, ...orders].map(o => {
           const driverStats = o.driver_id ? driverRatingStats[o.driver_id] : null;
           const canRate = o.status === 'completed' && o.driver_id && !ratedOrderIds.includes(o.id);
           return <View key={o.id} style={st.orderCard}>
@@ -1217,6 +1265,25 @@ export default function LadyGoApp() {
             {o.driver_id ? <Text style={st.adminDetail}>Госномер: {o.driver_vehicle_plate||'Не указан'}</Text> : null}
           </View>
           <View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub?fmt(o.price_rub):o.estimated_price_rub?fmt(o.estimated_price_rub):'Цена не указана'}</Text><Text style={st.muted}>ID: {String(o.id).slice(0,8)}</Text></View>
+        </View>)}
+      </>}
+      {adminDemoOrders.length > 0 && <>
+        <View style={[st.rowBetween,{marginTop:18}]}>
+          <Text style={st.heading}>Сохранённые тестовые заявки</Text>
+          <Text style={st.muted}>{adminDemoOrders.length}</Text>
+        </View>
+        {adminDemoOrders.map(o=><View key={'demo-'+o.id} style={st.orderCard}>
+          <View style={st.rowBetween}>
+            <Text style={st.orderStatus}>{STATUS[o.status]||o.status}</Text>
+            <Text style={st.orderDate}>{new Date(o.created_at).toLocaleString('ru-RU')}</Text>
+          </View>
+          <Text style={st.orderAddress}>● {o.pickup_address}</Text>
+          <Text style={st.orderAddress}>● {o.destination_address}</Text>
+          <View style={st.rowBetween}>
+            <Text style={st.orderPrice}>{fmt(o.estimated_price_rub)}</Text>
+            <Text style={st.muted}>Аккаунт: {String(o.user_id).slice(0,8)} · ID: {String(o.id).slice(0,8)}</Text>
+          </View>
+          <Text style={st.footnote}>Тестовая запись · не передана водителю</Text>
         </View>)}
       </>}
       <Text style={st.footnote}>Решение об одобрении принимается после личной проверки возраста, водительских документов и автомобиля.</Text>
