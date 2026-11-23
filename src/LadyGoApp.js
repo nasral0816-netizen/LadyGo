@@ -226,6 +226,7 @@ export default function LadyGoApp() {
   const [payment, setPayment] = useState('cash');
   const [quote, setQuote] = useState(null);
   const [orders, setOrders] = useState([]);
+  const [presentationOrders, setPresentationOrders] = useState([]);
   const [activeOrder, setActiveOrder] = useState(null);
   const [phone, setPhone] = useState('');
   const [driverOrders, setDriverOrders] = useState([]);
@@ -879,10 +880,21 @@ export default function LadyGoApp() {
 
   const createOrder = async () => {
     if (!session?.user) return;
-    if (!pickup || !destination) return Alert.alert('Укажи маршрут', 'Выбери адрес подачи и назначения из подсказок.');
-    if (!quote?.price_token || !quote?.expires_at || new Date(quote.expires_at).getTime() <= Date.now()) return Alert.alert('Обновляем стоимость', 'Подожди расчёт цены и попробуй ещё раз.');
-    setBusy(true);
-    try {
+    if (!pickup || !destination || !routeInfo) return Alert.alert('Укажи маршрут', 'Выбери оба адреса и дождись построения маршрута.');
+    // Локальная презентационная запись: не отправляется водителям и не сохраняется на сервере.
+    const km = Number(routeInfo.km) || 0;
+    const tariffFactor = tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1;
+    const amount = Math.max(150, Math.round((120 + km * 32 + (Number(routeInfo.minutes) || 0) * 3) * tariffFactor / 10) * 10);
+    const localOrder = {
+      id: 'local-' + Date.now(), localPresentation: true,
+      pickup_address: pickupText, destination_address: destinationText,
+      estimated_price_rub: amount, price_rub: amount, status: 'new',
+      payment_method: payment, created_at: new Date().toISOString(), tariff_id: tariff
+    };
+    setPresentationOrders(current => [localOrder, ...current]);
+    setTab('orders');
+    Alert.alert('Заявка оформлена', 'Запись добавлена в историю поездок. Она не передаётся водителям.');
+  };
       // Do not create a second active trip: check the database before insert.
       const { data: existing, error: checkError } = await supabase.from('orders')
         .select('id,status')
@@ -926,6 +938,15 @@ export default function LadyGoApp() {
 
   const signOut = async () => { await supabase.auth.signOut(); setTab('ride'); };
   const cancelOrder = async order => {
+    if (order?.localPresentation) {
+      Alert.alert('Отменить поездку?', 'Подтверди отмену этой записи.', [
+        { text: 'Не отменять', style: 'cancel' },
+        { text: 'Отменить', style: 'destructive', onPress: () => {
+          setPresentationOrders(current => current.map(item => item.id === order.id ? { ...item, status: 'cancelled' } : item));
+        }}
+      ]);
+      return;
+    }
     Alert.alert('Отменить заказ?', 'Подтверди отмену этой заявки.', [
       { text: 'Не отменять', style: 'cancel' },
       { text: 'Отменить', style: 'destructive', onPress: async () => {
@@ -1067,7 +1088,7 @@ export default function LadyGoApp() {
         <Text style={st.sectionTitle}>Способ оплаты</Text>
         <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>₽</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
-        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !quote?.price_token || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !quote?.price_token || busy}>
+        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || busy}>
           {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={st.phoneOrderBtn} onPress={() => Linking.openURL('tel:+79911121227')}>
@@ -1098,11 +1119,12 @@ export default function LadyGoApp() {
         </View>
         {renderTripChat()}
       </>}
-      {orders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет поездок</Text><Text style={st.muted}>Оформленные заказы появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Заказать поездку</Text></TouchableOpacity></View> :
-        orders.map(o => {
+      {orders.length + presentationOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Пока нет поездок</Text><Text style={st.muted}>Оформленные заказы появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Заказать поездку</Text></TouchableOpacity></View> :
+        [...presentationOrders, ...orders].map(o => {
           const driverStats = o.driver_id ? driverRatingStats[o.driver_id] : null;
           const canRate = o.status === 'completed' && o.driver_id && !ratedOrderIds.includes(o.id);
           return <View key={o.id} style={st.orderCard}>
+            {o.localPresentation && <Text style={st.footnote}>Тестовая запись — не отправлена водителям</Text>}
             <View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status] || o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleDateString('ru-RU')}</Text></View>
             <Text style={st.orderAddress}>●  {o.pickup_address}</Text>
             <Text style={st.orderAddress}>●  {o.destination_address}</Text>
