@@ -319,7 +319,7 @@ export default function LadyGoApp() {
       const { data: stats } = await supabase.from('driver_rating_stats').select('driver_id,average_rating,rating_count').in('driver_id', driverIds);
       setDriverRatingStats(current => ({ ...current, ...Object.fromEntries((stats || []).map(s => [s.driver_id, s])) }));
     }
-    const active = orderRows.find(o => ['new','accepted','arrived','in_progress'].includes(o.status)) || null;
+    const active = null; // Активное назначение и сопровождение поездок отключены в этой версии.
     setActiveOrder(active);
     if (active?.driver_id && ['accepted','arrived','in_progress'].includes(active.status)) {
       const { data: vehicle } = await supabase.from('driver_profiles').select('display_name,avatar_url,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,vehicle_photo_url').eq('driver_id', active.driver_id).maybeSingle();
@@ -373,60 +373,9 @@ export default function LadyGoApp() {
     return () => subscription.remove();
   }, [searchField, tab]);
 
-  // Водитель делится геопозицией только при наличии назначенной активной поездки.
-  useEffect(() => {
-    if (profile?.role !== 'driver' || !session?.user?.id) return;
-    const current = driverOrders.find(o => o.driver_id === session.user.id && ['accepted','arrived','in_progress'].includes(o.status));
-    if (!current) return;
-    let subscription;
-    let stopped = false;
-    (async () => {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted' || stopped) return;
-      subscription = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10 },
-        async position => {
-          if (stopped) return;
-          const point = { latitude: position.coords.latitude, longitude: position.coords.longitude };
-          await supabase.from('driver_locations').upsert({
-            driver_id: session.user.id, latitude: point.latitude, longitude: point.longitude,
-            heading: position.coords.heading, updated_at: new Date().toISOString()
-          }, { onConflict: 'driver_id' });
-        }
-      );
-    })().catch(() => {});
-    return () => { stopped = true; subscription?.remove(); };
-  }, [profile?.role, session?.user?.id, driverOrders]);
-
-  // Пассажир получает координаты только водителя, назначенного на его текущий заказ.
-  useEffect(() => {
-    if (!activeOrder?.driver_id || !['accepted','arrived','in_progress'].includes(activeOrder.status) || !supabase) {
-      setDriverLocation(null);
-      return;
-    }
-    let alive = true;
-    const loadLocation = async () => {
-      const { data } = await supabase.from('driver_locations').select('latitude,longitude,heading,updated_at').eq('driver_id', activeOrder.driver_id).maybeSingle();
-      if (alive && data && Date.now() - new Date(data.updated_at).getTime() < 120000) setDriverLocation({ latitude: data.latitude, longitude: data.longitude, heading: data.heading });
-    };
-    loadLocation();
-    const channel = supabase.channel('driver-location-' + activeOrder.id)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_locations', filter: 'driver_id=eq.' + activeOrder.driver_id }, payload => {
-        const row = payload.new;
-        if (alive && row?.latitude != null && row?.longitude != null) setDriverLocation({ latitude: row.latitude, longitude: row.longitude, heading: row.heading });
-      }).subscribe();
-    return () => { alive = false; supabase.removeChannel(channel); };
-  }, [activeOrder?.id, activeOrder?.driver_id, activeOrder?.status]);
-
-  useEffect(() => {
-    if (!session?.user?.id || !supabase) return;
-    const channel = supabase.channel('passenger-orders-' + session.user.id)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: 'passenger_id=eq.' + session.user.id }, () => {
-        loadOrders();
-      }).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [session?.user?.id, loadOrders]);
-
+  // В этой версии нет передачи геопозиции водителя или отслеживания поездки.
+  useEffect(() => { setDriverLocation(null); }, [session?.user?.id]);
+ 
   useEffect(() => { if (session?.user) loadOrders(); }, [session, loadOrders]);
   useEffect(() => {
     if (!session?.user?.id || profile?.role !== 'passenger' || !supabase) { setMyApplication(null); return; }
@@ -734,91 +683,21 @@ export default function LadyGoApp() {
     finally { setVehicleSaving(false); }
   };
   const loadDriverOrders = useCallback(async () => {
-    if (!session?.user || profile?.role !== 'driver' || !supabase) return;
-    setDriverLoading(true);
-    try {
-      let request = supabase.from('orders').select('*');
-      request = driverOnline
-        ? request.or('status.eq.new,driver_id.eq.' + session.user.id)
-        : request.eq('driver_id', session.user.id);
-      const { data, error } = await request.order('created_at', { ascending: false }).limit(60);
-      if (error) throw error;
-      setDriverOrders(data || []);
-      const { data: stats } = await supabase.from('driver_rating_stats').select('driver_id,average_rating,rating_count').eq('driver_id', session.user.id).maybeSingle();
-      if (stats) setDriverRatingStats(current => ({ ...current, [session.user.id]: stats }));
-    } catch (e) {
-      Alert.alert('Не удалось обновить заказы', translateError(e));
-    } finally { setDriverLoading(false); }
-  }, [session, profile, driverOnline]);
-
-  useEffect(() => {
-    if (profile?.role !== 'driver' || !session?.user?.id || !supabase) {
-      setDriverOnline(false);
-      return;
-    }
-    let alive = true;
-    supabase.from('driver_presence').select('is_online')
-      .eq('driver_id', session.user.id).maybeSingle()
-      .then(({ data, error }) => {
-        if (alive && !error) setDriverOnline(Boolean(data?.is_online));
-      });
-    return () => { alive = false; };
-  }, [profile?.role, session?.user?.id]);
-
-  useEffect(() => {
-    if (profile?.role === 'driver') loadDriverOrders();
-  }, [profile, loadDriverOrders, driverOnline]);
+    setDriverOrders([]);
+    setDriverOnline(false);
+    setDriverLoading(false);
+  }, []);
 
   const toggleDriverShift = async () => {
-    if (profile?.role !== 'driver' || !session?.user?.id || driverPresenceLoading) return;
-    if (driverOnline) {
-      const hasActive = driverOrders.some(o => o.driver_id === session.user.id && ['accepted','arrived','in_progress'].includes(o.status));
-      if (hasActive) {
-        Alert.alert('Сначала заверши поездку', 'Нельзя завершить смену, пока у тебя есть активная поездка.');
-        return;
-      }
-    }
-    const next = !driverOnline;
-    setDriverPresenceLoading(true);
-    try {
-      const { error } = await supabase.from('driver_presence').upsert({
-        driver_id: session.user.id,
-        is_online: next,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'driver_id' });
-      if (error) throw error;
-      setDriverOnline(next);
-      if (next) await loadDriverOrders();
-      else setDriverOrders(current => current.filter(o => o.driver_id === session.user.id));
-      Alert.alert(next ? 'Ты на линии' : 'Смена завершена', next ? 'Теперь тебе доступны новые заявки.' : 'Новые заявки больше не будут отображаться.');
-    } catch (e) {
-      Alert.alert('Не удалось изменить статус', translateError(e));
-    } finally {
-      setDriverPresenceLoading(false);
-    }
+    Alert.alert('Приём заявок отключён', 'В этой версии доступны анкета водителя и данные автомобиля. Получение и обработка заказов не подключены.');
   };
 
-  const acceptDriverOrder = async order => {
-    const price = Number(String(driverPrices[order.id] || order.estimated_price_rub || '').replace(',', '.'));
-    if (!Number.isFinite(price) || price <= 0) return Alert.alert('Укажи стоимость', 'Введи согласованную стоимость поездки в рублях.');
-    setBusy(true);
-    try {
-      const { error } = await supabase.rpc('ladygo_accept_order', { p_order_id: order.id, p_price: price });
-      if (error) throw error;
-      await loadDriverOrders();
-      Alert.alert('Заказ принят', 'Поездка добавлена в твои активные заказы.');
-    } catch (e) { Alert.alert('Не удалось принять заказ', translateError(e)); }
-    finally { setBusy(false); }
+  const acceptDriverOrder = async () => {
+    Alert.alert('Функция отключена', 'Приём заказов в этой версии недоступен.');
   };
 
-  const updateDriverStatus = async (order, status) => {
-    setBusy(true);
-    try {
-      const { error } = await supabase.rpc('ladygo_update_trip_status', { p_order_id: order.id, p_status: status });
-      if (error) throw error;
-      await loadDriverOrders();
-    } catch (e) { Alert.alert('Не удалось обновить поездку', translateError(e)); }
-    finally { setBusy(false); }
+  const updateDriverStatus = async () => {
+    Alert.alert('Функция отключена', 'Изменение статусов поездок в этой версии недоступно.');
   };
 
   const submitDriverRating = async order => {
@@ -1015,41 +894,24 @@ export default function LadyGoApp() {
     setPresentationOrders(current => [localOrder, ...current]);
     setOfferState({ orderId: localOrder.id, driverIndex: 0, token: Date.now() });
     setTab('orders');
-    Alert.alert('Тестовый заказ создан', 'Сейчас начнётся проверка карточки виртуального водителя. Реальным водителям заказ не отправляется.');
+    Alert.alert('Маршрут сохранён', 'Запись сохранена только на этом устройстве. Заказ не отправляется водителям.');
   };
 
   const signOut = async () => { await supabase.auth.signOut(); setTab('ride'); };
   const cancelOrder = async order => {
-    if (order?.localPresentation) {
-      Alert.alert('Отменить поездку?', 'Подтверди отмену этой записи.', [
-        { text: 'Не отменять', style: 'cancel' },
-        { text: 'Отменить', style: 'destructive', onPress: () => {
-          setPresentationOrders(current => current.map(item => item.id === order.id ? { ...item, status: 'cancelled' } : item));
-        }}
-      ]);
+    if (!order?.localPresentation) {
+      Alert.alert('Недоступно', 'Управление реальными заказами в этой версии отключено.');
       return;
     }
-    Alert.alert('Отменить заказ?', 'Подтверди отмену этой заявки.', [
-      { text: 'Не отменять', style: 'cancel' },
-      { text: 'Отменить', style: 'destructive', onPress: async () => {
-        try {
-          const { error } = await supabase.rpc('ladygo_cancel_active_order', {
-            p_order_id: order.id,
-            p_reason: 'Отмена пассажиром'
-          });
-          if (error) {
-            Alert.alert('Не удалось отменить', translateError(error));
-            return;
-          }
-          await loadOrders();
-          Alert.alert('Заказ отменён', 'Заявка успешно отменена.');
-        } catch (error) {
-          Alert.alert('Не удалось отменить', translateError(error));
-        }
+    Alert.alert('Удалить тестовую запись?', 'Подтверди удаление этой локальной записи.', [
+      { text: 'Оставить', style: 'cancel' },
+      { text: 'Удалить', style: 'destructive', onPress: () => {
+        setPresentationOrders(current => current.filter(item => item.id !== order.id));
       }}
     ]);
   };
 
+  const chatOrder = null;
   const chatOrder = tab === 'driver'
     ? driverOrders.find(o => o.driver_id === session?.user?.id && ['accepted','arrived','in_progress'].includes(o.status)) || null
     : (activeOrder?.driver_id && ['accepted','arrived','in_progress'].includes(activeOrder.status) ? activeOrder : null);
@@ -1076,22 +938,7 @@ export default function LadyGoApp() {
   }, [chatOrder?.id, session?.user?.id]);
 
   const sendTripMessage = async () => {
-    const message = chatDraft.trim();
-    if (!message || !chatOrder?.id || !session?.user?.id || chatSending) return;
-    setChatSending(true);
-    try {
-      const { error } = await supabase.from('trip_messages').insert({
-        order_id: chatOrder.id,
-        sender_id: session.user.id,
-        message
-      });
-      if (error) throw error;
-      setChatDraft('');
-    } catch (e) {
-      Alert.alert('Не удалось отправить сообщение', translateError(e));
-    } finally {
-      setChatSending(false);
-    }
+    Alert.alert('Чат поездки отключён', 'В этой версии нет связи пассажира с водителем через приложение.');
   };
 
   const renderTripChat = () => !chatOrder ? null : <View style={st.chatCard}>
@@ -1307,9 +1154,9 @@ export default function LadyGoApp() {
         </TouchableOpacity>
       </View>
       <View style={st.adminStats}>
-        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminApplications.filter(x=>x.status==='pending').length}</Text><Text style={st.adminStatLabel}>Новые заявки</Text></View>
+        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminApplications.filter(x=>x.status==='pending').length}</Text><Text style={st.adminStatLabel}>Заявки отключены</Text></View>
         <View style={st.adminStat}><Text style={st.adminStatValue}>{adminDrivers.length}</Text><Text style={st.adminStatLabel}>Водители</Text></View>
-        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminOrders.filter(o=>['new','accepted','arrived','in_progress'].includes(o.status)).length}</Text><Text style={st.adminStatLabel}>Активные поездки</Text></View>
+        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminOrders.filter(o=>['new','accepted','arrived','in_progress'].includes(o.status)).length}</Text><Text style={st.adminStatLabel}>Поездки отключены</Text></View>
       </View>
       <View style={st.adminTabs}>
         {[
@@ -1420,7 +1267,7 @@ export default function LadyGoApp() {
           <View style={{flex:1}}>
             <Text style={st.driverEyebrow}>РАБОЧЕЕ ПРОСТРАНСТВО</Text>
             <Text style={st.pageTitle}>Панель водителя</Text>
-            <Text style={st.driverSubtitle}>Все поездки и рабочие показатели в одном месте</Text>
+            <Text style={st.driverSubtitle}>Профиль водителя и данные автомобиля</Text>
           </View>
           <TouchableOpacity style={st.driverRefresh} onPress={loadDriverOrders} disabled={driverLoading}>
             {driverLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.driverRefreshText}>↻</Text>}
@@ -1430,7 +1277,7 @@ export default function LadyGoApp() {
           <Text style={st.driverModeIcon}>🚘</Text>
           <View style={{flex:1}}>
             <Text style={st.driverModeTitle}>{driverOnline ? 'Ты на линии' : 'Ты не на линии'}</Text>
-            <Text style={st.driverModeSub}>{driverOnline ? 'Новые заявки доступны для принятия' : 'Включи смену, чтобы получать новые заявки'}</Text>
+            <Text style={st.driverModeSub}>{driverOnline ? 'Приём заявок отключён' : 'Данные профиля можно редактировать ниже'}</Text>
           </View>
           <View style={[st.driverOnlineDot, !driverOnline && { backgroundColor: '#B8B0B5' }]}/>
         </View>
@@ -1511,7 +1358,7 @@ export default function LadyGoApp() {
         {shown.length===0 ? <View style={st.emptyCard}>
           <Text style={st.emptyIcon}>{driverSection==='history'?'◷':'⌁'}</Text>
           <Text style={st.heading}>{driverSection==='available'?'Новых заявок пока нет':driverSection==='active'?'Активных поездок нет':driverSection==='history'?'История пока пуста':'Всё спокойно'}</Text>
-          <Text style={st.muted}>{driverSection==='available'?'Когда появится новая заявка, она отобразится здесь.':driverSection==='active'?'Принятые поездки будут собраны в этом разделе.':driverSection==='history'?'Завершённые поездки появятся здесь.':'Новые заявки и активные поездки будут показаны в этой панели.'}</Text>
+          <Text style={st.muted}>{driverSection==='available'?'Получение заказов в этой версии отключено.':driverSection==='active'?'Обработка поездок в этой версии отключена.':driverSection==='history'?'Завершённые поездки появятся здесь.':'Панель используется для настройки профиля водителя.'}</Text>
           <TouchableOpacity style={st.driverSecondaryBtn} onPress={loadDriverOrders}><Text style={st.driverSecondaryText}>Обновить список</Text></TouchableOpacity>
         </View> : shown.map(o => <View key={o.id} style={st.driverOrderCard}>
           <View style={st.rowBetween}>
@@ -1541,7 +1388,7 @@ export default function LadyGoApp() {
             {chatOrder?.id===o.id&&renderTripChat()}
           </View>}
         </View>)}
-        <Text style={st.footnote}>Панель предназначена для совершеннолетних водителей, прошедших проверку LadyGo.</Text>
+        <Text style={st.footnote}>Панель профиля водителя. Приём и сопровождение заказов отключены.</Text>
       </ScrollView>;
     })()}
     {tab === 'apply' && profile?.role === 'passenger' && <ScrollView contentContainerStyle={st.pageContent} keyboardShouldPersistTaps="handled">
