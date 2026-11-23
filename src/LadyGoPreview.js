@@ -8,8 +8,8 @@ const styleUrl = 'https://tiles.openfreemap.org/styles/liberty';
 // Изолированный демонстрационный экран: все записи и координаты вымышлены.
 // Здесь нет GPS, Supabase-запросов, заказов или управления водителями.
 const sampleHistory = [
-  { id: 'LG-DEMO-1042', date: '21 ноября · 14:20', route: 'Курортный бульвар → Вокзальная', status: 'Завершена', amount: '450 ₽' },
-  { id: 'LG-DEMO-1038', date: '20 ноября · 11:05', route: 'Проспект Победы → Колоннада', status: 'Завершена', amount: '320 ₽' },
+  { id: 'LG-DEMO-1042', date: '21 ноября · 14:20', route: 'Курортный бульвар → Вокзальная', status: 'Завершена', amount: '450 Р' },
+  { id: 'LG-DEMO-1038', date: '20 ноября · 11:05', route: 'Проспект Победы → Колоннада', status: 'Завершена', amount: '320 Р' },
   { id: 'LG-DEMO-1021', date: '18 ноября · 18:40', route: 'Улица Ленина → Старое озеро', status: 'Отменена', amount: '—' },
 ];
 const sampleApplications = [
