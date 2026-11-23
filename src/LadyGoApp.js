@@ -1141,8 +1141,8 @@ export default function LadyGoApp() {
         <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || busy}>
           {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
         </TouchableOpacity>
-        <TouchableOpacity style={st.phoneOrderBtn} onPress={() => Linking.openURL('tel:+79911121227')}>
-          <Text style={st.phoneOrderText}>☎  Заказать по телефону</Text>
+        <TouchableOpacity style={st.phoneOrderBtn} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com?subject=Поддержка%20LadyGo')}>
+          <Text style={st.phoneOrderText}>✉  Написать в поддержку</Text>
         </TouchableOpacity>
         <Text style={st.footnote}>Создано независимым автором @acyma</Text>
       </ScrollView>
