@@ -25,13 +25,14 @@ begin
     raise exception 'Invalid Expo push token';
   end if;
 
-  if p_device_platform not in ('android','ios') then
+  if p_device_platform is null or p_device_platform not in ('android','ios') then
     raise exception 'Unsupported device platform';
   end if;
 
   select role into v_role
   from public.profiles
   where id = v_user_id;
+  if v_role is null then raise exception 'Profile not found'; end if;
 
   -- Expo tokens are device-specific. Remove stale ownership before claiming it.
   delete from public.user_push_tokens
