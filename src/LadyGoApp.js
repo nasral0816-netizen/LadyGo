@@ -205,7 +205,7 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
 function formatRussianPhone(value) {
   const raw = String(value || '');
   if (raw.includes('@')) return raw;
-  let digits = raw.replace(/\\D/g, '');
+  let digits = raw.replace(/\D/g, '');
   if (digits.startsWith('7') || digits.startsWith('8')) digits = digits.slice(1);
   digits = digits.slice(0, 10);
   if (!digits) return raw.trim().startsWith('+') ? '+7' : '';
