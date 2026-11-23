@@ -293,6 +293,7 @@ export default function LadyGoApp() {
   const [password, setPassword] = useState('');
   const [register, setRegister] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
   const [tab, setTab] = useState('ride');
   const [pickupText, setPickupText] = useState('Моё местоположение');
   const [destinationText, setDestinationText] = useState('');
@@ -1344,6 +1345,22 @@ export default function LadyGoApp() {
     } finally { setBusy(false); }
   };
 
+  const saveProfilePhone = async () => {
+    if (!session?.user?.id || profileSaving) return;
+    setProfileSaving(true);
+    try {
+      const { data, error } = await supabase.rpc('ladygo_update_my_phone', { p_phone: phone });
+      if (error) throw error;
+      setProfile(data || { ...profile, phone: phone.trim() || null });
+      setPhone(data?.phone || '');
+      Alert.alert('Профиль обновлён', 'Контактный номер сохранён.');
+    } catch (error) {
+      Alert.alert('Не удалось сохранить профиль', translateError(error));
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
   const signOut = async () => {
     if (session?.user?.id && Device.isDevice && supabase) {
       try {
@@ -1556,7 +1573,7 @@ export default function LadyGoApp() {
         <Text style={st.sectionTitle}>Предпочтительный способ оплаты</Text>
         <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>Р</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <Text style={st.muted}>Онлайн-оплата в приложении пока не подключена. Выбор способа — только предпочтение, списания не происходит.</Text>
-        <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
+        <Text style={st.muted}>Для связи используется номер, сохранённый в профиле.</Text>
         <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || !quote?.price_token || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || !quote?.price_token || busy}>
           {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
         </TouchableOpacity>
@@ -1963,6 +1980,12 @@ export default function LadyGoApp() {
     </ScrollView>}
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
       <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.phone || profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.phone || profile?.email || 'Аккаунт LadyGo'}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
+      <Text style={st.sectionTitle}>Контактный телефон</Text>
+      <TextInput style={st.authInput} value={phone} onChangeText={setPhone} placeholder="+7 999 123-45-67" keyboardType="phone-pad" maxLength={20}/>
+      <TouchableOpacity style={[st.primaryBtn,profileSaving&&st.disabled]} onPress={saveProfilePhone} disabled={profileSaving}>
+        {profileSaving?<ActivityIndicator color={P.white}/>:<Text style={st.primaryText}>Сохранить телефон</Text>}
+      </TouchableOpacity>
+      <Text style={st.footnote}>Номер не подтверждён по SMS. Он используется для связи только во время активной назначенной поездки.</Text>
       <TouchableOpacity style={st.profileRow} onPress={() => setTab('orders')}><Text style={st.profileRowIcon}>◷</Text><Text style={st.profileRowText}>История поездок</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
       {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><Text style={st.profileRowIcon}>🚘</Text><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}
