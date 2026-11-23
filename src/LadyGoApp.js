@@ -524,6 +524,25 @@ export default function LadyGoApp() {
     } catch (e) { Alert.alert('Не удалось обновить обращение', translateError(e)); }
   };
 
+  const saveSupportReply = async ticket => {
+    const reply = String(adminReplyDrafts[ticket.id] || '').trim();
+    if (reply.length < 3) {
+      Alert.alert('Добавь ответ', 'Ответ должен содержать не менее 3 символов.');
+      return;
+    }
+    try {
+      const { error } = await supabase.from('support_tickets').update({
+        admin_reply: reply,
+        status: 'closed',
+        updated_at: new Date().toISOString()
+      }).eq('id', ticket.id);
+      if (error) throw error;
+      setAdminReplyDrafts(current => ({ ...current, [ticket.id]: '' }));
+      await loadAdminTickets();
+      Alert.alert('Ответ сохранён', 'Обращение закрыто после ответа.');
+    } catch (e) { Alert.alert('Не удалось сохранить ответ', translateError(e)); }
+  };
+
   const reviewDriverApplication = async (item, status) => {
     const label = status === 'approved' ? 'одобрить' : 'отклонить';
     Alert.alert('Проверка заявки', `Точно ${label} заявку ${item.full_name}?`, [
@@ -1072,7 +1091,6 @@ export default function LadyGoApp() {
         {adminApplications.length===0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>▤</Text><Text style={st.heading}>Заявок пока нет</Text><Text style={st.muted}>Новые анкеты кандидатов появятся здесь.</Text></View> :
           adminApplications.map(item=><View key={item.id} style={st.adminApplicationCard}>
             <View style={st.rowBetween}><Text style={st.adminApplicantName}>{item.full_name||'Без имени'}</Text><Text style={[st.adminStatus,item.status==='pending'?st.adminStatusPending:item.status==='approved'?st.adminStatusApproved:st.adminStatusRejected]}>{item.status==='pending'?'На проверке':item.status==='approved'?'Одобрена':'Отклонена'}</Text></View>
-            <Text style={st.adminDetail}>☎ {item.phone||'Телефон не указан'}</Text>
             <Text style={st.adminDetail}>Стаж: {item.experience||'Не указан'}</Text>
             <Text style={st.adminDetail}>Автомобиль: {[item.vehicle_make,item.vehicle_model,item.vehicle_color].filter(Boolean).join(' ')||'Не указан'}</Text>
             <Text style={st.adminDetail}>Номер: {item.vehicle_plate||'Не указан'} {item.vehicle_year||''}</Text>
@@ -1129,8 +1147,9 @@ export default function LadyGoApp() {
           <View style={st.rowBetween}><Text style={st.adminApplicantName}>{ticket.subject}</Text><Text style={[st.adminStatus,ticket.status==='open'?st.adminStatusPending:st.adminStatusApproved]}>{ticket.status==='open'?'Открыто':'Закрыто'}</Text></View>
           <Text style={st.adminDate}>{new Date(ticket.created_at).toLocaleString('ru-RU')} · ID {String(ticket.user_id).slice(0,8)}</Text>
           <Text style={st.adminDetail}>{ticket.message}</Text>
-          {ticket.admin_reply ? <Text style={st.adminDetail}>Ответ: {ticket.admin_reply}</Text> : null}
-          <TouchableOpacity style={ticket.status==='open'?st.adminApprove:st.adminReject} onPress={()=>setSupportTicketStatus(ticket,ticket.status==='open'?'closed':'open')}><Text style={ticket.status==='open'?st.adminActionText:st.adminRejectText}>{ticket.status==='open'?'Закрыть обращение':'Открыть снова'}</Text></TouchableOpacity>
+          <TextInput style={[st.phoneInput,{minHeight:72,textAlignVertical:'top'}]} value={adminReplyDrafts[ticket.id] ?? ticket.admin_reply ?? ''} onChangeText={value=>setAdminReplyDrafts(current=>({...current,[ticket.id]:value}))} placeholder="Ответ пользователю…" multiline maxLength={2000}/>
+          <TouchableOpacity style={st.adminApprove} onPress={()=>saveSupportReply(ticket)}><Text style={st.adminActionText}>Сохранить ответ и закрыть</Text></TouchableOpacity>
+          <TouchableOpacity style={ticket.status==='open'?st.adminReject:st.adminApprove} onPress={()=>setSupportTicketStatus(ticket,ticket.status==='open'?'closed':'open')}><Text style={ticket.status==='open'?st.adminRejectText:st.adminActionText}>{ticket.status==='open'?'Закрыть без ответа':'Открыть снова'}</Text></TouchableOpacity>
         </View>)}
       </>}
       {adminSection==='orders' && <>
