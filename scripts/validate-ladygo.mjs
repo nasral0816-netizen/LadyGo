@@ -22,6 +22,7 @@ pass('React Native 0.83', pkg.dependencies?.['react-native']?.startsWith('0.83.'
 pass('Android application id', expo.android?.package === 'com.ladygo.app');
 pass('Supabase client persists session securely', /persistSession:\s*true/.test(supabaseClient) && /AsyncStorage/.test(supabaseClient));
 pass('No service-role credential in client source', !/service_role|SUPABASE_SERVICE_ROLE_KEY/i.test(supabaseClient + app));
+pass('Tracked environment file is removed and ignored', !fs.existsSync('.env') && /\\.env/.test(read('.gitignore')) && /YOUR_SUPABASE_PUBLISHABLE_KEY/.test(read('.env.example')));
 pass('Passenger creates a real orders row', /from\('orders'\)\s*\.insert\(payload\)/.test(app));
 const createOrderStart = app.indexOf('const createOrder = async');
 const createOrderEnd = app.indexOf('const signOut = async', createOrderStart);
