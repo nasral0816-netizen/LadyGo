@@ -29,8 +29,8 @@
 | 21 | Audit log административных действий и изменения ролей | Да | Не подтверждено полноценным SQL | Нет | Транзакционный append-only audit и review |
 | 22 | Внутренние уведомления: регистрация, профиль, анкета, поддержка, роли, системные сообщения | Да | Notification tables/triggers частично есть | Нет | Проверить события и пользовательские настройки |
 | 23 | Push: Expo token lifecycle, foreground/background, серверная отправка | Да | В PR добавлены token RPC/foreground; существующая push Edge Function | CI type/static only | Supabase deploy, Expo credentials, delivery tests |
-| 24 | Реальная диспетчеризация: создание заказа, подбор водителя, offer, accept, статус, контакты, GPS | Да, ранний запрос | Исходный main уже содержит SQL/UI foundation; PR добавлял hardening | Не проверено на live DB/devices | В текущем задании прямо отложено: не включать реальные назначения/координацию; только архитектура и независимый план |
-| 25 | Автоматический scheduler/dispatch loop | Ранее обсуждалось | Добавленные в ходе этой работы dispatch-loop и cron migration удалены из PR | Не развёртывались | Не реализовывать/не включать в текущем этапе |
+| 24 | Реальная диспетчеризация: создание заказа, подбор водителя, offer, accept, статусы, контакты, GPS, чат, рейтинг и история | Да, неоднократно | Есть DB state machine, trigger на создание заказа, подбор проверенного водителя, offer TTL, atomic accept, отмена, GPS RPC, realtime и UI; в PR усилены guards | Не проверено на live Supabase и двух устройствах | Применить миграции после schema review, развернуть Edge Functions/Vault/cron, провести multi-account E2E и legal/privacy review |
+| 25 | Автоматический scheduler/dispatch loop | Да | Edge Function dispatch-loop с server-only secret и pg_cron/pg_net/Vault migration присутствуют в PR; функция повторно подбирает водителей для нераспределённых заказов | Статически в коде; live invocation и cron не проверены | Задать секреты в Supabase, применить migration, deploy function и проверить cron/logs на staging |
 | 26 | Реальные платежи за поездки | Нет разрешения; текущим заданием запрещено | Не реализуются | Нет | Отдельный будущий проект после финансового/юридического sign-off |
 | 27 | Server quote / idempotent сохранение заявки | Запрошено как техническая надёжность | Edge Function и SQL migration добавлены в PR | CI type/static; live DB нет | Применение staging, проверка тарифов/road route, review SQL |
 | 28 | RLS, roles, SECURITY DEFINER, search_path, grants | Да | PR содержит часть hardening; исходные миграции присутствуют | Статические проверки, не live | Полный независимый SQL/RLS audit |
@@ -54,9 +54,9 @@
 - **Не подтверждено или отсутствует:** password recovery/phone OTP end-to-end, admin cap 15 и audit, CSV, attachments/moderation, offline/outbox, backup restore, complete device tests, live DB RLS review.
 - **Требует внешних сервисов:** SMS, server Directions, Expo Push credentials/deployment, antivirus/moderation, monitoring.
 - **Требует доступа владельца/оператора:** Supabase project/schema, secrets, deployment, staging accounts, Android devices, legal/contract approvals.
-- **Отложено владельцем в текущем задании:** автоматическая реальная диспетчеризация, передача заказов, координация поездок и реальные платежи.
+- **Отложено/не реализовано:** реальные платежи (нет подключённого провайдера). **Обязательная часть текущего задания:** диспетчеризация и координация поездок; код подготовлен в PR, но live deployment/E2E ещё не пройдены.
 
 ## Контроль безопасности
 
-Ни одна миграция PR #10 не применялась к live Supabase в рамках этой работы. Перед применением — резервная копия, schema diff, staging, review grants/RLS и письменный rollout plan. Не запускать dispatch или платежные функции.
+Ни одна миграция PR #10 не применялась к live Supabase в рамках этой работы. Перед применением — резервная копия, schema diff, staging, review grants/RLS и письменный rollout plan. Не запускать коммерческий пилот до проверки схемы, RLS, функций, фонового GPS, согласий и правовой готовности. Платёжный провайдер в текущей реализации отсутствует.
 
