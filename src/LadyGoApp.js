@@ -1353,8 +1353,98 @@ export default function LadyGoApp() {
     ]);
   };
 
-  const chatOrder = null;
-  const renderTripChat = () => null;
+  const chatOrder = profile?.role === 'driver'
+    ? driverOrders.find(order => ['accepted','arrived','in_progress'].includes(order.status)) || null
+    : (activeOrder && ['accepted','arrived','in_progress'].includes(activeOrder.status) ? activeOrder : null);
+
+  const loadTripMessages = useCallback(async () => {
+    if (!chatOrder?.id || !session?.user?.id || !supabase) {
+      setChatMessages([]);
+      return;
+    }
+    const { data, error } = await supabase.from('trip_messages')
+      .select('id,order_id,sender_id,message,created_at')
+      .eq('order_id', chatOrder.id)
+      .order('created_at', { ascending: true })
+      .limit(100);
+    if (error) {
+      console.warn('LadyGo trip chat load failed:', error.message);
+      return;
+    }
+    setChatMessages(data || []);
+  }, [chatOrder?.id, session?.user?.id]);
+
+  const sendTripMessage = async () => {
+    const message = chatDraft.trim();
+    if (!message || message.length > 2000 || !chatOrder?.id || !session?.user?.id || chatSending) return;
+    setChatSending(true);
+    try {
+      const { error } = await supabase.from('trip_messages').insert({
+        order_id: chatOrder.id,
+        sender_id: session.user.id,
+        message
+      });
+      if (error) throw error;
+      setChatDraft('');
+      await loadTripMessages();
+    } catch (e) {
+      Alert.alert('Не удалось отправить сообщение', translateError(e));
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!chatOrder?.id || !session?.user?.id || !supabase) {
+      setChatMessages([]);
+      return;
+    }
+    loadTripMessages();
+    const channel = supabase.channel('ladygo-trip-chat-' + chatOrder.id)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'trip_messages',
+        filter: 'order_id=eq.' + chatOrder.id
+      }, () => loadTripMessages())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [chatOrder?.id, session?.user?.id, loadTripMessages]);
+
+  const renderTripChat = order => {
+    if (!order?.id || order.id !== chatOrder?.id) return null;
+    return <View style={st.chatCard}>
+      <View>
+        <Text style={st.heading}>Чат поездки</Text>
+        <Text style={st.chatHint}>Сообщения доступны пассажиру и назначенному водителю</Text>
+      </View>
+      <ScrollView style={st.chatMessages} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+        {chatMessages.length === 0
+          ? <Text style={st.chatEmpty}>Пока нет сообщений. Можно написать участнику поездки.</Text>
+          : chatMessages.map(item => {
+            const mine = item.sender_id === session?.user?.id;
+            return <View key={item.id} style={[st.chatBubble, mine ? st.chatMine : st.chatOther]}>
+              <Text style={st.chatSender}>{mine ? 'Вы' : profile?.role === 'driver' ? 'Пассажир' : 'Водитель'}</Text>
+              <Text style={st.chatMessage}>{item.message}</Text>
+              <Text style={st.chatTime}>{new Date(item.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</Text>
+            </View>;
+          })}
+      </ScrollView>
+      <View style={st.chatComposer}>
+        <TextInput
+          style={st.chatInput}
+          value={chatDraft}
+          onChangeText={setChatDraft}
+          placeholder="Сообщение водителю или пассажиру"
+          multiline
+          maxLength={2000}
+          editable={!chatSending}
+        />
+        <TouchableOpacity style={[st.chatSend, (!chatDraft.trim() || chatSending) && st.disabled]}
+          onPress={sendTripMessage} disabled={!chatDraft.trim() || chatSending}>
+          {chatSending ? <ActivityIndicator color={P.white}/> : <Text style={st.chatSendText}>➤</Text>}
+        </TouchableOpacity>
+      </View>
+    </View>;
+  };
 
   const previewFare = routeInfo
     ? Math.round((55 + (Number(routeInfo.km) || 0) * 14 + (Number(routeInfo.minutes) || 0) * 1.5) * (tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1) / 5) * 5
@@ -1458,7 +1548,7 @@ export default function LadyGoApp() {
           <Text style={st.muted}>{driverLocation ? 'Геопозиция обновляется в реальном времени' : 'Ожидаем первую геопозицию автомобиля…'}</Text>
           {driverVehicle?.phone ? <TouchableOpacity onPress={() => Linking.openURL('tel:' + String(driverVehicle.phone).replace(/[^+0-9]/g,''))} style={st.primaryBtn}><Text style={st.primaryText}>Позвонить водителю</Text></TouchableOpacity> : null}
         </View>
-        {renderTripChat()}
+        {renderTripChat(activeOrder)}
       </>}
       {!activeOrder && orders.length + demoOrders.length + presentationOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Нет сохранённых маршрутов</Text><Text style={st.muted}>Сохранённые маршруты появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Сохранить маршрут</Text></TouchableOpacity></View> :
         [...demoOrders, ...presentationOrders, ...orders].map(o => {
@@ -1744,6 +1834,7 @@ export default function LadyGoApp() {
           {order.status==='accepted' && <TouchableOpacity onPress={()=>updateDriverStatus(order,'arrived')} style={st.primaryBtn}><Text style={st.primaryText}>Я на месте</Text></TouchableOpacity>}
           {order.status==='arrived' && <TouchableOpacity onPress={()=>updateDriverStatus(order,'in_progress')} style={st.primaryBtn}><Text style={st.primaryText}>Начать поездку</Text></TouchableOpacity>}
           {order.status==='in_progress' && <TouchableOpacity onPress={()=>updateDriverStatus(order,'completed')} style={st.primaryBtn}><Text style={st.primaryText}>Завершить поездку</Text></TouchableOpacity>}
+          {renderTripChat(order)}
         </View>)}
         <View style={st.vehicleEditorCard}>
           <View style={st.rowBetween}><Text style={st.heading}>Фото водителя</Text><Text style={st.vehicleEditorHint}>Для карточки поездки</Text></View>
