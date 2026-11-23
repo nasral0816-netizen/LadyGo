@@ -331,6 +331,7 @@ export default function LadyGoApp() {
   const [vehicleSaving, setVehicleSaving] = useState(false);
   const [vehicleUploading, setVehicleUploading] = useState(false);
   const autoLocateStarted = useRef(false);
+  const orderIdempotencyKey = useRef(null);
   const [adminOrders, setAdminOrders] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminApplications, setAdminApplications] = useState([]);
@@ -1310,26 +1311,23 @@ export default function LadyGoApp() {
     }
     setBusy(true);
     try {
-      const payload = {
-        passenger_id: session.user.id,
-        driver_id: null,
-        pickup_address: pickupText,
-        destination_address: destinationText,
-        pickup_lat: Number(pickup.latitude),
-        pickup_lng: Number(pickup.longitude),
-        destination_lat: Number(destination.latitude),
-        destination_lng: Number(destination.longitude),
-        passenger_phone: phone.trim() || profile?.phone || null,
-        requested_for: 'Как можно скорее',
-        notes: null,
-        tariff_id: tariff,
-        estimated_price_rub: amount,
-        payment_method: payment,
-        price_rub: null,
-        status: 'new'
-      };
-      const { data, error } = await supabase.from('orders').insert(payload).select('*').single();
+      if (!orderIdempotencyKey.current) {
+        orderIdempotencyKey.current = session.user.id + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+      }
+      const { data: result, error } = await supabase.functions.invoke('pricing-service', {
+        body: {
+          action: 'create_order',
+          price_token: quote.price_token,
+          idempotency_key: orderIdempotencyKey.current,
+          pickup_address: pickupText,
+          destination_address: destinationText,
+          payment_method: payment
+        }
+      });
       if (error) throw error;
+      const data = result?.order;
+      if (!data?.id) throw new Error('Order creation did not return a saved order');
+      orderIdempotencyKey.current = null;
       setActiveOrder(data);
       setTab('orders');
       await loadOrders();
