@@ -895,46 +895,6 @@ export default function LadyGoApp() {
     setTab('orders');
     Alert.alert('Заявка оформлена', 'Запись добавлена в историю поездок. Она не передаётся водителям.');
   };
-      // Do not create a second active trip: check the database before insert.
-      const { data: existing, error: checkError } = await supabase.from('orders')
-        .select('id,status')
-        .eq('passenger_id', session.user.id)
-        .in('status', ['new', 'accepted', 'arrived', 'in_progress'])
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (checkError) throw checkError;
-      if (existing) {
-        await loadOrders();
-        setTab('orders');
-        Alert.alert('У тебя уже есть активный заказ', 'Сначала открой текущий заказ во вкладке «Мои поездки». Второй заказ можно будет оформить после завершения или отмены первого.');
-        return;
-      }
-      const payload = {
-        passenger_id: session.user.id, pickup_address: pickupText, destination_address: destinationText,
-        requested_for: 'Как можно скорее', passenger_phone: phone.trim() || null,
-        notes: 'Услуга: ' + (TARIFFS.find(t => t.id === tariff)?.name || 'Женский') + ' · Оплата: ' + (payment === 'cash' ? 'Наличные' : 'Перевод водителю'),
-        status: 'new', payment_method: payment, tariff_id: tariff,
-        pickup_lat: pickup.latitude, pickup_lng: pickup.longitude,
-        destination_lat: destination.latitude, destination_lng: destination.longitude,
-        estimated_price_rub: quote.amount_rub, price_quote_id: quote.price_token
-      };
-      const { error } = await supabase.from('orders').insert(payload);
-      if (error) throw error;
-      Alert.alert('Заказ создан', 'LadyGo ищет водителя. Стоимость и детали поездки будут доступны в заказе.');
-      setTab('orders'); await loadOrders();
-    } catch (e) {
-      const message = String(e?.message || '');
-      if (e?.code === '23505' || message.includes('orders_one_active_per_passenger_idx')) {
-        await loadOrders();
-        setTab('orders');
-        Alert.alert('У тебя уже есть активный заказ', 'Открой вкладку «Мои поездки»: предыдущий заказ ещё не завершён. Отмени его или дождись завершения, затем оформи новый.');
-      } else {
-        Alert.alert('Не удалось оформить заказ', translateError(e));
-      }
-    }
-    finally { setBusy(false); }
-  };
 
   const signOut = async () => { await supabase.auth.signOut(); setTab('ride'); };
   const cancelOrder = async order => {
