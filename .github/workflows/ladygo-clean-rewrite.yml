@@ -27,6 +27,15 @@ jobs:
         run: npm install
       - name: Validate LadyGo security and dispatch contracts
         run: node scripts/validate-ladygo.mjs
+      - name: Setup Deno for Supabase Edge Function checks
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check Supabase Edge Functions
+        run: |
+          deno check supabase/functions/pricing-service/index.ts
+          deno check supabase/functions/dispatch-loop/index.ts
+          deno check supabase/functions/send-driver-offer-push/index.ts
       - name: Validate Expo config
         run: npx expo config --type public
       - name: Check Expo dependency compatibility
