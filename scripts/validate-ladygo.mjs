@@ -8,6 +8,8 @@ const supabaseClient = read('src/supabase.js');
 const dispatchMigration = read('supabase/migrations/20261123230000_ladygo_live_dispatch_v1.sql');
 const securityMigration = read('supabase/migrations/20261124090000_ladygo_private_driver_media_and_fare_guard.sql');
 const pushFunction = read('supabase/functions/send-driver-offer-push/index.ts');
+const dispatchLoop = read('supabase/functions/dispatch-loop/index.ts');
+const supabaseConfig = read('supabase/config.toml');
 const pushTokenMigration = read('supabase/migrations/20261124100000_ladygo_push_token_lifecycle.sql');
 const orderVisibilityMigration = read('supabase/migrations/20261124110000_ladygo_limit_order_visibility_to_offers.sql');
 const verifiedDriverMigration = read('supabase/migrations/20261124120000_ladygo_verified_driver_dispatch_and_trip_audit.sql');
@@ -40,6 +42,8 @@ pass('Driver media bucket is private', /set public = false/i.test(securityMigrat
 pass('Assigned passenger media access is scoped to active trips', /o\.passenger_id\s*=\s*\(select auth\.uid\(\)\)/.test(securityMigration) && /o\.status in \('accepted','arrived','in_progress'\)/.test(securityMigration));
 pass('Driver cannot override stored fare', /Driver cannot change the quoted order price/.test(securityMigration));
 pass('Drivers can only read their live offers and assigned trips', /drop policy if exists "driver read orders"/.test(orderVisibilityMigration) && /oo\.status = 'pending'/.test(orderVisibilityMigration) && /orders\.driver_id = \(select auth\.uid\(\)\)/.test(orderVisibilityMigration));
+pass('Dispatch loop requires a server-only secret and calls the dispatch RPC', /LADYGO_DISPATCH_SECRET/.test(dispatchLoop) && /x-ladygo-dispatch-secret/.test(dispatchLoop) && /ladygo_dispatch_next_driver/.test(dispatchLoop) && /service_role/.test(dispatchLoop));
+pass('Dispatch loop JWT bypass is protected by a dedicated secret', /\[functions\.dispatch-loop\][\s\S]*verify_jwt = false/.test(supabaseConfig));
 pass('Push function verifies webhook secret server-side', /ladygo_verify_push_webhook_secret/.test(pushFunction) && /SUPABASE_SERVICE_ROLE_KEY/.test(pushFunction));
 pass('Push token cleanup is restricted to the authenticated account', /where user_id = auth\.uid\(\)/.test(pushTokenMigration) && /where driver_id = auth\.uid\(\)/.test(pushTokenMigration));
 
