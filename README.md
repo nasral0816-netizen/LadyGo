@@ -19,6 +19,7 @@ LadyGo — Android-приложение сервиса поездок с фир�
 - docs/integrations-and-operations-ru.md — внешние сервисы и эксплуатация.
 - TECHNICAL_AUDIT_RU.md — технический аудит.
 - DISPATCH_SETUP_RU.md — архитектура и deployment checklist реальной диспетчеризации.
+- docs/requirements-registry-ru.md — единый реестр всех требований из доступной истории.
 
 ## Установка
 
@@ -42,7 +43,7 @@ Release APK собирается GitHub Actions workflow .github/workflows/andro
 - PR #10 содержит изменения безопасности и технической валидации; он не объединён в main.
 - Успешные статические проверки и Expo export не подтверждают состояние удалённого Supabase.
 - Миграции не применялись к live базе в рамках этого сеанса; текущая проверка не подтверждает production-доступность.
-- Реальная диспетчеризация и поездки являются обязательной частью продукта; миграции/Edge Functions в PR требуют staging/live deployment и E2E. Реальные платежи не подключены и не должны считаться работающими.
+- Реальная диспетчеризация и поездки являются обязательной частью продукта; код ветки включает триггер создания заказа, подбор водителя, TTL-офферы, atomic accept, статусы, GPS, контакты, Edge Function и scheduler. Миграции/Edge Functions требуют staging/live deployment и E2E. Реальные платежи не подключены и не должны считаться работающими.
 - Перед релизом обязательны проверки RLS/Storage, dispatch scheduler, push, auth recovery, admin RBAC, backup restore, двух Android устройств и legal/privacy.
 
 ## Важные документы
