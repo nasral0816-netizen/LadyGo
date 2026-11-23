@@ -26,6 +26,7 @@ pass('Driver acceptance does not submit a client-selected price', /rpc\('ladygo_
 pass('Driver GPS heartbeat is connected', /ladygo_driver_heartbeat/.test(app) && /startLocationUpdatesAsync/.test(app));
 pass('Driver offers are loaded from Supabase', /from\('order_offers'\)/.test(app));
 pass('Passenger and driver push tokens are registered', /from\('user_push_tokens'\)/.test(app) && /from\('driver_push_tokens'\)/.test(app));
+pass('Foreground push notifications are displayed', /setNotificationHandler/.test(app) && /shouldShowBanner:\s*true/.test(app));
 pass('Server dispatch migration includes atomic acceptance', /for update/i.test(dispatchMigration) && /ladygo_accept_order/.test(dispatchMigration));
 pass('Driver media bucket is private', /set public = false/i.test(securityMigration));
 pass('Assigned passenger media access is scoped to active trips', /o\.passenger_id\s*=\s*\(select auth\.uid\(\)\)/.test(securityMigration) && /o\.status in \('accepted','arrived','in_progress'\)/.test(securityMigration));
