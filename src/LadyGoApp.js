@@ -9,6 +9,35 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from './supabase';
 import LadyGoPreview from './LadyGoPreview';
 
+function calculatePolylineKm(points) {
+  const toRad = value => value * Math.PI / 180;
+  let meters = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i];
+    const lat1 = Number(a.latitude), lon1 = Number(a.longitude);
+    const lat2 = Number(b.latitude), lon2 = Number(b.longitude);
+    if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) continue;
+    const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+    const h = Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    meters += 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  }
+  return meters / 1000;
+}
+
+function parseRouteMinutes(value, fallbackKm) {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.max(1, Math.round(value > 600 ? value / 60 : value));
+  }
+  const text = String(value || '').toLowerCase();
+  const hours = Number(text.match(/(\\d+)\\s*(?:ч|час)/)?.[1] || 0);
+  const minutes = Number(text.match(/(\\d+)\\s*(?:м|мин)/)?.[1] || 0);
+  if (hours || minutes) return hours * 60 + minutes;
+  const compact = text.match(/(\\d+)\\s*h(?:ours?)?\\s*(?:(\\d+)\\s*m)?/);
+  if (compact) return Number(compact[1]) * 60 + Number(compact[2] || 0);
+  return Math.max(1, Math.round((fallbackKm / 30) * 60 + 3));
+}
+
 function decodeBase64Image(base64) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   const clean = String(base64 || '').replace(/[^A-Za-z0-9+/]/g, '');
@@ -818,11 +847,13 @@ export default function LadyGoApp() {
         const r = routes?.[0];
         if (!r || !Array.isArray(r.points) || r.points.length < 2) throw new Error('Маршрут не найден');
         const points = r.points.map(p => ({ latitude: Number(p.latitude), longitude: Number(p.longitude) }));
-        const durationText = r.timeWithTraffic || r.time || '';
-        const minutes = Math.max(1, parseInt(String(durationText).match(/\\d+/)?.[0] || '1', 10));
+        const routeKm = calculatePolylineKm(points);
+        if (!Number.isFinite(routeKm) || routeKm <= 0) throw new Error('Некорректная длина маршрута');
+        const durationValue = r.timeWithTraffic || r.time || r.duration || r.durationSeconds;
+        const minutes = parseRouteMinutes(durationValue, routeKm);
         if (alive) {
           setRoute(points);
-          setRouteInfo({ km: (Number(r.distance || 0) / 1000).toFixed(1), minutes });
+          setRouteInfo({ km: routeKm.toFixed(1), minutes });
         }
       } catch (_) { if (alive) { setRoute([]); setRouteInfo(null); } }
     };
