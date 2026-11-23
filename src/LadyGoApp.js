@@ -993,7 +993,7 @@ export default function LadyGoApp() {
     setDriverLoading(true);
     try {
       const [presenceResult, offersResult, mineResult] = await Promise.all([
-        supabase.from('driver_presence').select('is_online').eq('driver_id', session.user.id).maybeSingle(),
+        supabase.from('driver_presence').select('is_online,updated_at').eq('driver_id', session.user.id).maybeSingle(),
         supabase.from('order_offers').select('id,order_id,expires_at')
           .eq('driver_id', session.user.id).eq('status', 'pending')
           .gt('expires_at', new Date().toISOString()).order('offered_at', { ascending: false }),
@@ -1016,7 +1016,14 @@ export default function LadyGoApp() {
       }
       const assigned = mineResult.data || [];
       setDriverOrders([...offered, ...assigned.filter(o => !offered.some(x => x.id === o.id))]);
-      setDriverOnline(Boolean(presenceResult.data?.is_online));
+      const presenceFresh = presenceResult.data?.updated_at &&
+        Date.now() - new Date(presenceResult.data.updated_at).getTime() < 90000;
+      setDriverOnline(Boolean(presenceResult.data?.is_online && presenceFresh));
+      if (presenceResult.data?.is_online && !presenceFresh) {
+        await supabase.rpc('ladygo_driver_heartbeat', {
+          p_is_online: false, p_latitude: null, p_longitude: null, p_heading: null
+        });
+      }
     } catch (e) {
       Alert.alert('Не удалось загрузить заказы', translateError(e));
     } finally { setDriverLoading(false); }
