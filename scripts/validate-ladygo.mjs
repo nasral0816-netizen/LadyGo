@@ -20,6 +20,8 @@ const pass = (name, ok, detail = '') => checks.push({ name, ok: Boolean(ok), det
 pass('Expo SDK 55', pkg.dependencies?.expo?.startsWith('~55.'));
 pass('React Native 0.83', pkg.dependencies?.['react-native']?.startsWith('0.83.'));
 pass('Android application id', expo.android?.package === 'com.ladygo.app');
+pass('LadyGo brand pink is consistent', expo.primaryColor === '#E84F87' && expo.backgroundColor === '#E84F87' && expo.android?.adaptiveIcon?.backgroundColor === '#E84F87');
+pass('Package and app versions match', pkg.version === expo.version);
 pass('Supabase client persists session securely', /persistSession:\s*true/.test(supabaseClient) && /AsyncStorage/.test(supabaseClient));
 pass('No service-role credential in client source', !/service_role|SUPABASE_SERVICE_ROLE_KEY/i.test(supabaseClient + app));
 pass('Tracked environment file is removed and ignored', !fs.existsSync('.env') && read('.gitignore').includes('.env') && read('.env.example').includes('YOUR_SUPABASE_PUBLISHABLE_KEY'));
