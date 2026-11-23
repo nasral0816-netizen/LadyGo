@@ -1,2 +1,11 @@
 [functions.send-driver-offer-push]
 verify_jwt = false
+
+[functions.dispatch-loop]
+verify_jwt = false
+
+[functions.pricing-service]
+verify_jwt = true
+
+[functions.payment-service]
+verify_jwt = true

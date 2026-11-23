@@ -5,9 +5,14 @@ on:
     branches:
       - main
       - ladygo-clean-rewrite
+      - tech/stabilize-android-dispatch-2026-11-23
   pull_request:
     branches:
       - main
+
+concurrency:
+  group: ladygo-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   android-export:
@@ -21,6 +26,22 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Report npm dependency advisories
+        run: |
+          npm audit --json > /tmp/ladygo-npm-audit.json || true
+          node -e 'const a=require("/tmp/ladygo-npm-audit.json"); const v=a.vulnerabilities||{}; console.log(JSON.stringify({summary:a.metadata?.vulnerabilities, packages:Object.entries(v).map(([name,x])=>({name,severity:x.severity,range:x.range,fixAvailable:x.fixAvailable}))},null,2));'
+      - name: Validate LadyGo security and dispatch contracts
+        run: node scripts/validate-ladygo.mjs
+      - name: Setup Deno for Supabase Edge Function checks
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check Supabase Edge Functions
+        run: |
+          deno check supabase/functions/pricing-service/index.ts
+          deno check supabase/functions/dispatch-loop/index.ts
+          deno check supabase/functions/send-driver-offer-push/index.ts
+          deno check supabase/functions/payment-service/index.ts
       - name: Validate Expo config
         run: npx expo config --type public
       - name: Check Expo dependency compatibility

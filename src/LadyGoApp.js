@@ -11,6 +11,15 @@ import * as Device from 'expo-device';
 import * as TaskManager from 'expo-task-manager';
 import { supabase } from './supabase';
 
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false
+  })
+});
+
 function calculatePolylineKm(points) {
   const toRad = value => value * Math.PI / 180;
   let meters = 0;
@@ -70,6 +79,29 @@ function decodeBase64Image(base64) {
 }
 
 
+
+async function recordActiveDriverTripLocation(userId, coords) {
+  if (!userId || !coords || !supabase) return;
+  const { data: activeTrip, error: tripError } = await supabase.from('orders')
+    .select('id')
+    .eq('driver_id', userId)
+    .in('status', ['accepted', 'arrived', 'in_progress'])
+    .maybeSingle();
+  if (tripError) {
+    console.warn('LadyGo active trip lookup failed:', tripError.message);
+    return;
+  }
+  if (!activeTrip?.id) return;
+  const { error } = await supabase.rpc('ladygo_record_trip_location', {
+    p_order_id: activeTrip.id,
+    p_latitude: coords.latitude,
+    p_longitude: coords.longitude,
+    p_heading: coords.heading,
+    p_speed_mps: coords.speed
+  });
+  if (error) console.warn('LadyGo trip track write failed:', error.message);
+}
+
 const LADYGO_DRIVER_LOCATION_TASK = 'LADYGO_DRIVER_LOCATION';
 
 TaskManager.defineTask(LADYGO_DRIVER_LOCATION_TASK, async ({ data, error }) => {
@@ -86,6 +118,7 @@ TaskManager.defineTask(LADYGO_DRIVER_LOCATION_TASK, async ({ data, error }) => {
       p_longitude: latest.coords.longitude,
       p_heading: latest.coords.heading
     });
+    await recordActiveDriverTripLocation(authData.session.user.id, latest.coords);
   } catch (taskError) {
     console.warn('LadyGo background GPS update failed:', taskError?.message);
   }
@@ -260,6 +293,7 @@ export default function LadyGoApp() {
   const [password, setPassword] = useState('');
   const [register, setRegister] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
   const [tab, setTab] = useState('ride');
   const [pickupText, setPickupText] = useState('Моё местоположение');
   const [destinationText, setDestinationText] = useState('');
@@ -298,6 +332,7 @@ export default function LadyGoApp() {
   const [vehicleSaving, setVehicleSaving] = useState(false);
   const [vehicleUploading, setVehicleUploading] = useState(false);
   const autoLocateStarted = useRef(false);
+  const orderIdempotencyKey = useRef(null);
   const [adminOrders, setAdminOrders] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminApplications, setAdminApplications] = useState([]);
@@ -320,6 +355,7 @@ export default function LadyGoApp() {
   const [applicationSaving, setApplicationSaving] = useState(false);
   const [myApplication, setMyApplication] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
+  const [tripContact, setTripContact] = useState(null);
   const [chatDraft, setChatDraft] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [ratedOrderIds, setRatedOrderIds] = useState([]);
@@ -530,6 +566,7 @@ export default function LadyGoApp() {
             p_longitude: position.coords.longitude,
             p_heading: position.coords.heading
           });
+          await recordActiveDriverTripLocation(session?.user?.id, position.coords);
           if (error) console.warn('LadyGo GPS heartbeat failed:', error.message);
         });
       }
@@ -560,17 +597,24 @@ export default function LadyGoApp() {
   }, [profile?.role, session?.user?.id, loadDriverOrders]);
 
   useEffect(() => {
-    if (profile?.role !== 'driver' || !session?.user?.id || !supabase || !Device.isDevice) return;
+    if (!profile?.role || !session?.user?.id || !supabase || !Device.isDevice) return;
     let alive = true;
     (async () => {
       try {
         if (Platform.OS === 'android') {
-          await Notifications.setNotificationChannelAsync('driver-orders', {
-            name: 'Заказы LadyGo',
-            importance: Notifications.AndroidImportance.MAX,
-            vibrationPattern: [0, 250, 150, 250],
-            sound: 'default'
-          });
+          await Promise.all([
+            Notifications.setNotificationChannelAsync('driver-orders', {
+              name: 'Заказы LadyGo',
+              importance: Notifications.AndroidImportance.MAX,
+              vibrationPattern: [0, 250, 150, 250],
+              sound: 'default'
+            }),
+            Notifications.setNotificationChannelAsync('trip-updates', {
+              name: 'Обновления LadyGo',
+              importance: Notifications.AndroidImportance.DEFAULT,
+              sound: 'default'
+            })
+          ]);
         }
         let permission = await Notifications.getPermissionsAsync();
         if (permission.status !== 'granted') permission = await Notifications.requestPermissionsAsync();
@@ -579,26 +623,31 @@ export default function LadyGoApp() {
           projectId: '95ac82ec-010d-4770-9aba-9f52878e1b3b'
         });
         if (!alive || !tokenResult?.data) return;
-        const { error } = await supabase.from('driver_push_tokens').upsert({
-          driver_id: session.user.id,
-          expo_push_token: tokenResult.data,
-          device_platform: Platform.OS === 'ios' ? 'ios' : 'android',
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'driver_id,expo_push_token' });
-        if (error) console.warn('LadyGo push token registration failed:', error.message);
+        const { error: tokenError } = await supabase.rpc('ladygo_register_push_token', {
+          p_expo_push_token: tokenResult.data,
+          p_device_platform: Platform.OS === 'ios' ? 'ios' : 'android'
+        });
+        if (tokenError) console.warn('LadyGo push token registration failed:', tokenError.message);
       } catch (error) {
         console.warn('LadyGo push registration unavailable:', error?.message);
       }
     })();
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
-      setTab('driver');
-      loadDriverOrders();
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response?.notification?.request?.content?.data || {};
+      if (profile.role === 'driver') {
+        setTab('driver');
+        loadDriverOrders();
+      } else {
+        setTab('orders');
+        loadOrders();
+      }
+      if (data.orderId) setTab(profile.role === 'driver' ? 'driver' : 'orders');
     });
     return () => {
       alive = false;
       responseSubscription.remove();
     };
-  }, [profile?.role, session?.user?.id, loadDriverOrders]);
+  }, [profile?.role, session?.user?.id, loadDriverOrders, loadOrders]);
 
   useEffect(() => { if (session?.user) { loadOrders(); loadDemoOrders(); } }, [session, loadOrders, loadDemoOrders]);
 
@@ -1073,7 +1122,7 @@ export default function LadyGoApp() {
     setBusy(true);
     try {
       const { error } = await supabase.rpc('ladygo_accept_order', {
-        p_order_id: order.id, p_price_rub: price
+        p_order_id: order.id
       });
       if (error) throw error;
       await loadDriverOrders();
@@ -1234,7 +1283,8 @@ export default function LadyGoApp() {
   useEffect(() => {
     let alive = true;
     const getQuote = async () => {
-      if (!pickup || !destination || !routeInfo || !supabase) { setQuote(null); return; }
+      setQuote(null);
+      if (!pickup || !destination || !routeInfo || !supabase) return;
       try {
         const { data, error } = await supabase.functions.invoke('pricing-service', {
           body: { action: 'quote', city_id: 'kislovodsk', tariff_id: tariff, points: [pickup, destination], options: [] }
@@ -1256,32 +1306,29 @@ export default function LadyGoApp() {
       setTab('orders');
       return Alert.alert('У тебя уже есть активный заказ', 'Сначала заверши или отмени текущую поездку.');
     }
-    const amount = Number(quote?.amount_rub || quote?.price_rub || previewFare);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return Alert.alert('Не удалось рассчитать стоимость', 'Проверь маршрут и тариф. Заказ без рассчитанной стоимости не будет отправлен.');
+    const amount = Number(quote?.amount_rub ?? quote?.price_rub);
+    if (!quote?.price_token || !Number.isFinite(amount) || amount <= 0) {
+      return Alert.alert('Нет подтверждённой цены', 'Сервер тарификации не вернул действующее предложение. Предварительная оценка на экране не является ценой заказа. Попробуй ещё раз позже.');
     }
     setBusy(true);
     try {
-      const payload = {
-        passenger_id: session.user.id,
-        driver_id: null,
-        pickup_address: pickupText,
-        destination_address: destinationText,
-        pickup_lat: Number(pickup.latitude),
-        pickup_lng: Number(pickup.longitude),
-        destination_lat: Number(destination.latitude),
-        destination_lng: Number(destination.longitude),
-        passenger_phone: phone.trim() || profile?.phone || null,
-        requested_for: 'Как можно скорее',
-        notes: null,
-        tariff_id: tariff,
-        estimated_price_rub: amount,
-        payment_method: payment,
-        price_rub: null,
-        status: 'new'
-      };
-      const { data, error } = await supabase.from('orders').insert(payload).select('*').single();
+      if (!orderIdempotencyKey.current) {
+        orderIdempotencyKey.current = session.user.id + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+      }
+      const { data: result, error } = await supabase.functions.invoke('pricing-service', {
+        body: {
+          action: 'create_order',
+          price_token: quote.price_token,
+          idempotency_key: orderIdempotencyKey.current,
+          pickup_address: pickupText,
+          destination_address: destinationText,
+          payment_method: payment
+        }
+      });
       if (error) throw error;
+      const data = result?.order;
+      if (!data?.id) throw new Error('Order creation did not return a saved order');
+      orderIdempotencyKey.current = null;
       setActiveOrder(data);
       setTab('orders');
       await loadOrders();
@@ -1298,7 +1345,41 @@ export default function LadyGoApp() {
     } finally { setBusy(false); }
   };
 
-  const signOut = async () => { await supabase.auth.signOut(); setTab('ride'); };
+  const saveProfilePhone = async () => {
+    if (!session?.user?.id || profileSaving) return;
+    setProfileSaving(true);
+    try {
+      const { data, error } = await supabase.rpc('ladygo_update_my_phone', { p_phone: phone });
+      if (error) throw error;
+      setProfile(data || { ...profile, phone: phone.trim() || null });
+      setPhone(data?.phone || '');
+      Alert.alert('Профиль обновлён', 'Контактный номер сохранён.');
+    } catch (error) {
+      Alert.alert('Не удалось сохранить профиль', translateError(error));
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const signOut = async () => {
+    if (session?.user?.id && Device.isDevice && supabase) {
+      try {
+        const tokenResult = await Notifications.getExpoPushTokenAsync({
+          projectId: '95ac82ec-010d-4770-9aba-9f52878e1b3b'
+        });
+        if (tokenResult?.data) {
+          const { error } = await supabase.rpc('ladygo_unregister_push_token', {
+            p_expo_push_token: tokenResult.data
+          });
+          if (error) console.warn('LadyGo push token cleanup failed:', error.message);
+        }
+      } catch (error) {
+        console.warn('LadyGo push token cleanup unavailable:', error?.message);
+      }
+    }
+    await supabase.auth.signOut();
+    setTab('ride');
+  };
   const cancelOrder = async order => {
     if (!order?.id || !session?.user?.id) return;
     Alert.alert('Отменить поездку?', 'Заказ будет отменён. Если водитель уже назначен, он получит обновлённый статус.', [
@@ -1313,12 +1394,129 @@ export default function LadyGoApp() {
     ]);
   };
 
-  const chatOrder = null;
-  const renderTripChat = () => null;
+  const chatOrder = profile?.role === 'driver'
+    ? driverOrders.find(order => ['accepted','arrived','in_progress'].includes(order.status)) || null
+    : (activeOrder && ['accepted','arrived','in_progress'].includes(activeOrder.status) ? activeOrder : null);
 
-  const previewFare = routeInfo
-    ? Math.round((55 + (Number(routeInfo.km) || 0) * 14 + (Number(routeInfo.minutes) || 0) * 1.5) * (tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1) / 5) * 5
-    : null;
+  useEffect(() => {
+    let alive = true;
+    if (!chatOrder?.id || !session?.user?.id || !supabase) {
+      setTripContact(null);
+      return;
+    }
+    const rpcName = profile?.role === 'driver'
+      ? 'ladygo_get_assigned_passenger_contact'
+      : 'ladygo_get_assigned_driver_contact';
+    supabase.rpc(rpcName, { p_order_id: chatOrder.id }).then(({ data, error }) => {
+      if (!alive) return;
+      if (error) {
+        console.warn('LadyGo trip contact lookup failed:', error.message);
+        setTripContact(null);
+        return;
+      }
+      setTripContact(Array.isArray(data) ? (data[0] || null) : (data || null));
+    });
+    return () => { alive = false; };
+  }, [chatOrder?.id, profile?.role, session?.user?.id]);
+
+  const loadTripMessages = useCallback(async () => {
+    if (!chatOrder?.id || !session?.user?.id || !supabase) {
+      setChatMessages([]);
+      return;
+    }
+    const { data, error } = await supabase.from('trip_messages')
+      .select('id,order_id,sender_id,message,created_at')
+      .eq('order_id', chatOrder.id)
+      .order('created_at', { ascending: true })
+      .limit(100);
+    if (error) {
+      console.warn('LadyGo trip chat load failed:', error.message);
+      return;
+    }
+    setChatMessages(data || []);
+  }, [chatOrder?.id, session?.user?.id]);
+
+  const sendTripMessage = async () => {
+    const message = chatDraft.trim();
+    if (!message || message.length > 2000 || !chatOrder?.id || !session?.user?.id || chatSending) return;
+    setChatSending(true);
+    try {
+      const { error } = await supabase.from('trip_messages').insert({
+        order_id: chatOrder.id,
+        sender_id: session.user.id,
+        message
+      });
+      if (error) throw error;
+      setChatDraft('');
+      await loadTripMessages();
+    } catch (e) {
+      Alert.alert('Не удалось отправить сообщение', translateError(e));
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!chatOrder?.id || !session?.user?.id || !supabase) {
+      setChatMessages([]);
+      return;
+    }
+    loadTripMessages();
+    const channel = supabase.channel('ladygo-trip-chat-' + chatOrder.id)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'trip_messages',
+        filter: 'order_id=eq.' + chatOrder.id
+      }, () => loadTripMessages())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [chatOrder?.id, session?.user?.id, loadTripMessages]);
+
+  const renderTripChat = order => {
+    if (!order?.id || order.id !== chatOrder?.id) return null;
+    return <View style={st.chatCard}>
+      {tripContact?.phone ? <View style={{ gap: 6, padding: 12, borderRadius: 12, backgroundColor: P.pale }}>
+        <Text style={st.heading}>{tripContact.full_name || (profile?.role === 'driver' ? 'Пассажир' : 'Водитель')}</Text>
+        <Text style={st.muted}>{tripContact.phone}</Text>
+        <TouchableOpacity onPress={() => Linking.openURL('tel:' + String(tripContact.phone).replace(/[^+0-9]/g,''))} style={st.primaryBtn}>
+          <Text style={st.primaryText}>{profile?.role === 'driver' ? 'Позвонить пассажиру' : 'Позвонить водителю'}</Text>
+        </TouchableOpacity>
+      </View> : null}
+      <View>
+        <Text style={st.heading}>Чат поездки</Text>
+        <Text style={st.chatHint}>Сообщения доступны пассажиру и назначенному водителю</Text>
+      </View>
+      <ScrollView style={st.chatMessages} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+        {chatMessages.length === 0
+          ? <Text style={st.chatEmpty}>Пока нет сообщений. Можно написать участнику поездки.</Text>
+          : chatMessages.map(item => {
+            const mine = item.sender_id === session?.user?.id;
+            return <View key={item.id} style={[st.chatBubble, mine ? st.chatMine : st.chatOther]}>
+              <Text style={st.chatSender}>{mine ? 'Вы' : profile?.role === 'driver' ? 'Пассажир' : 'Водитель'}</Text>
+              <Text style={st.chatMessage}>{item.message}</Text>
+              <Text style={st.chatTime}>{new Date(item.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</Text>
+            </View>;
+          })}
+      </ScrollView>
+      <View style={st.chatComposer}>
+        <TextInput
+          style={st.chatInput}
+          value={chatDraft}
+          onChangeText={setChatDraft}
+          placeholder="Сообщение водителю или пассажиру"
+          multiline
+          maxLength={2000}
+          editable={!chatSending}
+        />
+        <TouchableOpacity style={[st.chatSend, (!chatDraft.trim() || chatSending) && st.disabled]}
+          onPress={sendTripMessage} disabled={!chatDraft.trim() || chatSending}>
+          {chatSending ? <ActivityIndicator color={P.white}/> : <Text style={st.chatSendText}>➤</Text>}
+        </TouchableOpacity>
+      </View>
+    </View>;
+  };
+
+  // Never display a locally invented fare: the passenger sees only the signed server quote.
+  const previewFare = quote?.amount_rub ?? null;
 
   if (boot) return <View style={st.loading}><ActivityIndicator size="large" color={P.pink}/><Text style={st.muted}>Загружаем LadyGo…</Text></View>;
   if (!session) return <SafeAreaView style={st.auth}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
@@ -1371,11 +1569,12 @@ export default function LadyGoApp() {
         <View style={st.tariffs}>{TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[st.tariff, tariff === t.id && st.tariffSelected]}>
           <Text style={st.tariffIcon}>{t.icon}</Text><Text style={st.tariffName}>{t.name}</Text>{(previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
         </TouchableOpacity>)}</View>
-        <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>{(previewFare) ? 'Предварительная стоимость' : 'Стоимость поездки'}</Text><Text style={st.priceHint}>{(previewFare) ? 'Расчёт по длине и времени маршрута' : 'Укажи оба адреса для расчёта'}</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
-        <Text style={st.sectionTitle}>Способ оплаты</Text>
+        <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>{(previewFare) ? 'Предварительная стоимость' : 'Стоимость поездки'}</Text><Text style={st.priceHint}>{previewFare ? 'Серверная оценка по прямой дистанции; это не финальный счёт' : routeInfo ? 'Серверный тариф пока недоступен — заказ не будет создан' : 'Укажи оба адреса для расчёта'}</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
+        <Text style={st.sectionTitle}>Предпочтительный способ оплаты</Text>
         <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>Р</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
-        <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
-        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || busy}>
+        <Text style={st.muted}>Онлайн-оплата в приложении пока не подключена. Выбор способа — только предпочтение, списания не происходит.</Text>
+        <Text style={st.muted}>Для связи используется номер, сохранённый в профиле.</Text>
+        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || !quote?.price_token || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || !quote?.price_token || busy}>
           {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={st.phoneOrderBtn} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com?subject=Поддержка%20LadyGo')}>
@@ -1418,7 +1617,7 @@ export default function LadyGoApp() {
           <Text style={st.muted}>{driverLocation ? 'Геопозиция обновляется в реальном времени' : 'Ожидаем первую геопозицию автомобиля…'}</Text>
           {driverVehicle?.phone ? <TouchableOpacity onPress={() => Linking.openURL('tel:' + String(driverVehicle.phone).replace(/[^+0-9]/g,''))} style={st.primaryBtn}><Text style={st.primaryText}>Позвонить водителю</Text></TouchableOpacity> : null}
         </View>
-        {renderTripChat()}
+        {renderTripChat(activeOrder)}
       </>}
       {!activeOrder && orders.length + demoOrders.length + presentationOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Нет сохранённых маршрутов</Text><Text style={st.muted}>Сохранённые маршруты появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Сохранить маршрут</Text></TouchableOpacity></View> :
         [...demoOrders, ...presentationOrders, ...orders].map(o => {
@@ -1473,7 +1672,7 @@ export default function LadyGoApp() {
                 <View style={{ backgroundColor: '#FFFFFF', borderRadius: 10, padding: 10, gap: 4 }}>
                   <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>Данные тестовой поездки</Text>
                   <Text style={{ color: P.muted, fontSize: 11 }}>Тариф: {o.tariff_id === 'comfort' ? 'Комфорт' : o.tariff_id === 'comfort_plus' ? 'Комфорт +' : 'Эконом'}</Text>
-                  <Text style={{ color: P.muted, fontSize: 11 }}>Оплата: {o.payment_method === 'cash' ? 'Наличные' : o.payment_method === 'card' ? 'Карта (симуляция)' : (o.payment_method || 'Не выбрана')}</Text>
+                  <Text style={{ color: P.muted, fontSize: 11 }}>Оплата: {o.payment_method === 'cash' ? 'Наличные' : o.payment_method === 'card' ? 'Карта — не подключена' : (o.payment_method || 'Не выбрана')}</Text>
                   <Text style={{ color: P.muted, fontSize: 11 }}>Расчётная стоимость: {fmt(o.estimated_price_rub || o.price_rub || 0)}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -1704,6 +1903,7 @@ export default function LadyGoApp() {
           {order.status==='accepted' && <TouchableOpacity onPress={()=>updateDriverStatus(order,'arrived')} style={st.primaryBtn}><Text style={st.primaryText}>Я на месте</Text></TouchableOpacity>}
           {order.status==='arrived' && <TouchableOpacity onPress={()=>updateDriverStatus(order,'in_progress')} style={st.primaryBtn}><Text style={st.primaryText}>Начать поездку</Text></TouchableOpacity>}
           {order.status==='in_progress' && <TouchableOpacity onPress={()=>updateDriverStatus(order,'completed')} style={st.primaryBtn}><Text style={st.primaryText}>Завершить поездку</Text></TouchableOpacity>}
+          {renderTripChat(order)}
         </View>)}
         <View style={st.vehicleEditorCard}>
           <View style={st.rowBetween}><Text style={st.heading}>Фото водителя</Text><Text style={st.vehicleEditorHint}>Для карточки поездки</Text></View>
@@ -1780,6 +1980,12 @@ export default function LadyGoApp() {
     </ScrollView>}
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
       <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.phone || profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.phone || profile?.email || 'Аккаунт LadyGo'}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
+      <Text style={st.sectionTitle}>Контактный телефон</Text>
+      <TextInput style={st.authInput} value={phone} onChangeText={setPhone} placeholder="+7 999 123-45-67" keyboardType="phone-pad" maxLength={20}/>
+      <TouchableOpacity style={[st.primaryBtn,profileSaving&&st.disabled]} onPress={saveProfilePhone} disabled={profileSaving}>
+        {profileSaving?<ActivityIndicator color={P.white}/>:<Text style={st.primaryText}>Сохранить телефон</Text>}
+      </TouchableOpacity>
+      <Text style={st.footnote}>Номер не подтверждён по SMS. Он используется для связи только во время активной назначенной поездки.</Text>
       <TouchableOpacity style={st.profileRow} onPress={() => setTab('orders')}><Text style={st.profileRowIcon}>◷</Text><Text style={st.profileRowText}>История поездок</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
       {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><Text style={st.profileRowIcon}>🚘</Text><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}

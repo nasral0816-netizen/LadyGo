@@ -1,0 +1,64 @@
+# LadyGo — технический аудит и план безопасного завершения
+
+Проверка исходников GitHub и workflow на 24.11.2026. Это аудит репозитория, а не подтверждение удалённого Supabase: прямой доступ к live DB в этом сеансе отсутствует.
+
+## Подтверждено по исходникам
+
+- Expo SDK 55, React Native 0.83.10, Supabase JS v2.
+- Auth/session listener и локальное хранение сессии.
+- Passenger, driver и admin UI; формы профиля и водительской анкеты.
+- Driver media upload; в PR добавлена миграция private Storage bucket.
+- Поддержка: создание/просмотр обращений и ответы администратора.
+- Orders/history, маршруты/карты, избранные адреса, чат поездки, рейтинги и уведомления.
+- SQL для заказов, ролей, online presence, order offers, статусов, GPS и realtime уже присутствовал в базовой истории проекта.
+- Ветка PR добавляет push token lifecycle, ограничение чтения заказов, guard для цены и статические проверки.
+- Ветка содержит server-side quote/create-order заготовку; до live DB и E2E это не считается подтверждённой рабочей тарификацией.
+- Android APK workflow собирает release через Gradle.
+
+## Границы текущей реализации
+
+По последнему уточнению владельца диспетчеризация должна оставаться частью приложения. Ветка содержит SQL для подбора проверенного водителя, offer/accept, статусов, GPS и контактов, а также защищённый dispatch-loop и scheduler. Это ещё не live-verified: нужна Supabase deploy и multi-device E2E. Реальные платежи по-прежнему не включаются.
+
+## Изменения PR #10
+
+1. Push-token registration/deletion через authenticated RPC и foreground notification handler.
+2. Private driver media bucket migration с ограничением доступа.
+3. Ограничение видимости заказов водителем и запрет водителю переопределять цену при accept.
+4. Серверные проверки approved driver application, атомарное принятие offer, state machine статусов, GPS trip track и contact lease; требуют live DB review и multi-device E2E.
+5. Защищённая Edge Function dispatch-loop и pg_cron/pg_net/Vault scheduler включены в PR; deployment и cron execution ещё не подтверждены.
+6. Server quote/create-order migration и Edge Function подготовлены как часть защищённого сохранения заявки; live deployment не выполнялся, тарификация не подтверждена дорожным маршрутом.
+7. Документы: правовой чек-лист, интеграции/эксплуатация, матрица приёмки.
+
+## Не проверено
+
+- Фактическая схема Supabase, миграции, RLS, Storage, Realtime, Vault и Edge deployment.
+- Реальная доставка push, SMS/OTP и password recovery.
+- Восстановление доступа по deep link.
+- Административный лимит 15 обычных администраторов и защита главного администратора на live DB.
+- Admin audit log/role audit и экспорт CSV.
+- Offline/outbox, backup restore, antivirus/moderation.
+- Multi-device E2E, физический Android, фоновые ограничения, battery optimization.
+- Реальные карты/геокодирование/road directions и корректность тарифов.
+- Юридическая готовность к коммерческой деятельности.
+
+## Важные риски
+
+- Не использовать production персональные данные для тестов.
+- .env удалён из текущего дерева ветки, но его прежнее содержимое могло остаться в Git history. Если там были реальные ключи, их необходимо отозвать/перевыпустить.
+- Не публиковать service_role key; не ослаблять RLS.
+- Не применять миграции без backup, schema diff и staging проверки.
+- Не считать успешный Expo export доказательством корректной работы приложения.
+- Не считать APK build доказательством работоспособности на реальном устройстве.
+
+## Следующие этапы
+
+1. Получить безопасный read-only schema snapshot Supabase и список migration history.
+2. Проверить каждую RLS/Storage policy и SECURITY DEFINER функцию.
+3. Довести auth recovery, phone OTP и профили.
+4. Проверить onboarding водителя и повторную подачу.
+5. Проверить admin RBAC, super-admin protection, лимит 15, audit log и CSV.
+6. Проверить поддержку, вложения, ответы и уведомления.
+7. Проверить push, offline/reconnect и резервное восстановление.
+8. Провести E2E на синтетических аккаунтах и двух Android устройствах.
+9. Завершить и проверить real dispatch/trip coordination на staging и двух синтетических аккаунтах; реальные платежи не включать без провайдера и отдельной приёмки.
+10. Получить независимый legal/privacy/security sign-off до любого пилота.
