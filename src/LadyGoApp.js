@@ -79,6 +79,29 @@ function decodeBase64Image(base64) {
 }
 
 
+
+async function recordActiveDriverTripLocation(userId, coords) {
+  if (!userId || !coords || !supabase) return;
+  const { data: activeTrip, error: tripError } = await supabase.from('orders')
+    .select('id')
+    .eq('driver_id', userId)
+    .in('status', ['accepted', 'arrived', 'in_progress'])
+    .maybeSingle();
+  if (tripError) {
+    console.warn('LadyGo active trip lookup failed:', tripError.message);
+    return;
+  }
+  if (!activeTrip?.id) return;
+  const { error } = await supabase.rpc('ladygo_record_trip_location', {
+    p_order_id: activeTrip.id,
+    p_latitude: coords.latitude,
+    p_longitude: coords.longitude,
+    p_heading: coords.heading,
+    p_speed_mps: coords.speed
+  });
+  if (error) console.warn('LadyGo trip track write failed:', error.message);
+}
+
 const LADYGO_DRIVER_LOCATION_TASK = 'LADYGO_DRIVER_LOCATION';
 
 TaskManager.defineTask(LADYGO_DRIVER_LOCATION_TASK, async ({ data, error }) => {
@@ -95,6 +118,7 @@ TaskManager.defineTask(LADYGO_DRIVER_LOCATION_TASK, async ({ data, error }) => {
       p_longitude: latest.coords.longitude,
       p_heading: latest.coords.heading
     });
+    await recordActiveDriverTripLocation(authData.session.user.id, latest.coords);
   } catch (taskError) {
     console.warn('LadyGo background GPS update failed:', taskError?.message);
   }
@@ -539,6 +563,7 @@ export default function LadyGoApp() {
             p_longitude: position.coords.longitude,
             p_heading: position.coords.heading
           });
+          await recordActiveDriverTripLocation(session?.user?.id, position.coords);
           if (error) console.warn('LadyGo GPS heartbeat failed:', error.message);
         });
       }
