@@ -135,7 +135,8 @@ begin
     v_final_price:=greatest(coalesce(v_order.quote_minimum_fare_rub,0),
       coalesce(v_order.quote_base_fare_rub,0)+v_distance_km*coalesce(v_order.quote_per_km_rub,0)
       +v_duration_min*coalesce(v_order.quote_per_minute_rub,0));
-    update public.orders set status='completed',completed_at=now(),actual_distance_km=v_distance_km,
+    perform set_config('ladygo.finalize_order_id',p_order_id::text,true);
+     update public.orders set status='completed',completed_at=now(),actual_distance_km=v_distance_km,
       actual_duration_min=v_duration_min,final_price_rub=round(v_final_price,2),price_rub=round(v_final_price,2)
       where id=p_order_id returning * into v_order;
     update public.driver_presence set is_online=false,updated_at=now() where driver_id=auth.uid();
