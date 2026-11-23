@@ -510,6 +510,47 @@ export default function LadyGoApp() {
     return () => { clearInterval(refresh); supabase.removeChannel(channel); };
   }, [profile?.role, session?.user?.id, loadDriverOrders]);
 
+  useEffect(() => {
+    if (profile?.role !== 'driver' || !session?.user?.id || !supabase || !Device.isDevice) return;
+    let alive = true;
+    (async () => {
+      try {
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync('driver-orders', {
+            name: 'Заказы LadyGo',
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 150, 250],
+            sound: 'default'
+          });
+        }
+        let permission = await Notifications.getPermissionsAsync();
+        if (permission.status !== 'granted') permission = await Notifications.requestPermissionsAsync();
+        if (!alive || permission.status !== 'granted') return;
+        const tokenResult = await Notifications.getExpoPushTokenAsync({
+          projectId: '95ac82ec-010d-4770-9aba-9f52878e1b3b'
+        });
+        if (!alive || !tokenResult?.data) return;
+        const { error } = await supabase.from('driver_push_tokens').upsert({
+          driver_id: session.user.id,
+          expo_push_token: tokenResult.data,
+          device_platform: Platform.OS === 'ios' ? 'ios' : 'android',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'driver_id,expo_push_token' });
+        if (error) console.warn('LadyGo push token registration failed:', error.message);
+      } catch (error) {
+        console.warn('LadyGo push registration unavailable:', error?.message);
+      }
+    })();
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
+      setTab('driver');
+      loadDriverOrders();
+    });
+    return () => {
+      alive = false;
+      responseSubscription.remove();
+    };
+  }, [profile?.role, session?.user?.id, loadDriverOrders]);
+
   useEffect(() => { if (session?.user) { loadOrders(); loadDemoOrders(); } }, [session, loadOrders, loadDemoOrders]);
 
 
