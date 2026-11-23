@@ -491,3 +491,6 @@ revoke all on function public.ladygo_record_trip_location(uuid,double precision,
 grant execute on function public.ladygo_record_trip_location(uuid,double precision,double precision,double precision,double precision) to authenticated;
 
 grant select on public.order_events, public.contact_shares, public.trip_tracks to authenticated;
+
+-- The scheduler invokes dispatch with the server-only Supabase service role.
+grant execute on function public.ladygo_dispatch_next_driver(uuid) to service_role;
