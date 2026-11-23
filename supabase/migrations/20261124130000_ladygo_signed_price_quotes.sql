@@ -64,7 +64,7 @@ begin
   if p_passenger_id is null or p_quote_id is null or p_token_hash is null or length(p_token_hash)<>64
     or p_idempotency_key is null or length(p_idempotency_key)<12 or length(p_idempotency_key)>128
     or coalesce(length(trim(p_pickup_address)),0)<2 or coalesce(length(trim(p_destination_address)),0)<2
-    or p_payment_method not in ('cash','card') then raise exception 'Invalid order request'; end if;
+    or p_payment_method not in ('cash','transfer_to_driver') then raise exception 'Invalid order request'; end if;
   perform pg_advisory_xact_lock(hashtextextended(p_passenger_id::text||':'||p_idempotency_key,0));
   select order_id into v_existing_order_id from public.ladygo_order_requests
     where passenger_id=p_passenger_id and idempotency_key=p_idempotency_key;
