@@ -78,7 +78,7 @@ const TARIFFS = [
   { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '⌂' }
 ];
 const STATUS = { new: 'Ищем водителя', accepted: 'Водитель назначен', arrived: 'Водитель на месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
-const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' Р';
+const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
 
 const translateError = error => {
   const raw = String(error?.message || error || '').trim();
@@ -1391,7 +1391,7 @@ export default function LadyGoApp() {
             <View style={{alignItems:'flex-end'}}><Text style={st.driverRouteCaption}>ОПЛАТА</Text><Text style={st.driverOrderPayment}>{o.payment_method==='cash'?'Наличные':o.payment_method?'Перевод':'По договорённости'}</Text></View>
           </View>
           {o.status==='new'&&!o.driver_id ? <View style={st.driverActions}>
-            <TextInput style={st.phoneInput} keyboardType="numeric" placeholder="Согласованная стоимость, Р" value={driverPrices[o.id]||String(o.estimated_price_rub||'')} onChangeText={v=>setDriverPrices(p=>({...p,[o.id]:v}))}/>
+            <TextInput style={st.phoneInput} keyboardType="numeric" placeholder="Согласованная стоимость, руб." value={driverPrices[o.id]||String(o.estimated_price_rub||'')} onChangeText={v=>setDriverPrices(p=>({...p,[o.id]:v}))}/>
             <TouchableOpacity style={st.primaryBtn} onPress={()=>acceptDriverOrder(o)} disabled={busy}><Text style={st.primaryText}>{busy?'Обработка…':'Принять заявку'}</Text></TouchableOpacity>
           </View> : o.driver_id===session.user.id && <View style={st.driverActions}>
             {o.status==='accepted'&&<TouchableOpacity style={st.primaryBtn} onPress={()=>updateDriverStatus(o,'arrived')} disabled={busy}><Text style={st.primaryText}>Отметить прибытие</Text></TouchableOpacity>}
