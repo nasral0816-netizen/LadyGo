@@ -17,6 +17,7 @@ const pricingMigration = read('supabase/migrations/20261124130000_ladygo_signed_
 const pricingFunction = read('supabase/functions/pricing-service/index.ts');
 const schedulerMigration = read('supabase/migrations/20261124140000_ladygo_dispatch_scheduler.sql');
 const finalizationGuard = read('supabase/migrations/20261124150000_ladygo_trip_finalization_guard.sql');
+const paymentFunction = read('supabase/functions/payment-service/index.ts');
 
 const checks = [];
 const pass = (name, ok, detail = '') => checks.push({ name, ok: Boolean(ok), detail });
@@ -62,6 +63,8 @@ pass('Final fare is calculated server-side from GPS track and trip time', pricin
 pass('Final fare update passes the order guard only through the completion RPC', pricingMigration.includes("set_config('ladygo.finalize_order_id'") && finalizationGuard.includes("current_setting('ladygo.finalize_order_id'") && finalizationGuard.includes('new.price_rub = new.final_price_rub'));
 pass('Dispatch scheduler checks pg_cron, pg_net and Vault', schedulerMigration.includes('pg_cron') && schedulerMigration.includes('pg_net') && schedulerMigration.includes('ladygo_dispatch_secret'));
 pass('Pricing function requires authenticated JWT', supabaseConfig.includes('[functions.pricing-service]') && supabaseConfig.includes('verify_jwt = true'));
+pass('Offline payment preference is preserved without claiming card processing', pricingMigration.includes("p_payment_method not in ('cash','transfer_to_driver')") && pricingFunction.includes('body.payment_method===\"transfer_to_driver\"?\"transfer_to_driver\":\"cash\"'));
+pass('Payment endpoint fails closed and explicitly reports provider not configured', paymentFunction.includes('PAYMENT_PROVIDER_NOT_CONFIGURED') && paymentFunction.includes('501') && !/payment_intents|createPaymentIntent|chargeCard/i.test(paymentFunction));
 const failed = checks.filter(check => !check.ok);
 for (const check of checks) {
   process.stdout.write((check.ok ? 'PASS ' : 'FAIL ') + check.name + (check.detail ? ': ' + check.detail : '') + '\n');
