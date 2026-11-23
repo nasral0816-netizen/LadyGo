@@ -1167,8 +1167,8 @@ export default function LadyGoApp() {
       </View>
       <View style={st.adminStats}>
         <View style={st.adminStat}><Text style={st.adminStatValue}>{adminApplications.filter(x=>x.status==='pending').length}</Text><Text style={st.adminStatLabel}>Заявки на проверке</Text></View>
-        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminDrivers.length}</Text><Text style={st.adminStatLabel}>Водители</Text></View>
-        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminOrders.filter(o=>['new','accepted','arrived','in_progress'].includes(o.status)).length}</Text><Text style={st.adminStatLabel}>Поездки отключены</Text></View>
+        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminDrivers.length}</Text><Text style={st.adminStatLabel}>Профили водителей</Text></View>
+        <View style={st.adminStat}><Text style={st.adminStatValue}>{adminDemoOrders.length}</Text><Text style={st.adminStatLabel}>Тестовые заявки</Text></View>
       </View>
       <View style={st.adminTabs}>
         {[
