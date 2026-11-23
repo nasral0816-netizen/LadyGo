@@ -494,3 +494,74 @@ grant select on public.order_events, public.contact_shares, public.trip_tracks t
 
 -- The scheduler invokes dispatch with the server-only Supabase service role.
 grant execute on function public.ladygo_dispatch_next_driver(uuid) to service_role;
+
+
+-- Contacts are revealed only to the other participant while the lease and trip
+-- are both active. The functions return a narrow projection, not profile rows.
+create or replace function public.ladygo_get_assigned_driver_contact(p_order_id uuid)
+returns table(full_name text, phone text, experience text)
+language sql
+stable
+security definer
+set search_path = 'public', 'pg_temp'
+as $function$
+  select
+    coalesce(application.full_name, 'Водитель LadyGo') as full_name,
+    coalesce(application.phone, profile.phone) as phone,
+    coalesce(application.experience, '') as experience
+  from public.orders o
+  join public.profiles profile on profile.id = o.driver_id
+  left join lateral (
+    select da.full_name, da.phone, da.experience
+    from public.driver_applications da
+    where da.user_id = o.driver_id and da.status = 'approved'
+    order by da.reviewed_at desc nulls last, da.created_at desc
+    limit 1
+  ) application on true
+  where o.id = p_order_id
+    and o.passenger_id = auth.uid()
+    and o.status in ('accepted','arrived','in_progress')
+    and exists (
+      select 1 from public.contact_shares cs
+      where cs.order_id = o.id
+        and cs.passenger_id = o.passenger_id
+        and cs.driver_id = o.driver_id
+        and cs.expires_at > now()
+    )
+  limit 1;
+$function$;
+
+create or replace function public.ladygo_get_assigned_passenger_contact(p_order_id uuid)
+returns table(full_name text, phone text)
+language sql
+stable
+security definer
+set search_path = 'public', 'auth', 'pg_temp'
+as $function$
+  select
+    coalesce(
+      nullif(u.raw_user_meta_data->>'full_name', ''),
+      nullif(u.raw_user_meta_data->>'name', ''),
+      'Пассажир LadyGo'
+    ) as full_name,
+    coalesce(nullif(o.passenger_phone, ''), nullif(p.phone, '')) as phone
+  from public.orders o
+  join public.profiles p on p.id = o.passenger_id
+  join auth.users u on u.id = o.passenger_id
+  where o.id = p_order_id
+    and o.driver_id = auth.uid()
+    and o.status in ('accepted','arrived','in_progress')
+    and exists (
+      select 1 from public.contact_shares cs
+      where cs.order_id = o.id
+        and cs.passenger_id = o.passenger_id
+        and cs.driver_id = o.driver_id
+        and cs.expires_at > now()
+    )
+  limit 1;
+$function$;
+
+revoke all on function public.ladygo_get_assigned_driver_contact(uuid) from public, anon;
+revoke all on function public.ladygo_get_assigned_passenger_contact(uuid) from public, anon;
+grant execute on function public.ladygo_get_assigned_driver_contact(uuid) to authenticated;
+grant execute on function public.ladygo_get_assigned_passenger_contact(uuid) to authenticated;
