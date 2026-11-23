@@ -8,6 +8,7 @@ import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import * as TaskManager from 'expo-task-manager';
 import { supabase } from './supabase';
 
 function calculatePolylineKm(points) {
@@ -67,6 +68,28 @@ function decodeBase64Image(base64) {
   }
   return output.slice(0, out);
 }
+
+
+const LADYGO_DRIVER_LOCATION_TASK = 'LADYGO_DRIVER_LOCATION';
+
+TaskManager.defineTask(LADYGO_DRIVER_LOCATION_TASK, async ({ data, error }) => {
+  if (error || !supabase) return;
+  const locations = data?.locations || [];
+  const latest = locations[locations.length - 1];
+  if (!latest?.coords) return;
+  try {
+    const { data: authData } = await supabase.auth.getSession();
+    if (!authData?.session?.user?.id) return;
+    await supabase.rpc('ladygo_driver_heartbeat', {
+      p_is_online: true,
+      p_latitude: latest.coords.latitude,
+      p_longitude: latest.coords.longitude,
+      p_heading: latest.coords.heading
+    });
+  } catch (taskError) {
+    console.warn('LadyGo background GPS update failed:', taskError?.message);
+  }
+});
 
 const P = {
   pink: '#E84F87', pinkDark: '#C93670', pale: '#FFF0F5', ink: '#19171B',
@@ -475,22 +498,48 @@ export default function LadyGoApp() {
         if (alive) setDriverOnline(false);
         return;
       }
-      watch = await Location.watchPositionAsync({
-        accuracy: Location.Accuracy.High, timeInterval: 6000, distanceInterval: 20
-      }, async position => {
-        if (!alive) return;
-        const { error } = await supabase.rpc('ladygo_driver_heartbeat', {
-          p_is_online: true,
-          p_latitude: position.coords.latitude,
-          p_longitude: position.coords.longitude,
-          p_heading: position.coords.heading
+      let backgroundGranted = false;
+      try {
+        const background = await Location.requestBackgroundPermissionsAsync();
+        backgroundGranted = background.status === 'granted';
+      } catch (_) {}
+      if (backgroundGranted) {
+        const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK);
+        if (!alreadyStarted) {
+          await Location.startLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK, {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 6000,
+            distanceInterval: 20,
+            pausesUpdatesAutomatically: false,
+            foregroundService: {
+              notificationTitle: 'LadyGo — вы на линии',
+              notificationBody: 'Обновляем местоположение, чтобы получать заказы рядом.',
+              notificationColor: '#E84F87'
+            }
+          });
+        }
+      } else {
+        // Foreground fallback: the driver can receive orders while the app remains open.
+        watch = await Location.watchPositionAsync({
+          accuracy: Location.Accuracy.High, timeInterval: 6000, distanceInterval: 20
+        }, async position => {
+          if (!alive) return;
+          const { error } = await supabase.rpc('ladygo_driver_heartbeat', {
+            p_is_online: true,
+            p_latitude: position.coords.latitude,
+            p_longitude: position.coords.longitude,
+            p_heading: position.coords.heading
+          });
+          if (error) console.warn('LadyGo GPS heartbeat failed:', error.message);
         });
-        if (error) console.warn('LadyGo GPS heartbeat failed:', error.message);
-      });
+      }
     })().catch(error => console.warn('LadyGo GPS watcher failed:', error?.message));
     return () => {
       alive = false;
       watch?.remove?.();
+      Location.hasStartedLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK)
+        .then(started => started ? Location.stopLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK) : null)
+        .catch(() => {});
       supabase.rpc('ladygo_driver_heartbeat', {
         p_is_online: false, p_latitude: null, p_longitude: null, p_heading: null
       }).catch(() => {});
