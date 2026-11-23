@@ -1178,6 +1178,59 @@ export default function LadyGoApp() {
             <View style={st.rowBetween}><Text style={st.orderStatus}>{STATUS[o.status] || o.status}</Text><Text style={st.orderDate}>{new Date(o.created_at).toLocaleDateString('ru-RU')}</Text></View>
             <Text style={st.orderAddress}>●  {o.pickup_address}</Text>
             <Text style={st.orderAddress}>●  {o.destination_address}</Text>
+            {o.localPresentation && o.virtual_driver && <>
+              <View style={{ marginTop: 12, padding: 13, borderRadius: 14, backgroundColor: '#FFF7FA', borderWidth: 1, borderColor: '#F4C6D7', gap: 8 }}>
+                <Text style={{ color: P.pinkDark, fontSize: 11, fontWeight: '900' }}>ТЕСТОВАЯ КАРТОЧКА ВОДИТЕЛЯ</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#F7D8E4', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: P.pinkDark, fontSize: 20, fontWeight: '900' }}>В</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: P.ink, fontSize: 16, fontWeight: '900' }}>{o.virtual_driver}</Text>
+                    <Text style={{ color: P.muted, fontSize: 12 }}>Условный профиль · не реальный водитель</Text>
+                  </View>
+                </View>
+                <Text style={{ color: P.ink, fontWeight: '800' }}>Lada Granta · белая</Text>
+                <Text style={{ color: P.muted, fontSize: 12 }}>А000АА 26 · условный номер</Text>
+                <View style={{ height: 1, backgroundColor: '#F0DCE4', marginVertical: 3 }} />
+                <Text style={{ color: P.ink, fontWeight: '800' }}>Состояние поездки</Text>
+                {[
+                  ['accepted', 'Водитель принял заказ'],
+                  ['arrived', 'Водитель на месте'],
+                  ['in_progress', 'Поездка началась'],
+                  ['completed', 'Поездка завершена']
+                ].map(([status, label], index) => {
+                  const sequence = ['accepted', 'arrived', 'in_progress', 'completed'];
+                  const currentIndex = sequence.indexOf(o.status);
+                  const done = currentIndex >= index;
+                  return <View key={status} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ color: done ? P.green : '#B8AEB4', fontSize: 16 }}>{done ? '●' : '○'}</Text>
+                    <Text style={{ color: done ? P.ink : P.muted, fontSize: 12, fontWeight: done ? '800' : '500' }}>{label}</Text>
+                  </View>;
+                })}
+                <Text style={{ color: P.muted, fontSize: 11 }}>Этапы переключаются вручную только в локальной тестовой записи.</Text>
+                {o.status !== 'completed' && o.status !== 'cancelled' && <TouchableOpacity
+                  onPress={() => setPresentationOrders(rows => rows.map(item => {
+                    if (item.id !== o.id) return item;
+                    const sequence = ['accepted', 'arrived', 'in_progress', 'completed'];
+                    const index = sequence.indexOf(item.status);
+                    return { ...item, status: sequence[Math.min(index + 1, sequence.length - 1)] };
+                  }))}
+                  style={{ backgroundColor: P.pink, borderRadius: 11, padding: 11, alignItems: 'center', marginTop: 4 }}>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '900' }}>Следующий этап (тест)</Text>
+                </TouchableOpacity>}
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#E8DDE2', padding: 10, alignItems: 'center', opacity: 0.55 }}>
+                    <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>☎ Позвонить водителю</Text>
+                    <Text style={{ color: P.muted, fontSize: 10 }}>Недоступно в тесте</Text>
+                  </View>
+                  <View style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#E8DDE2', padding: 10, alignItems: 'center', opacity: 0.55 }}>
+                    <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>☎ Позвонить пассажиру</Text>
+                    <Text style={{ color: P.muted, fontSize: 10 }}>Недоступно в тесте</Text>
+                  </View>
+                </View>
+              </View>
+            </>}
             <View style={st.rowBetween}><Text style={st.orderPrice}>{o.price_rub ? fmt(o.price_rub) : 'Цена уточняется'}</Text>{o.status === 'new' && <TouchableOpacity onPress={() => cancelOrder(o)}><Text style={st.cancelText}>Отменить</Text></TouchableOpacity>}</View>
             {o.driver_id && o.status === 'completed' && <Text style={st.ratingSummary}>Оценка водителя: ★ {driverStats?.average_rating ? Number(driverStats.average_rating).toFixed(1) : '—'} {driverStats?.rating_count ? '(' + driverStats.rating_count + ')' : ''}</Text>}
             {canRate && <View style={st.rateBox}>
