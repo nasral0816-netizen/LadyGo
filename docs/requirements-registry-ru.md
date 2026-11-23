@@ -54,7 +54,7 @@
 - **Не подтверждено или отсутствует:** password recovery/phone OTP end-to-end, admin cap 15 и audit, CSV, attachments/moderation, offline/outbox, backup restore, complete device tests, live DB RLS review.
 - **Требует внешних сервисов:** SMS, server Directions, Expo Push credentials/deployment, antivirus/moderation, monitoring.
 - **Требует доступа владельца/оператора:** Supabase project/schema, secrets, deployment, staging accounts, Android devices, legal/contract approvals.
-- **Отложено/не реализовано:** реальные платежи (нет подключённого провайдера). **Обязательная часть текущего задания:** диспетчеризация и координация поездок; код подготовлен в PR, но live deployment/E2E ещё не пройдены.
+- **Не подключено:** реальные платежи (нет подключённого провайдера; есть fail-closed stub). **Обязательная часть текущего задания:** диспетчеризация и координация поездок; код подготовлен в PR, но live deployment/E2E ещё не пройдены.
 
 ## Контроль безопасности
 
