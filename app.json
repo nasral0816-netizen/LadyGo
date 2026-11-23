@@ -2,17 +2,17 @@
   "expo": {
     "name": "LadyGo",
     "slug": "guga",
-    "version": "6.9.0",
+    "version": "6.9.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "ladygo",
-    "description": "LadyGo — маршруты и расчёт стоимости, анкеты водителей, проверка заявок и поддержка.",
+    "description": "LadyGo — заказ поездок, поиск ближайших водителей, GPS-сопровождение и поддержка.",
     "primaryColor": "#E85D91",
     "backgroundColor": "#E65B8A",
     "icon": "./icon.png",
     "android": {
       "package": "com.ladygo.app",
-      "versionCode": 51,
+      "versionCode": 52,
       "adaptiveIcon": {
         "foregroundImage": "./adaptive-icon.png",
         "backgroundColor": "#E80B87"
@@ -20,14 +20,21 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "plugins": [
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "LadyGo использует геолокацию только для определения текущего местоположения при построении маршрута."
+          "locationWhenInUsePermission": "LadyGo использует геолокацию для подачи автомобиля, построения маршрута и сопровождения поездки.",
+          "locationAlwaysAndWhenInUsePermission": "Когда водитель включает режим «На линии», LadyGo использует фоновую геолокацию для получения заказов поблизости и обновления местоположения пассажиру.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true,
+          "isIosBackgroundLocationEnabled": true
         }
       ],
       "expo-notifications",
