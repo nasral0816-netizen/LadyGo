@@ -56,7 +56,7 @@ pass('Push function verifies webhook secret server-side', /ladygo_verify_push_we
 pass('Push token cleanup is restricted to the authenticated account', /where user_id = auth\.uid\(\)/.test(pushTokenMigration) && /where driver_id = auth\.uid\(\)/.test(pushTokenMigration));
 
 pass('Passenger creates orders only through the server pricing function', app.includes("functions.invoke('pricing-service'") && !app.includes(".from('orders').insert(payload)"));
-pass('Passenger fare preview displays only the signed server quote', /const previewFare = quote\\?\\.amount_rub \\?\\? null/.test(app) && !/55 \\+ \\(Number\\(routeInfo\\.km/.test(app));
+pass('Passenger fare preview displays only the signed server quote', app.includes('const previewFare = quote?.amount_rub ?? null') && !app.includes('55 + (Number(routeInfo.km'));
 pass('Pricing quote is HMAC-signed and short-lived', pricingFunction.includes('HMAC') && pricingFunction.includes('LADYGO_PRICING_SECRET') && pricingFunction.includes('+90'));
 pass('Price quote is bound to passenger and single-use', pricingMigration.includes('ladygo_price_quotes') && pricingMigration.includes('token_hash') && pricingMigration.includes('consumed_at is null'));
 pass('Order creation is idempotent and service-role-only', pricingMigration.includes('ladygo_order_requests') && pricingMigration.includes('pg_advisory_xact_lock') && pricingMigration.includes('to service_role'));
