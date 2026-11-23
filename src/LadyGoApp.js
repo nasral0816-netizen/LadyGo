@@ -277,6 +277,11 @@ export default function LadyGoApp() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminApplications, setAdminApplications] = useState([]);
   const [adminDrivers, setAdminDrivers] = useState([]);
+  const [supportSubject, setSupportSubject] = useState('');
+  const [supportMessage, setSupportMessage] = useState('');
+  const [supportSending, setSupportSending] = useState(false);
+  const [myTickets, setMyTickets] = useState([]);
+  const [adminTickets, setAdminTickets] = useState([]);
   const [adminSelectedDriverId, setAdminSelectedDriverId] = useState(null);
   const [adminSection, setAdminSection] = useState('applications');
   const [application, setApplication] = useState({ full_name: '', phone: '', experience: '', vehicle_make: '', vehicle_model: '', vehicle_color: '', vehicle_plate: '', vehicle_year: '', license_info: '' });
@@ -530,6 +535,47 @@ export default function LadyGoApp() {
       Alert.alert('Не удалось загрузить водителей', translateError(e));
     }
   }, [profile?.role]);
+
+  const loadMyTickets = useCallback(async () => {
+    if (!session?.user?.id || !supabase) return;
+    const { data, error } = await supabase.from('support_tickets').select('id,subject,message,status,admin_reply,created_at,updated_at').eq('user_id', session.user.id).order('created_at', { ascending: false }).limit(50);
+    if (!error) setMyTickets(data || []);
+  }, [session?.user?.id]);
+
+  const loadAdminTickets = useCallback(async () => {
+    if (profile?.role !== 'admin' || !supabase) return;
+    const { data, error } = await supabase.from('support_tickets').select('id,user_id,subject,message,status,admin_reply,created_at,updated_at').order('created_at', { ascending: false }).limit(100);
+    if (error) Alert.alert('Не удалось загрузить обращения', translateError(error));
+    else setAdminTickets(data || []);
+  }, [profile?.role]);
+
+  const submitSupportTicket = async () => {
+    const subject = supportSubject.trim();
+    const message = supportMessage.trim();
+    if (!session?.user?.id || supportSending) return;
+    if (subject.length < 3 || message.length < 10) {
+      Alert.alert('Заполни обращение', 'Тема — минимум 3 символа, сообщение — минимум 10.');
+      return;
+    }
+    setSupportSending(true);
+    try {
+      const { error } = await supabase.from('support_tickets').insert({ user_id: session.user.id, subject, message });
+      if (error) throw error;
+      setSupportSubject('');
+      setSupportMessage('');
+      await loadMyTickets();
+      Alert.alert('Обращение отправлено', 'Оно сохранено в системе поддержки LadyGo.');
+    } catch (e) { Alert.alert('Не удалось отправить обращение', translateError(e)); }
+    finally { setSupportSending(false); }
+  };
+
+  const setSupportTicketStatus = async (ticket, status) => {
+    try {
+      const { error } = await supabase.from('support_tickets').update({ status, updated_at: new Date().toISOString() }).eq('id', ticket.id);
+      if (error) throw error;
+      await loadAdminTickets();
+    } catch (e) { Alert.alert('Не удалось обновить обращение', translateError(e)); }
+  };
 
   const reviewDriverApplication = async (item, status) => {
     const label = status === 'approved' ? 'одобрить' : 'отклонить';
@@ -1105,7 +1151,7 @@ export default function LadyGoApp() {
         <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>⌖  Пассажир</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>🚘  Водитель</Text></TouchableOpacity>
       </View>}
-      {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); }}>
+      {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); }}>
         <Text style={[st.adminTopButtonText, tab === 'admin' && st.adminTopButtonTextActive]}>⚙ Админ</Text>
       </TouchableOpacity>}
       <TouchableOpacity style={st.avatar} onPress={() => setTab('profile')}><Text style={st.avatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></TouchableOpacity>
@@ -1256,7 +1302,7 @@ export default function LadyGoApp() {
           <Text style={st.pageTitle}>Администрирование</Text>
           <Text style={st.muted}>Заявки, водители и поездки — в одном месте</Text>
         </View>
-        <TouchableOpacity style={st.adminRefresh} onPress={() => { loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); }}>
+        <TouchableOpacity style={st.adminRefresh} onPress={() => { loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); }}>
           {adminLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.adminRefreshText}>↻</Text>}
         </TouchableOpacity>
       </View>
@@ -1269,7 +1315,8 @@ export default function LadyGoApp() {
         {[
           ['applications','Заявки',adminApplications.filter(x=>x.status==='pending').length],
           ['drivers','Водители',adminDrivers.length],
-          ['orders','Заказы',adminOrders.length]
+          ['orders','Заказы',adminOrders.length],
+          ['support','Поддержка',adminTickets.filter(x=>x.status==='open').length]
         ].map(([id,label,count])=><TouchableOpacity key={id} onPress={()=>setAdminSection(id)} style={[st.adminTab,adminSection===id&&st.adminTabActive]}>
           <Text style={[st.adminTabText,adminSection===id&&st.adminTabTextActive]}>{label} · {count}</Text>
         </TouchableOpacity>)}
@@ -1329,6 +1376,16 @@ export default function LadyGoApp() {
             </View>}
           </View>;
         })}
+      </>}
+      {adminSection==='support' && <>
+        <View style={st.rowBetween}><Text style={st.heading}>Обращения пользователей</Text><TouchableOpacity onPress={loadAdminTickets}><Text style={st.refreshText}>Обновить</Text></TouchableOpacity></View>
+        {adminTickets.length===0 ? <View style={st.emptyCard}><Text style={st.heading}>Обращений пока нет</Text></View> : adminTickets.map(ticket=><View key={ticket.id} style={st.adminApplicationCard}>
+          <View style={st.rowBetween}><Text style={st.adminApplicantName}>{ticket.subject}</Text><Text style={[st.adminStatus,ticket.status==='open'?st.adminStatusPending:st.adminStatusApproved]}>{ticket.status==='open'?'Открыто':'Закрыто'}</Text></View>
+          <Text style={st.adminDate}>{new Date(ticket.created_at).toLocaleString('ru-RU')} · ID {String(ticket.user_id).slice(0,8)}</Text>
+          <Text style={st.adminDetail}>{ticket.message}</Text>
+          {ticket.admin_reply ? <Text style={st.adminDetail}>Ответ: {ticket.admin_reply}</Text> : null}
+          <TouchableOpacity style={ticket.status==='open'?st.adminApprove:st.adminReject} onPress={()=>setSupportTicketStatus(ticket,ticket.status==='open'?'closed':'open')}><Text style={ticket.status==='open'?st.adminActionText:st.adminRejectText}>{ticket.status==='open'?'Закрыть обращение':'Открыть снова'}</Text></TouchableOpacity>
+        </View>)}
       </>}
       {adminSection==='orders' && <>
         <View style={st.rowBetween}><Text style={st.heading}>История всех поездок</Text><Text style={st.muted}>{adminOrders.length} всего</Text></View>
@@ -1511,13 +1568,27 @@ export default function LadyGoApp() {
       </TouchableOpacity>
       <Text style={st.footnote}>К работе допускаются только совершеннолетние кандидаты после проверки документов администратором.</Text>
     </ScrollView>}
+    {tab === 'support' && <ScrollView contentContainerStyle={st.pageContent} keyboardShouldPersistTaps="handled">
+      <Text style={st.pageTitle}>Поддержка LadyGo</Text>
+      <Text style={st.muted}>Опиши вопрос или проблему. Обращение сохранится в системе и будет доступно администратору.</Text>
+      <TextInput style={st.authInput} value={supportSubject} onChangeText={setSupportSubject} placeholder="Тема обращения" maxLength={120}/>
+      <TextInput style={[st.authInput,{minHeight:130,textAlignVertical:'top'}]} value={supportMessage} onChangeText={setSupportMessage} placeholder="Подробно опиши проблему…" multiline maxLength={4000}/>
+      <TouchableOpacity style={[st.primaryBtn, supportSending&&st.disabled]} onPress={submitSupportTicket} disabled={supportSending}>{supportSending?<ActivityIndicator color={P.white}/>:<Text style={st.primaryText}>Отправить обращение</Text>}</TouchableOpacity>
+      <View style={st.rowBetween}><Text style={st.heading}>Мои обращения</Text><TouchableOpacity onPress={loadMyTickets}><Text style={st.refreshText}>Обновить</Text></TouchableOpacity></View>
+      {myTickets.map(ticket=><View key={ticket.id} style={st.adminApplicationCard}>
+        <View style={st.rowBetween}><Text style={st.adminApplicantName}>{ticket.subject}</Text><Text style={[st.adminStatus,ticket.status==='open'?st.adminStatusPending:st.adminStatusApproved]}>{ticket.status==='open'?'Открыто':'Закрыто'}</Text></View>
+        <Text style={st.adminDate}>{new Date(ticket.created_at).toLocaleString('ru-RU')}</Text>
+        <Text style={st.adminDetail}>{ticket.message}</Text>
+        {ticket.admin_reply ? <Text style={st.adminDetail}>Ответ поддержки: {ticket.admin_reply}</Text> : <Text style={st.muted}>Ожидает ответа</Text>}
+      </View>)}
+    </ScrollView>}
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
       <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.phone || profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.phone || profile?.email || 'Аккаунт LadyGo'}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
       <TouchableOpacity style={st.profileRow} onPress={() => setTab('orders')}><Text style={st.profileRowIcon}>◷</Text><Text style={st.profileRowText}>История поездок</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
-      {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
+      {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
       {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><Text style={st.profileRowIcon}>🚘</Text><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}
 
-      <TouchableOpacity style={st.profileRow} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com')}><Text style={st.profileRowIcon}>?</Text><Text style={st.profileRowText}>Поддержка</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
+      <TouchableOpacity style={st.profileRow} onPress={() => { setTab('support'); loadMyTickets(); }}><Text style={st.profileRowIcon}>?</Text><Text style={st.profileRowText}>Поддержка и обращения</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.profileRow} onPress={() => Linking.openURL('tel:+79911121227')}><Text style={st.profileRowIcon}>☎</Text><Text style={st.profileRowText}>Заказать по телефону</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.logout} onPress={signOut}><Text style={st.logoutText}>Выйти из аккаунта</Text></TouchableOpacity>
       <Text style={st.footnote}>LadyGo · 6.8.0 · Создано независимым автором @acyma</Text>
