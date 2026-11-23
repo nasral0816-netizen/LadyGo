@@ -18,6 +18,7 @@ const pricingFunction = read('supabase/functions/pricing-service/index.ts');
 const schedulerMigration = read('supabase/migrations/20261124140000_ladygo_dispatch_scheduler.sql');
 const finalizationGuard = read('supabase/migrations/20261124150000_ladygo_trip_finalization_guard.sql');
 const paymentFunction = read('supabase/functions/payment-service/index.ts');
+const profilePhoneMigration = read('supabase/migrations/20261124160000_ladygo_profile_phone_rpc.sql');
 
 const checks = [];
 const pass = (name, ok, detail = '') => checks.push({ name, ok: Boolean(ok), detail });
@@ -66,6 +67,7 @@ pass('Dispatch scheduler checks pg_cron, pg_net and Vault', schedulerMigration.i
 pass('Pricing function requires authenticated JWT', supabaseConfig.includes('[functions.pricing-service]') && supabaseConfig.includes('verify_jwt = true'));
 pass('Offline payment preference is preserved without claiming card processing', pricingMigration.includes("p_payment_method not in ('cash','transfer_to_driver')") && pricingFunction.includes('body.payment_method===\"transfer_to_driver\"?\"transfer_to_driver\":\"cash\"'));
 pass('Payment endpoint fails closed and explicitly reports provider not configured', paymentFunction.includes('PAYMENT_PROVIDER_NOT_CONFIGURED') && paymentFunction.includes('501') && !/payment_intents|createPaymentIntent|chargeCard/i.test(paymentFunction));
+pass('Users can update only their own contact phone through authenticated RPC', app.includes("rpc('ladygo_update_my_phone'") && profilePhoneMigration.includes('auth.uid()') && profilePhoneMigration.includes('grant execute on function public.ladygo_update_my_phone(text) to authenticated'));
 const failed = checks.filter(check => !check.ok);
 for (const check of checks) {
   process.stdout.write((check.ok ? 'PASS ' : 'FAIL ') + check.name + (check.detail ? ': ' + check.detail : '') + '\n');
