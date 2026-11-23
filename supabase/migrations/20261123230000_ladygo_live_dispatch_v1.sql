@@ -185,6 +185,10 @@ begin
 
   if not found then return null; end if;
 
+  update public.order_offers
+  set status = 'expired', responded_at = now()
+  where status = 'pending' and expires_at <= now();
+
   if auth.uid() is not null and auth.uid() <> v_order.passenger_id
      and not exists (
        select 1 from public.order_offers oo
