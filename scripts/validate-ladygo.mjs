@@ -10,6 +10,7 @@ const securityMigration = read('supabase/migrations/20261124090000_ladygo_privat
 const pushFunction = read('supabase/functions/send-driver-offer-push/index.ts');
 const pushTokenMigration = read('supabase/migrations/20261124100000_ladygo_push_token_lifecycle.sql');
 const orderVisibilityMigration = read('supabase/migrations/20261124110000_ladygo_limit_order_visibility_to_offers.sql');
+const verifiedDriverMigration = read('supabase/migrations/20261124120000_ladygo_verified_driver_dispatch_and_trip_audit.sql');
 
 const checks = [];
 const pass = (name, ok, detail = '') => checks.push({ name, ok: Boolean(ok), detail });
@@ -27,6 +28,10 @@ pass('Order requires a server price token', /quote\?\.price_token/.test(createOr
 pass('Driver acceptance does not submit a client-selected price', /rpc\('ladygo_accept_order',\s*\{\s*p_order_id:\s*order\.id\s*\}\)/.test(app));
 pass('Driver GPS heartbeat is connected', /ladygo_driver_heartbeat/.test(app) && /startLocationUpdatesAsync/.test(app));
 pass('Driver offers are loaded from Supabase', /from\('order_offers'\)/.test(app));
+pass('Driver trip GPS is recorded through the protected RPC', /ladygo_record_trip_location/.test(app) && /recordActiveDriverTripLocation/.test(app));
+pass('Dispatch and acceptance require approved driver application', /da\.status = 'approved'/.test(verifiedDriverMigration) && /join public\.driver_profiles/.test(verifiedDriverMigration));
+pass('Trip audit, track and contact lease tables are present', /create table if not exists public\.order_events/.test(verifiedDriverMigration) && /create table if not exists public\.trip_tracks/.test(verifiedDriverMigration) && /create table if not exists public\.contact_shares/.test(verifiedDriverMigration));
+pass('Trip track writes require active participant authorization', /ladygo_record_trip_location/.test(verifiedDriverMigration) && /Trip is not active/.test(verifiedDriverMigration) && /Not a trip participant/.test(verifiedDriverMigration));
 pass('Passenger and driver push tokens use server-managed ownership', /ladygo_register_push_token/.test(app) && /ladygo_unregister_push_token/.test(app));
 pass('Passenger and driver trip chat uses realtime and participant inserts', /from\('trip_messages'\)/.test(app) && /ladygo-trip-chat-/.test(app) && /sender_id:\s*session\.user\.id/.test(app));
 pass('Foreground push notifications are displayed', /setNotificationHandler/.test(app) && /shouldShowBanner:\s*true/.test(app));
