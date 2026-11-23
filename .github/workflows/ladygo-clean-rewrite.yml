@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - ladygo-clean-rewrite
+      - tech/stabilize-android-dispatch-2026-11-23
   pull_request:
     branches:
       - main
