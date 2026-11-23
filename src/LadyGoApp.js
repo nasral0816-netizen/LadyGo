@@ -102,7 +102,7 @@ const TARIFFS = [
   { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '♡' },
   { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '⌂' }
 ];
-const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Заявка', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
+const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Ищем водителя', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
 
 const translateError = error => {
@@ -376,7 +376,7 @@ export default function LadyGoApp() {
     if (active?.driver_id && ['accepted','arrived','in_progress'].includes(active.status)) {
       const [vehicleResult, locationResult] = await Promise.all([
         supabase.from('driver_profiles')
-          .select('display_name,avatar_url,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,vehicle_photo_url')
+          .select('display_name,phone,avatar_url,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,vehicle_photo_url')
           .eq('driver_id', active.driver_id).maybeSingle(),
         supabase.from('driver_locations')
           .select('latitude,longitude,heading,updated_at')
@@ -1397,10 +1397,10 @@ export default function LadyGoApp() {
           <Text style={st.orderPrice}>{fmt(activeOrder.price_rub||activeOrder.estimated_price_rub||0)}</Text>
           {activeOrder.status==='new' ? <Text style={{color:P.pinkDark,fontWeight:'800'}}>Ищем водителя…</Text> : null}
         </View>
-        {activeOrder.status==='new' && <TouchableOpacity onPress={()=>cancelOrder(activeOrder)}><Text style={st.cancelText}>Отменить заказ</Text></TouchableOpacity>}
+        {['new','accepted','arrived','in_progress'].includes(activeOrder.status) && <TouchableOpacity onPress={()=>cancelOrder(activeOrder)}><Text style={st.cancelText}>Отменить поездку</Text></TouchableOpacity>}
       </View>}
       {activeOrder?.driver_id && ['accepted','arrived','in_progress'].includes(activeOrder.status) && <>
-        <Text style={st.heading}>Водитель едет к вам</Text>
+        <Text style={st.heading}>{activeOrder.status==='arrived'?'Водитель на месте':activeOrder.status==='in_progress'?'Вы в пути':'Водитель едет к вам'}</Text>
         <MapPanel pickup={activeOrder.pickup_lat && activeOrder.pickup_lng ? { latitude: activeOrder.pickup_lat, longitude: activeOrder.pickup_lng } : null}
           destination={activeOrder.destination_lat && activeOrder.destination_lng ? { latitude: activeOrder.destination_lat, longitude: activeOrder.destination_lng } : null}
           route={[]} driverLocation={driverLocation} onLocate={async () => driverLocation} allowPickDestination={false}/>
@@ -1416,10 +1416,11 @@ export default function LadyGoApp() {
           <Text style={st.heading}>{[driverVehicle?.vehicle_color, driverVehicle?.vehicle_make, driverVehicle?.vehicle_model].filter(Boolean).join(' ') || 'Автомобиль водителя'}</Text>
           <Text style={st.orderAddress}>{driverVehicle?.vehicle_plate || 'Номер автомобиля не указан'}{driverVehicle?.vehicle_year ? ' · ' + driverVehicle.vehicle_year : ''}</Text>
           <Text style={st.muted}>{driverLocation ? 'Геопозиция обновляется в реальном времени' : 'Ожидаем первую геопозицию автомобиля…'}</Text>
+          {driverVehicle?.phone ? <TouchableOpacity onPress={() => Linking.openURL('tel:' + String(driverVehicle.phone).replace(/[^+0-9]/g,''))} style={st.primaryBtn}><Text style={st.primaryText}>Позвонить водителю</Text></TouchableOpacity> : null}
         </View>
         {renderTripChat()}
       </>}
-      {orders.length + demoOrders.length + presentationOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Нет сохранённых маршрутов</Text><Text style={st.muted}>Сохранённые маршруты появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Сохранить маршрут</Text></TouchableOpacity></View> :
+      {!activeOrder && orders.length + demoOrders.length + presentationOrders.length === 0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>⌁</Text><Text style={st.heading}>Нет сохранённых маршрутов</Text><Text style={st.muted}>Сохранённые маршруты появятся здесь.</Text><TouchableOpacity style={st.primaryBtn} onPress={() => setTab('ride')}><Text style={st.primaryText}>Сохранить маршрут</Text></TouchableOpacity></View> :
         [...demoOrders, ...presentationOrders, ...orders].map(o => {
           const driverStats = o.driver_id ? driverRatingStats[o.driver_id] : null;
           const canRate = o.status === 'completed' && o.driver_id && !ratedOrderIds.includes(o.id);
