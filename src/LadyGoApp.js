@@ -912,9 +912,6 @@ export default function LadyGoApp() {
   };
 
   const chatOrder = null;
-  const chatOrder = tab === 'driver'
-    ? driverOrders.find(o => o.driver_id === session?.user?.id && ['accepted','arrived','in_progress'].includes(o.status)) || null
-    : (activeOrder?.driver_id && ['accepted','arrived','in_progress'].includes(activeOrder.status) ? activeOrder : null);
 
   useEffect(() => {
     if (!chatOrder?.id || !session?.user?.id || !supabase) {
