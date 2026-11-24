@@ -29,6 +29,9 @@ Deno.serve(async req=>{
     const destinationAddress=String(body.destination_address??"").trim();
     const paymentMethod=body.payment_method==="transfer_to_driver"?"transfer_to_driver":"cash";
     const validPoint=(p:any)=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude)&&p.latitude>=-90&&p.latitude<=90&&p.longitude>=-180&&p.longitude<=180;
+    const {data:profile,error:profileError}=await db.from("profiles").select("role").eq("id",who.user.id).maybeSingle();
+    if(profileError)throw profileError;
+    if(profile?.role!=="passenger")return json({error:"Создавать поездки может только аккаунт пассажира."},403);
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(quoteId))return json({error:"Некорректная фиксация цены."},400);
     if(!validPoint(pickup)||!validPoint(destination)||pickupAddress.length<2||destinationAddress.length<2)return json({error:"Укажи корректные адреса и точки маршрута."},400);
     const {data:existing,error:existingError}=await userClient.from("orders").select("*").eq("passenger_id",who.user.id).in("status",["new","accepted","arrived","in_progress"]).maybeSingle();
