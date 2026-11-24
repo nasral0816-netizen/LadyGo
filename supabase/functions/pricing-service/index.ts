@@ -1,14 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
-import { latLngToCell } from "npm:h3-js@4.1.0";
 const cors = { "Access-Control-Allow-Origin":"*", "Access-Control-Allow-Headers":"authorization, apikey, content-type, x-client-info", "Access-Control-Allow-Methods":"POST, OPTIONS" };
 const json = (body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,"Content-Type":"application/json"}});
 const FREE = ["luggage_help","text_only","quiet_ride","wheelchair"];
 const PAID:Record<string,number>={child_seat:45,pet:35,bulky_luggage:35};
 const n=(v:unknown)=>Number.isFinite(Number(v))?Number(v):0;
 const inside=(p:any)=>n(p?.latitude)>=43.88&&n(p?.latitude)<=44.10&&n(p?.longitude)>=42.60&&n(p?.longitude)<=42.82;
-const kmBetween=(a:any,b:any)=>{const rad=(x:number)=>x*Math.PI/180;const dLat=rad(n(b.latitude)-n(a.latitude)),dLon=rad(n(b.longitude)-n(a.longitude));const h=Math.sin(dLat/2)**2+Math.cos(rad(n(a.latitude)))*Math.cos(rad(n(b.latitude)))*Math.sin(dLon/2)**2;return 6371*2*Math.asin(Math.sqrt(h));};
-async function road(a:any,b:any){const url=`https://router.project-osrm.org/route/v1/driving/${n(a.longitude)},${n(a.latitude)};${n(b.longitude)},${n(b.latitude)}?overview=false`;const r=await fetch(url);if(!r.ok)return null;const x=(await r.json()).routes?.[0];return x?{km:x.distance/1000,min:x.duration/60}:null;}
 Deno.serve(async req=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
  if(req.method!=="POST")return json({error:"POST required"},405);
@@ -106,23 +103,13 @@ Deno.serve(async req=>{
   const billableKm=Math.max(0,routeKm-n(t.included_km)),billableMin=Math.max(0,routeMin-n(t.included_min));
   const routeCost=n(t.min_price_rub)+billableKm*perKm+billableMin*perMin;
 
-  // Real-time H3 cell demand is calculated from currently online drivers and new orders.
-  const cell=latLngToCell(n(start.latitude),n(start.longitude),8);
-  const {data:presence}=await db.from("driver_presence").select("driver_id").eq("is_online",true);
-  const driverIds=(presence||[]).map((x:any)=>x.driver_id);
-  const {data:locations}=driverIds.length?await db.from("driver_locations").select("driver_id,latitude,longitude,updated_at").in("driver_id",driverIds).gte("updated_at",new Date(Date.now()-120000).toISOString()):{data:[]};
-  const drivers=(locations||[]).filter((p:any)=>latLngToCell(n(p.latitude),n(p.longitude),8)===cell);
-  const {data:orders}=await db.from("orders").select("pickup_lat,pickup_lng").eq("status","new").gte("created_at",new Date(Date.now()-20*60000).toISOString());
-  const requests=(orders||[]).filter((p:any)=>p.pickup_lat!=null&&p.pickup_lng!=null&&latLngToCell(n(p.pickup_lat),n(p.pickup_lng),8)===cell);
-  const available=drivers.length,active=requests.length;
-  const raw=available===0&&active>0?2.5:active>available?1+(active-available)/Math.max(1,available)*0.25:1;
-  const surge=Math.min(2.5,Math.max(1,Math.round(raw*10)/10));
-  const surgeReason=surge>1?"Повышенный спрос: рядом мало свободных машин":"Обычный спрос: машин достаточно";
-
-  // Nearest currently online driver contributes pickup cost only beyond both free thresholds.
-  let pickupKm=0,pickupMin=0,pickupCost=0;
-  const nearest=(locations||[]).filter((p:any)=>n(p.latitude)!==0&&n(p.longitude)!==0).sort((a:any,b:any)=>kmBetween(a,start)-kmBetween(b,start))[0];
-  if(nearest){const pickup=await road(nearest,start);if(pickup){pickupKm=pickup.km;pickupMin=pickup.min;if(pickupKm>n(t.pickup_free_km)||pickupMin>n(t.pickup_free_min))pickupCost=Math.max(0,pickupKm-n(t.pickup_free_km))*perKm+Math.max(0,pickupMin-n(t.pickup_free_min))*perMin;}}
+  // Passenger pricing never depends on the distance of an unassigned driver.
+  // A fixed 60 RUB base fare is added to the route quote; dynamic pickup/surge
+  // multipliers are intentionally excluded from passenger quotes.
+  const baseFareRub=60;
+  const pickupKm=0,pickupMin=0,pickupCost=0;
+  const surge=1;
+  const surgeReason="Без доплаты за подачу и повышенный спрос";
   const opts=Array.isArray(body.options)?body.options.filter((x:string)=>FREE.includes(x)||Object.hasOwn(PAID,x)):[];
   const optionsCost=opts.reduce((sum:number,x:string)=>sum+(PAID[x]||0),0);
   let waitMinutes=0;
@@ -135,8 +122,8 @@ Deno.serve(async req=>{
   }
   const waitCost=Math.max(0,waitMinutes-n(t.free_wait_min))*n(t.wait_per_min_rub);
   const tolls=0,discount=0;
-  const total=Math.round(Math.max(n(t.min_price_rub)*0.7,(routeCost+pickupCost)*surge+optionsCost+tolls+waitCost-discount));
-  const breakdown={tariff:t.name,city_id:city,route_km:+routeKm.toFixed(2),route_min:Math.round(routeMin),included_km:n(t.included_km),included_min:n(t.included_min),billable_km:+billableKm.toFixed(2),billable_min:+billableMin.toFixed(2),min_price:n(t.min_price_rub),route_cost:+routeCost.toFixed(2),pickup_km:+pickupKm.toFixed(2),pickup_min:Math.round(pickupMin),pickup_cost:+pickupCost.toFixed(2),surge_multiplier:surge,surge_reason:surgeReason,h3_cell:cell,available_drivers:available,active_requests:active,options:opts,options_cost:optionsCost,tolls,discount,free_wait_min:n(t.free_wait_min),wait_minutes:waitMinutes,wait_cost:waitCost,total,currency:"RUB"};
+  const total=Math.round(Math.max(n(t.min_price_rub)*0.7,baseFareRub+routeCost+optionsCost+tolls+waitCost-discount));
+  const breakdown={tariff:t.name,city_id:city,route_km:+routeKm.toFixed(2),route_min:Math.round(routeMin),included_km:n(t.included_km),included_min:n(t.included_min),billable_km:+billableKm.toFixed(2),billable_min:+billableMin.toFixed(2),min_price:n(t.min_price_rub),base_fare:baseFareRub,route_cost:+routeCost.toFixed(2),pickup_km:+pickupKm.toFixed(2),pickup_min:Math.round(pickupMin),pickup_cost:+pickupCost.toFixed(2),surge_multiplier:surge,surge_reason:surgeReason,h3_cell:cell,available_drivers:available,active_requests:active,options:opts,options_cost:optionsCost,tolls,discount,free_wait_min:n(t.free_wait_min),wait_minutes:waitMinutes,wait_cost:waitCost,total,currency:"RUB"};
   const {data:q,error:qe}=await db.from("price_quotes").insert({passenger_id:waitOrder?.passenger_id||who.user.id,city_id:city,tariff_id:tariffId,route_km:routeKm,route_min:routeMin,amount_rub:total,pickup_lat:n(start.latitude),pickup_lng:n(start.longitude),destination_lat:n(end.latitude),destination_lng:n(end.longitude),breakdown,expires_at:new Date(Date.now()+240000).toISOString()}).select("id,amount_rub,expires_at,breakdown").single();
   if(qe)throw qe;
   if(waitOrder){
