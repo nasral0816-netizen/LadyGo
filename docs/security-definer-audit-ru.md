@@ -37,3 +37,8 @@
 ## Принятые решения
 
 Не отключать RLS, не отзывать массово EXECUTE, не раскрывать service-role. Точечная миграция admin cap уже применена. Следующие безопасные шаги — staging JWT negative tests, гонки accept/admin cap, review call graph для ladygo_dispatch_next_driver и Auth leaked-password setting.
+
+
+## Повторная SQL-сверка grants/search_path (24.11.2026, live)
+
+Повторный запрос к pg_proc подтвердил для всех 14 функций: prosecdef=true; задан function-level search_path (13 функций: public, pg_temp; get_assigned_passenger_contact: public, auth, pg_temp); EXECUTE для authenticated=true; EXECUTE для anon=false; в тексте каждой функции присутствует auth.uid(). Это подтверждает базовые настройки, но не заменяет ручной review ветвей авторизации, runtime negative tests, проверку SECURITY DEFINER owner и ограничение search_path на trusted schemas. Security Advisor продолжает показывать 14 предупреждений, поскольку signed-in users могут вызывать SECURITY DEFINER RPC. Не отзывать гранты массово: приложение использует эти RPC.
