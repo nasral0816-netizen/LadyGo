@@ -46,7 +46,7 @@ using (
 -- accepted fare only from the server-stored order quote.
 create or replace function public.ladygo_accept_order(
   p_order_id uuid,
-  p_price_rub numeric default null
+  p_price numeric default null
 )
 returns public.orders
 language plpgsql
@@ -91,9 +91,9 @@ begin
     raise exception 'Server-quoted order price is missing';
   end if;
 
-  -- Old clients may still send p_price_rub. Reject a mismatch instead of
+  -- Old clients may still send p_price. Reject a mismatch instead of
   -- allowing a driver to override the passenger's stored quote.
-  if p_price_rub is not null and abs(p_price_rub - v_price) > 0.01 then
+  if p_price is not null and abs(p_price - v_price) > 0.01 then
     raise exception 'Driver cannot change the quoted order price';
   end if;
 
