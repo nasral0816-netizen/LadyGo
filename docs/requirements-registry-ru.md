@@ -95,3 +95,36 @@
 
 
 Дополнение: миграция 20261124190000_ladygo_quote_route_binding применена, pricing-service v7 развернута с проверкой совпадения координат маршрута с quote. Реальная authenticated проверка создания заказа ещё не выполнялась.
+
+
+## Финальная live-проверка 24.11.2026 — дополнение
+
+Это дополнение приоритетно для фактов, проверенных после предыдущего snapshot. Оно не превращает отсутствие device-тестов в статус «проверено».
+
+| № | Функция / требование | Запрашивалась | Реализована | Проверена фактически | Что осталось |
+|---:|---|---|---|---|---|
+| 1 | Подписанный Android QA APK | Да | Да, workflow подписывает release variant debug identity | Run #453 успешен; APK скачан, SHA-256 записан, CI apksigner v2 passed | Установка/запуск/login на устройстве; постоянный Play keystore |
+| 2 | Supabase client configuration | Да | Да: проект URL + публичный publishable fallback в src/supabase.js | Исходник проверен; public key не service_role | Ограничить картографические ключи; проверить Android runtime |
+| 3 | Серверная тарификация и create_order | Да | Да, pricing-service v7 + city_tariff_configs + quote route binding | Deployment и migration history подтверждены | Authenticated device create-order test |
+| 4 | Dispatch / offer / atomic accept | Да | Да, SQL triggers/RPC/Realtime/fallback/cron | SQL definitions/migrations/cron проверены | Реальный online driver + order offer + race test |
+| 5 | Driver online/GPS heartbeat | Да | Да, GPS-before-online migration | SQL code path и свежая точка существуют | Сейчас 0 online; heartbeat на устройстве не проверен |
+| 6 | Push token lifecycle | Да | Да, register/unregister RPC и push Edge Function v5 | Empty token rejected; live token counts 0 | Реальная регистрация и Expo delivery на Android |
+| 7 | Пассажир/водитель RLS | Да | Да, RLS включён на 11 ключевых таблицах | SET LOCAL ROLE + раздельные claims: passenger A/B и driver visibility probes | Независимые JWT; sample cross-passenger row в таблице отсутствует |
+| 8 | 14 SECURITY DEFINER RPC | Да | Частично: индивидуальные guards, fixed search_path, anon denied | 13/14 получили безопасные негативные/validation probes; dispatch_next_driver пропущен из-за возможных side effects | Device JWT, abuse/rate-limit и полный participant/foreign-order набор |
+| 9 | Контакты поездки | Да | Да, SQL RPC ограничены участником, статусом и contact lease | Неназначенный passenger/driver получили 0 rows | Нужен тест назначенного участника и чужого участника на отдельной тестовой поездке |
+| 10 | Админ RBAC и защита super-admin | Да | Да: super-admin RPC, advisory lock cap 15 | Passenger не может list/grant; super-admin self-removal блокируется | Ordinary admin test; 15/16 concurrency race; защита от снятия другого super-admin |
+| 11 | CSV export для заявок/пользователей/поездок | Да | Нет | Поиск src/LadyGoApp.js: exportCSV/csv отсутствуют | Реализовать отдельной задачей после согласования полей/прав или явно отложить владельцем |
+| 12 | Leaked Password Protection | Да | Настройка Supabase Auth выключена | Security Advisor warning подтверждён | Включить владельцу в Auth settings и протестировать регистрацию/reset |
+| 13 | Backup/PITR и restore drill | Да | Не подтверждено | Доступные project metadata не показывают backup status | Владелец должен проверить план/PITR и выполнить restore drill |
+| 14 | Реальный E2E trip + rating | Да | Кодовый поток есть | Не проверено: сейчас 0 online, 0 push tokens | Два устройства/две независимые сессии, полный цикл и негативные сценарии |
+| 15 | Юридическая готовность / Google Play | Да | Checklist есть | Юридически не проверено | Юрист/оператор: GDPR/152-ФЗ, перевозчик, страховка, privacy, Data safety |
+| 16 | Реальные платежи | Да | Нет | В проекте нет подключённого эквайера | Лицензированный провайдер, договоры и PCI review |
+
+### Текущий live snapshot
+
+- Supabase ACTIVE_HEALTHY, eu-west-2; pricing-service v7, send-driver-offer-push v5.
+- Последняя применённая миграция: `20261124200000_ladygo_phone_input_validation`.
+- 2 approved drivers, 0 online, 1 fresh GPS location (<15m), 0 driver tokens, 0 passenger tokens, 1 active order (не тронут).
+- 1 super-admin, 0 ordinary admins.
+- Run #453: QA debug-signed APK version 6.9.1 (52), package com.ladygo.app, 252,968,198 bytes, SHA-256 `e6994a3b6a1794491245d558c9bf048d4ec3dd0c9156892492ca45b649cac790`. Device installation not tested.
+- PR #11 remains draft/open; no merge until device E2E and review.
