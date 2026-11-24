@@ -138,6 +138,21 @@ const TARIFFS = [
 const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Ищем водителя', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
 
+function removeSubscriptionSafely(subscription) {
+  if (typeof subscription?.remove === 'function') {
+    subscription.remove();
+  } else if (typeof subscription?.unsubscribe === 'function') {
+    subscription.unsubscribe();
+  }
+}
+
+function removeRealtimeChannelSafely(client, channel) {
+  if (typeof client?.removeChannel === 'function') {
+    Promise.resolve(client.removeChannel(channel)).catch(error =>
+      console.warn('LadyGo realtime cleanup failed:', error?.message)
+    );
+  } else {
+
 async function extractBackendError(error) {
   // Supabase FunctionsHttpError stores the actual HTTP Response in context.
   // Read a clone so the SDK response remains untouched.
@@ -476,7 +491,7 @@ export default function LadyGoApp() {
       setSession(next);
       if (next?.user) await loadProfile(next.user); else { setProfile(null); setOrders([]); setActiveOrder(null); }
     }) || { data: { subscription: null } };
-    return () => { alive = false; listener?.subscription?.unsubscribe(); };
+    return () => { alive = false; removeSubscriptionSafely(listener?.subscription); };
   }, [loadProfile]);
 
   useEffect(() => {
@@ -503,17 +518,26 @@ export default function LadyGoApp() {
       ]);
       return true;
     });
-    return () => subscription.remove();
+    return () => removeSubscriptionSafely(subscription);
   }, [searchField, tab]);
 
   useEffect(() => {
-    if (!session?.user?.id || profile?.role !== 'passenger' || !supabase) return;
+    // Keep passenger order status in sync when the same account switches to Driver mode.
+    if (!session?.user?.id || !supabase) return;
+    let alive = true;
+    const refreshPassengerOrders = () => { if (alive) loadOrders(); };
+    refreshPassengerOrders();
     const channel = supabase.channel('ladygo-passenger-orders-' + session.user.id)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders',
-        filter: 'passenger_id=eq.' + session.user.id }, () => loadOrders())
+        filter: 'passenger_id=eq.' + session.user.id }, refreshPassengerOrders)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [session?.user?.id, profile?.role, loadOrders]);
+    const refresh = setInterval(refreshPassengerOrders, 5000);
+    return () => {
+      alive = false;
+      clearInterval(refresh);
+      removeRealtimeChannelSafely(supabase, channel);
+    };
+  }, [session?.user?.id, loadOrders]);
 
   // Matching is server-side (orders INSERT trigger + offer-expiry cron).
   // The client must never call the restricted dispatch primitive directly.
@@ -528,7 +552,7 @@ export default function LadyGoApp() {
           latitude: Number(row.latitude), longitude: Number(row.longitude), heading: row.heading
         });
       }).subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { removeRealtimeChannelSafely(supabase, channel); };
   }, [activeOrder?.driver_id, activeOrder?.status]);
 
   useEffect(() => {
@@ -603,7 +627,7 @@ export default function LadyGoApp() {
     return () => {
       alive = false;
       if (heartbeatTimer) clearInterval(heartbeatTimer);
-      watch?.remove?.();
+      removeSubscriptionSafely(watch);
       // Stopping/restarting the GPS watcher (navigation, React remount, permission
       // refresh) must NOT silently take the driver offline. Only the explicit
       // "Завершить смену" action writes is_online=false. Presence expires server-side
@@ -624,7 +648,7 @@ export default function LadyGoApp() {
         filter: 'driver_id=eq.' + session.user.id }, () => loadDriverOrders())
       .subscribe();
     const refresh = setInterval(loadDriverOrders, 15000);
-    return () => { clearInterval(refresh); supabase.removeChannel(channel); };
+    return () => { clearInterval(refresh); removeRealtimeChannelSafely(supabase, channel); };
   }, [profile?.role, session?.user?.id, loadDriverOrders]);
 
   useEffect(() => {
@@ -676,7 +700,7 @@ export default function LadyGoApp() {
     });
     return () => {
       alive = false;
-      responseSubscription.remove();
+      removeSubscriptionSafely(responseSubscription);
     };
   }, [profile?.role, session?.user?.id, loadDriverOrders, loadOrders]);
 
@@ -778,7 +802,7 @@ export default function LadyGoApp() {
         if (isAdmin) loadAdminOrders();
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { removeRealtimeChannelSafely(supabase, channel); };
   }, [session?.user?.id, profile?.role, loadDemoOrders, loadAdminOrders]);
 
   const loadAdminApplications = useCallback(async () => {
@@ -1107,7 +1131,7 @@ export default function LadyGoApp() {
           } catch (notificationError) {
             console.warn('LadyGo offer alert sound unavailable:', notificationError?.message);
           }
-          Alert.alert('🚕 Новый заказ', 'У тебя есть 15 секунд, чтобы принять заказ или отказаться. Если не ответить, предложение перейдёт следующему водителю.', [
+          Alert.alert('🚕 Новый заказ', 'У тебя есть 60 секунд, чтобы принять заказ или отказаться. Если не ответить, предложение перейдёт следующему водителю.', [
             { text: 'Отклонить', style: 'destructive', onPress: async () => {
               const { error } = await supabase.rpc('ladygo_decline_order', { p_order_id: offer.order_id });
               if (error) Alert.alert('Не удалось отклонить заказ', translateError(error));
@@ -1502,7 +1526,7 @@ export default function LadyGoApp() {
     ]);
   };
 
-  const chatOrder = profile?.role === 'driver'
+  const chatOrder = tab === 'driver'
     ? driverOrders.find(order => ['accepted','arrived','in_progress'].includes(order.status)) || null
     : (activeOrder && ['accepted','arrived','in_progress'].includes(activeOrder.status) ? activeOrder : null);
 
@@ -1512,7 +1536,7 @@ export default function LadyGoApp() {
       setTripContact(null);
       return;
     }
-    const rpcName = profile?.role === 'driver'
+    const rpcName = tab === 'driver'
       ? 'ladygo_get_assigned_passenger_contact'
       : 'ladygo_get_assigned_driver_contact';
     supabase.rpc(rpcName, { p_order_id: chatOrder.id }).then(({ data, error }) => {
@@ -1525,7 +1549,7 @@ export default function LadyGoApp() {
       setTripContact(Array.isArray(data) ? (data[0] || null) : (data || null));
     });
     return () => { alive = false; };
-  }, [chatOrder?.id, profile?.role, session?.user?.id]);
+  }, [chatOrder?.id, tab, session?.user?.id]);
 
   const loadTripMessages = useCallback(async () => {
     if (!chatOrder?.id || !session?.user?.id || !supabase) {
@@ -1576,7 +1600,7 @@ export default function LadyGoApp() {
         filter: 'order_id=eq.' + chatOrder.id
       }, () => loadTripMessages())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { removeRealtimeChannelSafely(supabase, channel); };
   }, [chatOrder?.id, session?.user?.id, loadTripMessages]);
 
   const renderTripChat = order => {
