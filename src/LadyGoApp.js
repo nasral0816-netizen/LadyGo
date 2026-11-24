@@ -1607,10 +1607,10 @@ export default function LadyGoApp() {
     if (!order?.id || order.id !== chatOrder?.id) return null;
     return <View style={st.chatCard}>
       {tripContact?.phone ? <View style={{ gap: 6, padding: 12, borderRadius: 12, backgroundColor: P.pale }}>
-        <Text style={st.heading}>{tripContact.full_name || (profile?.role === 'driver' ? 'Пассажир' : 'Водитель')}</Text>
+        <Text style={st.heading}>{tripContact.full_name || (tab === 'driver' ? 'Пассажир' : 'Водитель')}</Text>
         <Text style={st.muted}>{tripContact.phone}</Text>
         <TouchableOpacity onPress={() => Linking.openURL('tel:' + String(tripContact.phone).replace(/[^+0-9]/g,''))} style={st.primaryBtn}>
-          <Text style={st.primaryText}>{profile?.role === 'driver' ? 'Позвонить пассажиру' : 'Позвонить водителю'}</Text>
+          <Text style={st.primaryText}>{tab === 'driver' ? 'Позвонить пассажиру' : 'Позвонить водителю'}</Text>
         </TouchableOpacity>
       </View> : null}
       <View>
@@ -1623,7 +1623,7 @@ export default function LadyGoApp() {
           : chatMessages.map(item => {
             const mine = item.sender_id === session?.user?.id;
             return <View key={item.id} style={[st.chatBubble, mine ? st.chatMine : st.chatOther]}>
-              <Text style={st.chatSender}>{mine ? 'Вы' : profile?.role === 'driver' ? 'Пассажир' : 'Водитель'}</Text>
+              <Text style={st.chatSender}>{mine ? 'Вы' : tab === 'driver' ? 'Пассажир' : 'Водитель'}</Text>
               <Text style={st.chatMessage}>{item.message}</Text>
               <Text style={st.chatTime}>{new Date(item.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</Text>
             </View>;
