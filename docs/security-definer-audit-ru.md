@@ -72,3 +72,29 @@
 Обнаружено, что исходная нормализация удаляла буквы и могла превращать произвольную строку в NULL, очищая телефон. Добавлена и применена миграция `20261124200000_ladygo_phone_input_validation`: разрешены цифры, плюс, скобки, пробелы и дефисы; после нормализации номер должен содержать 7–15 цифр и необязательный начальный плюс. Пустое значение по-прежнему означает явную очистку поля. Негативные пробы после применения прошли.
 
 Остаются непроверенными: прямой dispatch RPC, успешная регистрация/отзыв существующего push token, обновление собственного телефона валидным номером, назначенный-contact flow на реальной поездке, 15/16 concurrent admin grants, обычный admin и два независимых device JWT. Leaked Password Protection отключён по Advisor. Не отзывать grants массово.
+
+
+## Runtime probes update after live recheck (24.11.2026)
+
+Security Advisor returned exactly 14 exposed SECURITY DEFINER RPC findings. A fresh catalog query confirmed 14/14 have function-level search_path, authenticated EXECUTE, and no anon EXECUTE. These are the 14 exposed RPCs; trigger-only SECURITY DEFINER functions are outside this Advisor finding set.
+
+| Function | Guard / risk | Runtime probe under simulated authenticated claim | Result |
+|---|---|---|---|
+| ladygo_accept_order | Only verified driver with pending offer; row lock / atomic accept | Passenger invoked with invalid order UUID | Rejected: verified-driver requirement |
+| ladygo_cancel_active_order | Only order passenger or assigned driver | Passenger A attempted another account's new order | Rejected: not a participant |
+| ladygo_decline_order | Only verified driver with own pending offer | Passenger invoked with invalid order UUID | Rejected: verified-driver requirement |
+| ladygo_dispatch_next_driver | Direct RPC guard: owner or driver with an offer | Unrelated passenger invoked against another passenger's new order; stale pending offer count was 0 before probe | Rejected: not allowed to dispatch this order |
+| ladygo_driver_heartbeat | Only approved driver; valid GPS required to go online | Passenger called heartbeat(false) | Rejected: verified-driver requirement |
+| ladygo_get_assigned_driver_contact | Only passenger on active assigned trip with unexpired contact lease | Unrelated passenger queried new order | 0 rows; active-trip device negative test still missing |
+| ladygo_get_assigned_passenger_contact | Only assigned driver on active trip with unexpired contact lease | Unrelated passenger queried new order | 0 rows; active-trip device negative test still missing |
+| ladygo_list_admins | Super-admin only | Passenger and transactionally simulated ordinary admin | Rejected: insufficient privileges |
+| ladygo_record_trip_location | Only trip participant; active trip and sane GPS required | Called with new (not active) order | Rejected before participant branch because trip is not active; wrong-actor test during active trip remains missing |
+| ladygo_register_push_token | Derives user from auth.uid; validates Expo token/platform | Passenger supplied too-short invalid token | Rejected: invalid token; real token registration/device test missing |
+| ladygo_set_admin_by_email | Super-admin only; advisory lock on grant; self/super-admin protection | Passenger and ordinary admin denied; self-removal and removal of a second synthetic super-admin attempted in rollback-only transactions | All denied as intended; 15/16 concurrent stress test not run |
+| ladygo_unregister_push_token | Deletes only token belonging to auth.uid | Passenger passed a non-existent token | Safe no-op; cross-account real-token negative test not possible (0 tokens) |
+| ladygo_update_my_phone | Updates only auth.uid profile; phone format validation | Passenger supplied malformed phone | Rejected before update; other-account phone access not tested |
+| ladygo_update_trip_status | Only approved assigned driver; strict status graph | Passenger attempted status change | Rejected: verified-driver requirement |
+
+All probes used SET LOCAL ROLE authenticated plus simulated request.jwt.claim.sub inside SQL transactions. They are database authorization probes, not independent signed JWT sessions from two devices. For record_trip_location, active-trip authorization could not be tested because no accepted/arrived/in_progress trip exists. For contact RPCs, the tested order was new, so the active contact-lease device scenario remains open. Push token lifecycle and concurrent admin cap remain open.
+
+The Advisor warning is not itself proof of a vulnerability: these RPCs are intentionally callable by authenticated clients and contain authorization checks. Do not revoke EXECUTE indiscriminately. ladygo_dispatch_next_driver remains especially sensitive; its non-owner negative invocation was rejected, but a separate code review of all trigger/service-role paths is still required.
