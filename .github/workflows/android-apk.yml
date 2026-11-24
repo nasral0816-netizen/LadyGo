@@ -3,10 +3,8 @@ name: Android APK Build
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-      - tech/stabilize-android-dispatch-2026-11-23
+  # Push CI is the single source of build status for PR branches too.
+  # Avoid duplicate push + pull_request builds cancelling each other.
   push:
     branches:
       - main
@@ -15,9 +13,11 @@ on:
     paths:
       - '**'
       - '!README.md'
+      - '!**/*.md'
+      - '!docs/**'
 
 concurrency:
-  group: ladygo-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ladygo-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -51,6 +51,9 @@ jobs:
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
+      - name: Expo configuration diagnostics
+        run: npx expo-doctor
 
       - name: Generate Android project
         run: CI=1 npx expo prebuild --platform android
