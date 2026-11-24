@@ -113,3 +113,9 @@ All probes used SET LOCAL ROLE authenticated and simulated request.jwt.claim.sub
 - Run #561, commit `98b10a4e75f465dd48d260a9f059a2de8004b838`, содержит клиентское исправление чат-меток по активному режиму (Passenger/Driver), review-only storage policy migration и CI workflow с Expo Doctor.
 - На момент обновления: `expo-doctor`, npm install, Expo prebuild, Gradle repository setup и QA signing setup завершены успешно; `assembleRelease` ещё выполняется. apksigner и upload artifact ожидают завершения Gradle.
 - Последующие коммиты документации после 98b10a не меняют мобильный код/конфигурацию сборки. Никакой APK для run #561 пока не выдаётся.
+
+
+## Support and saved-address schema review — 24.11.2026
+
+- Live schema contains `saved_places(id,user_id,label,address,latitude,longitude,created_at)`, but current `src/LadyGoApp.js` has no references to `saved_places`; Home/Work/favourites/recent-address persistence is not wired into the client.
+- Live support schema contains only `support_tickets(id,user_id,order_id,subject,message,status,admin_reply,created_at,updated_at)`. No support attachment table, attachment columns, or separate support message/reply history table was found. The current UI stores one admin_reply field; attachments and threaded conversation remain unimplemented.
