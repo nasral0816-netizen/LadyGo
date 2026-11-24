@@ -7,7 +7,7 @@ Live backend использует DB triggers, защищённые RPC, Realtim
 ## Поток заказа
 
 1. Пассажир получает серверную цену через pricing-service и отправляет create_order с ID quote и координатами.
-2. pricing-service v6 проверяет JWT, что пользователь — пассажир, quote принадлежит ему, не истёк и не использован; проверяет адреса и координаты.
+2. pricing-service v7 проверяет JWT, что пользователь — пассажир, quote принадлежит ему, не истёк и не использован; проверяет адреса и координаты.
 3. Заказ вставляется через пользовательский Supabase client. DB trigger выполняет проверку quote и запускает ladygo_dispatch_next_driver.
 4. Кандидат должен иметь роль driver, approved driver application и driver profile, свежую online presence и GPS; исключаются занятые водители и водители с незакрытым оффером.
 5. Создаётся персональный order_offers со сроком действия 25 секунд.
@@ -29,7 +29,7 @@ Cron выполняет обработку просроченных предло
 
 ## Edge Functions и секреты
 
-- pricing-service: версия 6, verify_jwt=true; использует Supabase стандартные серверные переменные, проверяет JWT и использует service-role key только внутри функции.
+- pricing-service: версия 7, verify_jwt=true; использует Supabase стандартные серверные переменные, проверяет JWT и использует service-role key только внутри функции.
 - send-driver-offer-push: версия 5, verify_jwt=false для webhook. Проверяет заголовок через Vault-backed RPC ladygo_verify_push_webhook_secret; ключ service role только серверный.
 - Отдельный LADYGO_PRICING_SECRET и LADYGO_DISPATCH_SECRET текущей реализации не требуются.
 - Не записывать секреты в клиент, Git, APK, логи или документацию.
@@ -40,13 +40,14 @@ Cron выполняет обработку просроченных предло
 - ladygo_accept_order сериализует принятие блокировкой заказа.
 - Отдельная миграция сохраняет GPS до переключения online.
 - Миграция admin cap сериализует назначения обычных администраторов, ограничивая их 15.
+- Миграция quote-route binding сохраняет координаты pickup/destination в price_quotes и сверяет их с координатами заказа.
 - RLS включён на orders/offers/locations/presence/trip_tracks/profiles/push/support tables.
 - Контакты и треки ограничены участниками активной поездки.
 - Проверка на чужие данные под независимыми JWT и реальная двойная гонка accept ещё должны быть выполнены на staging.
 
 ## Что подтверждено / не подтверждено
 
-Подтверждено по live БД/конфигурации: Edge Functions pricing-service v6 и send-driver-offer-push v5 активны; cron jobs активны; миграция GPS-before-online и миграция сериализации лимита администраторов применены; RLS включён на ключевых таблицах.
+Подтверждено по live БД/конфигурации: Edge Functions pricing-service v7 и send-driver-offer-push v5 активны; cron jobs активны; миграция GPS-before-online и миграция сериализации лимита администраторов применены; RLS включён на ключевых таблицах.
 
 Не подтверждено: пассажирский заказ с действующим JWT, онлайн heartbeat с физического Android, доставка push на устройство, водительский accept, GPS в движении, завершение и рейтинг. Сейчас 0 онлайн-водителей и 0 push-токенов. Один существующий активный заказ не трогать.
 
