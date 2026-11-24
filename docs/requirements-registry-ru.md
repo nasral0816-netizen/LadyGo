@@ -128,3 +128,34 @@
 - 1 super-admin, 0 ordinary admins.
 - Run #453: QA debug-signed APK version 6.9.1 (52), package com.ladygo.app, 252,968,198 bytes, SHA-256 `e6994a3b6a1794491245d558c9bf048d4ec3dd0c9156892492ca45b649cac790`. Device installation not tested.
 - PR #11 remains draft/open; no merge until device E2E and review.
+
+
+## Последняя контрольная точка после QA build #453 (24.11.2026; имеет приоритет над предыдущими live-снимками)
+
+| № | Функция / требование | Запрашивалась | Реализована | Проверена | Что осталось |
+|---:|---|---|---|---|---|
+| 1 | Существующее приложение, ветка и PR #11 | Да | Да | PR открыт, branch fix/order-submit-diagnostics-2026-11-24; Draft | Независимый review; не merge до закрытия device/E2E gates |
+| 2 | Подписанный Android APK | Да | QA debug APK создан | Run #453 Gradle success, apksigner v2=true, файл скачан и SHA-256 повторён | Установка/запуск/login на реальном Android не проверены; release keystore отсутствует |
+| 3 | Supabase client config в APK | Да | Да: src/supabase.js имеет project URL и publishable-key fallback | Проверен source; CI env values пусты, но fallback есть | Рекомендуется управлять public config через GitHub Actions variables; service_role запрещён в клиенте |
+| 4 | Создание заказа / серверная цена | Да | pricing-service v7 + quote ownership/expiry/use/route binding | Deploy и миграции live; реальный authenticated device request отсутствует | Заказ с отдельной пассажирской сессии и тарифный smoke test |
+| 5 | Диспетчеризация / offer / atomic accept | Да | DB triggers, RPC, Realtime, fallback, cron | SQL/catalog/cron проверены; negative direct dispatch probe отклонён | Нет online driver; нет реального offer/accept и гонки двух водителей |
+| 6 | Heartbeat / GPS / поездка / рейтинг | Да | RPC и UI есть | GPS-before-online migration live; driver heartbeat runtime не проверен | Водитель должен реально выйти online; trip status/GPS/completion/rating E2E |
+| 7 | Push lifecycle / delivery | Да | Edge Function v5, Vault secret, token RPC | Function deploy и secret-validation есть; 0 tokens | Устройство, permission, token registration, Expo push receipt/delivery |
+| 8 | RLS чужих данных | Да | RLS включён на 11 ключевых таблицах | Passenger A/B SQL claim probes: только свой profile, 0 строк в остальных 10 таблицах; driver sees 2 associated orders and 1 own application | Подписанные JWT на двух устройствах; прямой seeded A/B order comparison |
+| 9 | 14 SECURITY DEFINER RPC | Да | Да, 14 exposed RPC reviewed; search_path fixed, anon denied | Ограниченные negative SQL probes; see security-definer-audit-ru.md | Active-trip contact/GPS tests, valid push token lifecycle, independent JWTs, deeper trigger review |
+| 10 | Лимит 15 администраторов / super-admin | Да | RPC с advisory lock и self/super-admin guards | Self-removal, second-super-admin removal and ordinary-admin role denial tested in rollback transactions | 15/16 concurrent stress test; only 0 ordinary admins exist live |
+| 11 | Обычный администратор / RBAC | Да | UI/RPC guards exist | Role simulated transactionally; can see 4 orders/2 applications, cannot list/manage admins | No persistent synthetic admin account; verify via real account/device |
+| 12 | CSV export заявки/пользователи/поездки | Да | Нет | Current src/LadyGoApp.js has no CSV/export implementation | Explicitly deferred: no safe admin export path/field-minimization and data-protection review; do not claim feature exists |
+| 13 | Leaked Password Protection | Да | Supabase Auth capability exists | Advisor says Disabled; org tier is Free | Owner decision to upgrade to Pro+ and enable in Auth settings, then test signup/reset |
+| 14 | Backup / restore | Да | Не подтверждено | Project metadata only; backup inventory and restore drill inaccessible via available connector | Owner confirms backup/PITR plan and executes restore drill in separate project/branch |
+| 15 | Legal/privacy / payments | Да | Checklist/docs present; real payment provider absent | Not signed off | Carrier licensing, insurance, contracts, privacy/GDPR/152-FZ, Google Play disclosures; no payment processing |
+| 16 | Documentation | Да | README, technical audit, security audit, legal and role guides maintained | Text changes committed to PR branch | Continue updates after device QA; owner legal sign-off |
+
+### Live evidence snapshot
+
+- Supabase ACTIVE_HEALTHY, eu-west-2. pricing-service v7 (verify_jwt=true), send-driver-offer-push v5 (verify_jwt=false with Vault-backed secret). Cron jobs active every minute.
+- 2 approved drivers; 0 online; 1 GPS location newer than 15 minutes; 0 driver push tokens; 0 passenger push tokens; 1 active order. Existing active order was not read-modified or used for QA beyond read-only metadata checks.
+- 1 super-admin, 0 ordinary admins.
+- Run #453: version 6.9.1, versionCode 52, package com.ladygo.app, 252,968,198 bytes, SHA-256 e6994a3b6a1794491245d558c9bf048d4ec3dd0c9156892492ca45b649cac790. QA debug signature v2 passed; device install not tested.
+- SQL RLS probes used SET LOCAL ROLE authenticated and simulated request.jwt.claim.sub, not independently signed JWT sessions.
+- No full trip cycle or push delivery is confirmed. Do not move PR #11 out of Draft or merge until those gates are completed.
