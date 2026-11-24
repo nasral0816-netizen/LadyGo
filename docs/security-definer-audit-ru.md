@@ -160,7 +160,7 @@ The Advisor warning is not itself proof of a vulnerability: these RPCs are inten
 - 16 функций имеют EXECUTE для authenticated; 0 функций имеют EXECUTE для anon.
 - 22 внутренних trigger/cron/service functions не доступны authenticated/anon.
 - `ladygo_dispatch_next_driver(uuid)`: authenticated=false, anon=false, service_role=true.
-- У всех 38 функций задан function-level search_path. 33 используют явный schema path; три функции `approve_driver_application`, `handle_new_user`, `refresh_driver_rating_stats` задают пустой search_path. Их тела используют schema-qualified таблицы/функции; пустой путь не является отсутствующим параметром и исключает пользовательские схемы из разрешения имён.
+- У всех 38 функций задан function-level search_path. 35 используют явный schema path; три функции `approve_driver_application`, `handle_new_user`, `refresh_driver_rating_stats` задают пустой search_path. Их тела используют schema-qualified таблицы/функции; пустой путь не является отсутствующим параметром и исключает пользовательские схемы из разрешения имён.
 - Supabase Security Advisor на 11:37 UTC сообщает 16 warnings: это ровно exposed authenticated SECURITY DEFINER RPC, а не 38 функций и не доказательство эксплуатации. Нельзя массово отзывать EXECUTE, пока не проверен call graph.
 
 ### Ограничения доказательств
