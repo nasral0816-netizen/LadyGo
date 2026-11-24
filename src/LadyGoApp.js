@@ -1259,6 +1259,31 @@ export default function LadyGoApp() {
     } catch (e) { Alert.alert('Не удалось отклонить заказ', translateError(e)); }
   };
 
+  const cancelDriverTrip = async (order, reason) => {
+    if (!order?.id || !['accepted','arrived'].includes(order.status) || !supabase) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc('ladygo_cancel_active_order', {
+        p_order_id: order.id,
+        p_reason: reason
+      });
+      if (error) throw error;
+      await Promise.all([loadDriverOrders(), loadOrders()]);
+      Alert.alert('Поездка отменена', 'Пассажир увидит отмену и причину.');
+    } catch (e) {
+      Alert.alert('Не удалось отменить поездку', translateError(e));
+    } finally { setBusy(false); }
+  };
+
+  const requestDriverTripCancellation = order => {
+    if (!order?.id || !['accepted','arrived'].includes(order.status)) return;
+    Alert.alert('Отменить поездку?', 'Выбери причину отмены.', [
+      { text: 'Не могу приехать', style: 'destructive', onPress: () => cancelDriverTrip(order, 'Водитель не может приехать') },
+      { text: 'Проблема с автомобилем', onPress: () => cancelDriverTrip(order, 'Проблема с автомобилем') },
+      { text: 'Назад', style: 'cancel' }
+    ]);
+  };
+
   const updateDriverStatus = async (order, status) => {
     if (!order?.id) return;
     setBusy(true);
@@ -2035,6 +2060,7 @@ export default function LadyGoApp() {
           {order.status==='accepted' && <TouchableOpacity onPress={()=>updateDriverStatus(order,'arrived')} style={st.primaryBtn}><Text style={st.primaryText}>Я на месте</Text></TouchableOpacity>}
           {order.status==='arrived' && <TouchableOpacity onPress={()=>updateDriverStatus(order,'in_progress')} style={st.primaryBtn}><Text style={st.primaryText}>Начать поездку</Text></TouchableOpacity>}
           {order.status==='in_progress' && <TouchableOpacity onPress={()=>updateDriverStatus(order,'completed')} style={st.primaryBtn}><Text style={st.primaryText}>Завершить поездку</Text></TouchableOpacity>}
+          {['accepted','arrived'].includes(order.status) && <TouchableOpacity disabled={busy} onPress={()=>requestDriverTripCancellation(order)} style={{borderWidth:1,borderColor:P.pinkDark,borderRadius:12,padding:12,alignItems:'center',marginTop:8}}><Text style={{color:P.pinkDark,fontWeight:'800'}}>Отменить поездку с причиной</Text></TouchableOpacity>}
           {renderTripChat(order)}
         </View>)}
         <View style={st.vehicleEditorCard}>
