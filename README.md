@@ -1,56 +1,62 @@
 # LadyGo
 
-LadyGo — Android-приложение сервиса поездок с фирменным стилем #E84F87 и слоганом «Поездки с заботой».
+LadyGo — существующее Android-приложение сервиса поездок на React Native / Expo SDK 55. Этот репозиторий продолжает текущий продукт; отдельное приложение не создаётся.
 
-## Технологии
+## Технологии и структура
 
-- React Native / Expo SDK 55
-- Supabase Auth, PostgreSQL, Storage, Realtime, Edge Functions
-- GitHub Actions / Gradle Android APK
-- MapLibre / OpenStreetMap и внешние картографические провайдеры
+- React Native / Expo SDK 55, Android release через Gradle.
+- Supabase Auth, PostgreSQL, RLS, Realtime, Storage, Edge Functions.
+- src/LadyGoApp.js — клиентское приложение и роли.
+- supabase/migrations/ — миграции БД; перед новым rollout сверять их с live schema.
+- supabase/functions/ — серверные Edge Functions.
+- docs/requirements-registry-ru.md — реестр требований и статусы.
+- docs/integrations-and-operations-ru.md — фактическая схема интеграций.
+- DISPATCH_SETUP_RU.md — архитектура диспетчеризации.
+- docs/legal-and-compliance.md — юридический/privacy checklist.
+- docs/passenger-guide-ru.md, docs/driver-guide-ru.md, docs/admin-guide-ru.md — инструкции ролей.
 
-## Структура
+## Локальный запуск
 
-- src/LadyGoApp.js — основное приложение и роли пользователя.
-- supabase/migrations/ — SQL миграции (перед применением сверять с live schema).
-- supabase/functions/ — Edge Functions.
-- docs/acceptance-matrix-ru.md — матрица требований и приёмки.
-- docs/legal-and-compliance.md — юридический и privacy чек-лист.
-- docs/integrations-and-operations-ru.md — внешние сервисы и эксплуатация.
-- TECHNICAL_AUDIT_RU.md — технический аудит.
-- DISPATCH_SETUP_RU.md — архитектура и deployment checklist реальной диспетчеризации.
-- docs/requirements-registry-ru.md — единый реестр всех требований из доступной истории.
-- docs/passenger-guide-ru.md, docs/driver-guide-ru.md, docs/admin-guide-ru.md — инструкции по ролям.
+Требуются Node.js 22 и Java 17 для Android release-сборки.
 
-## Установка
+    npm install
+    cp .env.example .env
+    npx expo-doctor
+    npx expo start
 
-Требуются Node.js 22, npm, Java 17 и Android SDK (для локальной сборки).
+В клиентской конфигурации допускаются только публичные переменные: EXPO_PUBLIC_SUPABASE_URL и EXPO_PUBLIC_SUPABASE_ANON_KEY, а также ограниченные клиентские ключи карт/геокодирования, если они нужны сборке.
 
-```bash
-npm install
-cp .env.example .env
-npx expo-doctor
-npx expo start
-```
+Никогда не добавляйте service_role, webhook secrets, signing secrets или ключи платёжного провайдера в EXPO_PUBLIC_*, APK, .env.example или Git.
 
-Заполните только публичные клиентские переменные, которые использует приложение. Никогда не помещайте Supabase service_role key, signing secrets, webhook secrets или приватные API keys в EXPO_PUBLIC_* и клиентский bundle.
+## Текущая серверная конфигурация (24.11.2026)
+
+- Supabase project активен, статус ACTIVE_HEALTHY, регион eu-west-2.
+- pricing-service — активная версия 6, JWT verification включён. Создание заказа проверяет авторизованного пассажира, действующую запись price_quotes, срок действия и координаты; вставка заказа запускает существующий DB dispatch trigger.
+- Тарификация использует действующую модель city_tariff_configs; не переключать её на неактивную/нулевую tariff_rates без отдельной миграции тарифов.
+- send-driver-offer-push — активная версия 5, JWT verification выключен для webhook вызова; авторизация выполняется через секрет из Supabase Vault и RPC-проверку. Service-role key используется только серверной функцией.
+- Диспетчеризация работает через DB triggers, клиентский fallback poll и cron для истечения офферов/запланированных заказов. Отдельная dispatch-loop не развёрнута и не требуется текущей схеме; LADYGO_DISPATCH_SECRET не нужен.
+- Cron ladygo-expire-stale-offers и ladygo-dispatch-scheduled-orders активны, выполняются раз в минуту.
+- Миграция GPS-before-online и сериализация лимита 15 обычных администраторов применены к live БД.
+- RLS включён на ключевых таблицах заказов, предложений, профилей, геолокации, push-токенов, поддержки и треков.
+
+## Текущий статус GitHub / Android
+
+- Рабочая ветка: fix/order-submit-diagnostics-2026-11-24.
+- Draft PR #11: https://github.com/nasral0816-netizen/LadyGo/pull/11
+- APK workflow: https://github.com/nasral0816-netizen/LadyGo/actions
+- Сборки №404 и №405 на последней проверке находились на шаге Build release APK; артефакты ещё не опубликованы. Не распространяйте APK до успешного CI, скачивания артефакта и проверки SHA-256.
+- Установка, запуск, авторизация и поездка на физическом устройстве пока не подтверждены.
+
+## Ограничения и обязательные приёмочные проверки
+
+На момент последней сверки: 2 одобренных водительских аккаунта, 0 онлайн-водителей, 0 driver push-токенов и 0 user push-токенов. В БД есть один активный заказ — не использовать его как тестовый и не изменять.
+
+Поэтому реальный цикл «пассажир → оффер → водитель → GPS → завершение → рейтинг» и доставка push на устройство пока не подтверждены. Нужны две авторизованные Android-сессии (пассажир и одобренный водитель), разрешения геолокации/уведомлений и тестовый сценарий без затрагивания чужих заказов.
+
+Supabase Security Advisor сообщает 14 предупреждений о доступности SECURITY DEFINER RPC для authenticated, а также предупреждение об отключённой защите от скомпрометированных паролей. Эти функции проверяются индивидуально; не отключать нужные RPC и не снимать RLS массово. Отдельный отчёт: docs/security-definer-audit-ru.md.
+
+Реальные платежи не подключены. Выбор «наличные/перевод водителю» — только предпочтение способа расчёта, не подтверждение платежа. Юридическая проверка перевозчика, страхования, персональных данных, Google Play disclosures и согласий ещё требует независимого sign-off.
 
 ## Android APK
 
-Release APK собирается GitHub Actions workflow .github/workflows/android-apk.yml. Для сборки из ветки откройте Actions и запустите workflow вручную или дождитесь PR workflow. Загруженный artifact — временный CI artifact; проверяйте commit SHA, дату, размер и checksum перед распространением. APK не является подтверждением E2E/production готовности.
-
-## Текущий статус
-
-- PR #10 содержит изменения безопасности и технической валидации; он не объединён в main.
-- Успешные статические проверки и Expo export не подтверждают состояние удалённого Supabase.
-- Миграции не применялись к live базе в рамках этого сеанса; текущая проверка не подтверждает production-доступность.
-- Реальная диспетчеризация и поездки являются обязательной частью продукта; код ветки включает триггер создания заказа, подбор водителя, TTL-офферы, atomic accept, статусы, GPS, контакты, Edge Function и scheduler. Миграции/Edge Functions требуют staging/live deployment и E2E. Реальные платежи не подключены и не должны считаться работающими.
-- Перед релизом обязательны проверки RLS/Storage, dispatch scheduler, push, auth recovery, admin RBAC, backup restore, двух Android устройств и legal/privacy.
-
-## Важные документы
-
-- docs/acceptance-matrix-ru.md
-- docs/legal-and-compliance.md
-- docs/integrations-and-operations-ru.md
-- TECHNICAL_AUDIT_RU.md
-- DISPATCH_SETUP_RU.md
+Release APK собирается GitHub Actions workflow .github/workflows/android-apk.yml. Для каждого релизного файла фиксируйте commit SHA, build run, версию приложения, размер, SHA-256 и дату скачивания. Сам факт успешной сборки не подтверждает E2E/production готовность.
