@@ -103,7 +103,7 @@ Supabase Auth/Postgres/Storage/Realtime/Edge/Vault/pg_net, Expo Push, Yandex Map
 | Atomic accept | Реализовано по SQL | RPC блокирует строку заказа FOR UPDATE, проверяет собственный неистёкший pending offer, назначает driver_id и отменяет остальные offers. Двойной accept двух независимых клиентов не тестировался. |
 | Dispatch | Частично | Trigger chain, cron, 60s offer TTL, service_role-only dispatch RPC подтверждены каталогом. Нет доступного онлайн-водителя с GPS для реального dispatch. |
 | RLS | Частично | 23/23 public tables с RLS; A↛B на независимых JWT не проверен. |
-| SECURITY DEFINER | Частично | 36 функций; 16 authenticated EXECUTE, 0 anon EXECUTE; Advisor сообщает 16 предупреждений. Нужны JWT runtime probes по каждой exposed RPC. |
+| SECURITY DEFINER | Частично | 38 функций; 16 authenticated EXECUTE, 0 anon EXECUTE; Advisor сообщает 16 предупреждений. Нужны JWT runtime probes по каждой exposed RPC. |
 | Администраторы | Частично | В БД 1 super-admin, 0 ordinary admin; advisory lock и запрет self-removal видны в функции. Race 15→16 не проверялся. |
 | CSV | Отсутствует | Не реализован; отложен до утверждения полей, прав доступа и privacy review. |
 | Auth leaked-password | Блокер | Отключён; Supabase organization plan = Free. Требуется владелец/тарифное решение. |
