@@ -92,3 +92,14 @@ Security Advisor на 24.11.2026 показывает 14 предупрежде�
 - CSV export не найден в app source. Backup/PITR status и restore drill недоступны через используемые project metadata; owner action required.
 - Leaked Password Protection отключён (Security Advisor). Включение требует владельца Supabase Auth settings.
 - До двух реальных аккаунтов/устройств, heartbeat online, token registration и end-to-end trip/push не заявлять production readiness.
+
+
+## Сверка после текущих исправлений (24.11.2026 11:57 UTC)
+
+- Live Edge Functions: pricing-service v9 (verify_jwt=true), send-driver-offer-push v5 (webhook secret проверяется сервером через Vault).
+- Последние cron runs: ladygo-expire-stale-offers и ladygo-dispatch-scheduled-orders — succeeded.
+- Последний read-only SQL snapshot: 2 approved drivers, 0 online heartbeat свежих за 90 секунд, 0 GPS точек свежих за 90 секунд, 0 driver push tokens, 0 user push tokens. Orders: 1 accepted, 7 cancelled, 2 completed. Существующий accepted заказ не изменять и не использовать для QA.
+- RLS включён на 23/23 public tables. В live каталоге 38 SECURITY DEFINER functions; 16 authenticated EXECUTE, 0 anon EXECUTE. Dispatch primitive доступна только service_role.
+- Storage bucket ladygo-driver-media private, но найдена избыточная permissive SELECT policy. Review migration 20261124114000 committed but NOT applied pending backup confirmation.
+- Android run #563 builds source after fixing missing braces in removeRealtimeChannelSafely; no artifact until Gradle, apksigner and upload steps pass.
+- Current blocker: no active driver with fresh GPS and no registered push tokens. No real trip E2E/device push claim.
