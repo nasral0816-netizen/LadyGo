@@ -1750,7 +1750,7 @@ export default function LadyGoApp() {
   if (!session) return <SafeAreaView style={st.auth}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
     <View style={st.authLogo}><Text style={st.logo}>LadyGo</Text><Text style={st.tagline}>Поездки с заботой</Text></View>
     <View style={st.authCard}><Text style={st.heading}>{register ? 'Создать аккаунт' : 'С возвращением'}</Text>
-      <TextInput style={st.authInput} value={email} onChangeText={(value) => setEmail(value.includes("@") ? value : formatRussianPhone(value))} placeholder={register ? "+7-(999)-999-99-99" : "Номер телефона или email"} autoCapitalize="none" keyboardType={register || !email.includes("@") ? "phone-pad" : "email-address"} textContentType="telephoneNumber"/>
+      <TextInput style={st.authInput} value={email} onChangeText={setEmail} placeholder={register ? "+7-(999)-999-99-99" : "Номер телефона или email"} autoCapitalize="none" keyboardType={register || !email.includes("@") ? "phone-pad" : "email-address"} textContentType="telephoneNumber"/>
       <TextInput style={st.authInput} value={password} onChangeText={setPassword} placeholder="Пароль" secureTextEntry/>
       <TouchableOpacity style={st.primaryBtn} onPress={signIn} disabled={busy}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>{register ? 'Зарегистрироваться' : 'Войти'}</Text>}</TouchableOpacity>
       <TouchableOpacity onPress={() => setRegister(!register)}><Text style={st.switchText}>{register ? 'Уже есть аккаунт? Войти' : 'Создать новый аккаунт'}</Text></TouchableOpacity>
