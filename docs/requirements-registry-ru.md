@@ -198,7 +198,7 @@
 
 | Область | Фактическое состояние | Проверено | Осталось |
 |---|---|---|---|
-| Android CI | Runs #552/#553 для head 71ef337 ещё выполняются на assembleRelease; apksigner/upload pending | GitHub Actions job steps | Дождаться завершения, скачать artifact, сверить SHA-256 и сертификат |
+| Android CI | Runs #552/#553, #559/#560 для head 71ef337 ещё выполняются на assembleRelease; apksigner/upload pending | GitHub Actions job steps | Дождаться завершения, скачать artifact, сверить SHA-256 и сертификат |
 | Версия Android | 6.9.1 / versionCode 52 / com.ladygo.app | app.json | Установка и вход на устройстве |
 | Dispatch wiring | INSERT orders, offer push, offer-response continuation, driver-presence triggers присутствуют | information_schema.triggers | Полный trip E2E на новом заказе |
 | Водители | 2 approved; 0 online; у одного нет presence/GPS, другой offline | SQL read-only snapshot | Два отдельных устройства/сессии, водитель online с свежим GPS |
