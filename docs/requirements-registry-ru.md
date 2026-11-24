@@ -142,7 +142,7 @@
 | 6 | Heartbeat / GPS / поездка / рейтинг | Да | RPC и UI есть | GPS-before-online migration live; driver heartbeat runtime не проверен | Водитель должен реально выйти online; trip status/GPS/completion/rating E2E |
 | 7 | Push lifecycle / delivery | Да | Edge Function v5, Vault secret, token RPC | Function deploy и secret-validation есть; 0 tokens | Устройство, permission, token registration, Expo push receipt/delivery |
 | 8 | RLS чужих данных | Да | RLS включён на 11 ключевых таблицах | Passenger A/B SQL claim probes: только свой profile, 0 строк в остальных 10 таблицах; driver sees 2 associated orders and 1 own application | Подписанные JWT на двух устройствах; прямой seeded A/B order comparison |
-| 9 | 14 SECURITY DEFINER RPC | Да | Да, 14 exposed RPC reviewed; search_path fixed, anon denied | Ограниченные negative SQL probes; see security-definer-audit-ru.md | Active-trip contact/GPS tests, valid push token lifecycle, independent JWTs, deeper trigger review |
+| 9 | 14 SECURITY DEFINER RPC | Да | Да, review; direct `ladygo_dispatch_next_driver` EXECUTE отозван у authenticated/anon, service_role оставлен | ACL probe: authenticated=false, anon=false, service_role=true; 13/14 previously probed; see audit | Active-trip contact/GPS tests, valid push token lifecycle, independent JWTs, remaining per-function probes |
 | 10 | Лимит 15 администраторов / super-admin | Да | RPC с advisory lock и self/super-admin guards | Self-removal, second-super-admin removal and ordinary-admin role denial tested in rollback transactions | 15/16 concurrent stress test; only 0 ordinary admins exist live |
 | 11 | Обычный администратор / RBAC | Да | UI/RPC guards exist | Role simulated transactionally; can see 4 orders/2 applications, cannot list/manage admins | No persistent synthetic admin account; verify via real account/device |
 | 12 | CSV export заявки/пользователи/поездки | Да | Нет | Current src/LadyGoApp.js has no CSV/export implementation | Explicitly deferred: no safe admin export path/field-minimization and data-protection review; do not claim feature exists |
@@ -159,3 +159,12 @@
 - Run #453: version 6.9.1, versionCode 52, package com.ladygo.app, 252,968,198 bytes, SHA-256 e6994a3b6a1794491245d558c9bf048d4ec3dd0c9156892492ca45b649cac790. QA debug signature v2 passed; device install not tested.
 - SQL RLS probes used SET LOCAL ROLE authenticated and simulated request.jwt.claim.sub, not independently signed JWT sessions.
 - No full trip cycle or push delivery is confirmed. Do not move PR #11 out of Draft or merge until those gates are completed.
+
+
+### Дополнение 24.11.2026 — исправление отмены и ограничения диспетчеризации
+
+- Заказ владельца `e1a4ebef-cbe7-4ad0-8cda-854e4cca77ae` (Зеленогорская ул., 28 → Мечеть, Кисловодск, 195 ₽) отменён через authenticated RPC; БД вернула `status=cancelled`, `cancelled_at=2026-11-24 07:28:34 UTC`. Запись сохранена в истории; физического удаления не было.
+- Причина UI: клиент вызывал `cancel_my_order`, тогда как фактическая серверная RPC имела другое имя. Клиент переключён на `ladygo_cancel_my_order(p_order_id,p_reason)`; миграция также разрешает владельцу отменять его неназначенный `new` заказ даже если профильная роль аккаунта `driver`.
+- Миграции cancellation зарегистрированы в БД: `20261124072817_ladygo_owner_cancel_unassigned_order`, `20261124072830_ladygo_passenger_cancel_order_rpc`.
+- Дополнительно применена `20261124073317_ladygo_restrict_direct_dispatch_rpc`: `ladygo_dispatch_next_driver(uuid)` больше не исполняется напрямую authenticated/anon; service_role сохраняет EXECUTE. ACL проверен SQL.
+- Повторная live-сверка: 1 online driver, 1 GPS location за 15 минут, 0 driver push tokens, 0 passenger push tokens, 0 активных заказов, 1 super-admin, 0 обычных админов. Online/GPS уже не блокируют тестирование, но без токена и отдельной пассажирской сессии нельзя подтвердить push и полный trip E2E.
