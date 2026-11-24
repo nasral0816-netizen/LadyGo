@@ -1412,7 +1412,7 @@ export default function LadyGoApp() {
         setTab('orders');
         Alert.alert('У тебя уже есть активный заказ', 'Открой «Мои поездки», чтобы посмотреть его статус.');
       } else {
-        Alert.alert('Не удалось отправить заказ', translateError(error));
+        Alert.alert('Не удалось отправить заказ', translateError({ ...error, message: backendMessage || error?.message }));
       }
     } finally { setBusy(false); }
   };
