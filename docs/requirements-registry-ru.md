@@ -69,7 +69,7 @@
 | № | Функция | Запрашивалась | Реализована | Проверена | Что осталось |
 |---:|---|---|---|---|---|
 | 1 | Продолжение существующего приложения LadyGo | Да | Да, существующий репозиторий/ветка | GitHub PR #11 открыт, draft | Независимый review и merge после приёмки |
-| 2 | Исправление создания заказа пассажиром | Да | Да: pricing-service v6 поддерживает create_order, проверяет JWT/роль/price_quotes/координаты | Деплой и live function inventory подтверждены | Нет authenticated device request; проверить реальный заказ |
+| 2 | Исправление создания заказа пассажиром | Да | Да: pricing-service v7 поддерживает create_order, проверяет JWT/роль/price_quotes/координаты | Деплой и live function inventory подтверждены | Нет authenticated device request; проверить реальный заказ |
 | 3 | Серверная тарификация | Да | Да: city_tariff_configs + price_quotes + OSRM route | Конфигурация live и активные тарифы подтверждены | Сверить маршрут/тариф на реальных маршрутах и согласовать ставки |
 | 4 | Триггерная диспетчеризация | Да | Да: DB trigger + offer TTL + atomic accept + client fallback | Миграции/функции и cron проверены; онлайн-водителей 0 | Нужен E2E с двумя водителями и пассажиром |
 | 5 | Обработка истёкших офферов/запланированных заказов | Да | Да: два cron job каждую минуту | Активность jobs подтверждена SQL | Проверить поведение с реальными офферами и логами |
@@ -86,9 +86,12 @@
 ### Текущие live факты
 
 - Supabase: ACTIVE_HEALTHY, eu-west-2.
-- Edge Functions: pricing-service v6 (verify_jwt=true), send-driver-offer-push v5 (verify_jwt=false с Vault-backed webhook auth).
+- Edge Functions: pricing-service v7 (verify_jwt=true), send-driver-offer-push v5 (verify_jwt=false с Vault-backed webhook auth).
 - Cron: ladygo-expire-stale-offers и ladygo-dispatch-scheduled-orders, оба активны каждую минуту. Отдельной dispatch-loop нет и не требуется текущей архитектуре.
-- Миграции применены до 20261124180000_ladygo_admin_cap_serialization; не повторять их вручную.
+- Миграции применены до 20261124190000_ladygo_quote_route_binding; не повторять их вручную.
 - В БД: 0 online drivers, 0 driver push tokens, 0 user push tokens, 1 active order. Активный заказ не трогать.
 - PR #11 draft открыт; runs #404/#405 ещё не предоставили APK artifact на последней проверке.
 - Установка APK, вход, доставка push, реальная поездка и runtime negative RLS tests не подтверждены.
+
+
+Дополнение: миграция 20261124190000_ladygo_quote_route_binding применена, pricing-service v7 развернута с проверкой совпадения координат маршрута с quote. Реальная authenticated проверка создания заказа ещё не выполнялась.
