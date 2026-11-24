@@ -1418,7 +1418,9 @@ export default function LadyGoApp() {
       { text: 'Назад', style: 'cancel' },
       { text: 'Отменить поездку', style: 'destructive', onPress: async () => {
         try {
-          const { error } = await supabase.rpc('ladygo_cancel_active_order', { p_order_id: order.id, p_reason: 'Отмена по запросу пассажира' });
+          const { error } = order.status === 'new'
+            ? await supabase.rpc('cancel_my_order', { order_id: order.id })
+            : await supabase.rpc('ladygo_cancel_active_order', { p_order_id: order.id, p_reason: 'Отмена по запросу пассажира' });
           if (error) throw error;
           await loadOrders();
         } catch (e) { Alert.alert('Не удалось отменить поездку', translateError(e)); }
