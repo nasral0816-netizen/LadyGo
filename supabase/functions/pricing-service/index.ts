@@ -37,9 +37,16 @@ Deno.serve(async req=>{
     const {data:existing,error:existingError}=await userClient.from("orders").select("*").eq("passenger_id",who.user.id).in("status",["new","accepted","arrived","in_progress"]).maybeSingle();
     if(existingError)throw existingError;
     if(existing)return json({order:existing});
-    const {data:quote,error:quoteError}=await userClient.from("price_quotes").select("id,tariff_id,amount_rub,expires_at,consumed_at").eq("id",quoteId).eq("passenger_id",who.user.id).maybeSingle();
+    const {data:quote,error:quoteError}=await userClient.from("price_quotes").select("id,tariff_id,amount_rub,expires_at,consumed_at,pickup_lat,pickup_lng,destination_lat,destination_lng").eq("id",quoteId).eq("passenger_id",who.user.id).maybeSingle();
     if(quoteError)throw quoteError;
     if(!quote||quote.consumed_at||new Date(quote.expires_at).getTime()<=Date.now())return json({error:"Расчёт цены истёк. Построй маршрут заново."},409);
+    const routeMatchesQuote = quote.pickup_lat != null && quote.pickup_lng != null
+      && quote.destination_lat != null && quote.destination_lng != null
+      && Math.abs(Number(quote.pickup_lat)-pickup.latitude)<=0.00001
+      && Math.abs(Number(quote.pickup_lng)-pickup.longitude)<=0.00001
+      && Math.abs(Number(quote.destination_lat)-destination.latitude)<=0.00001
+      && Math.abs(Number(quote.destination_lng)-destination.longitude)<=0.00001;
+    if(!routeMatchesQuote)return json({error:"Маршрут изменился после расчёта цены. Построй маршрут заново."},409);
     const orderPayload={
       passenger_id:who.user.id,
       driver_id:null,
@@ -114,7 +121,7 @@ Deno.serve(async req=>{
   const tolls=0,discount=0;
   const total=Math.round(Math.max(n(t.min_price_rub)*0.7,(routeCost+pickupCost)*surge+optionsCost+tolls+waitCost-discount));
   const breakdown={tariff:t.name,city_id:city,route_km:+routeKm.toFixed(2),route_min:Math.round(routeMin),included_km:n(t.included_km),included_min:n(t.included_min),billable_km:+billableKm.toFixed(2),billable_min:+billableMin.toFixed(2),min_price:n(t.min_price_rub),route_cost:+routeCost.toFixed(2),pickup_km:+pickupKm.toFixed(2),pickup_min:Math.round(pickupMin),pickup_cost:+pickupCost.toFixed(2),surge_multiplier:surge,surge_reason:surgeReason,h3_cell:cell,available_drivers:available,active_requests:active,options:opts,options_cost:optionsCost,tolls,discount,free_wait_min:n(t.free_wait_min),wait_minutes:waitMinutes,wait_cost:waitCost,total,currency:"RUB"};
-  const {data:q,error:qe}=await db.from("price_quotes").insert({passenger_id:waitOrder?.passenger_id||who.user.id,city_id:city,tariff_id:tariffId,route_km:routeKm,route_min:routeMin,amount_rub:total,breakdown,expires_at:new Date(Date.now()+240000).toISOString()}).select("id,amount_rub,expires_at,breakdown").single();
+  const {data:q,error:qe}=await db.from("price_quotes").insert({passenger_id:waitOrder?.passenger_id||who.user.id,city_id:city,tariff_id:tariffId,route_km:routeKm,route_min:routeMin,amount_rub:total,pickup_lat:n(start.latitude),pickup_lng:n(start.longitude),destination_lat:n(end.latitude),destination_lng:n(end.longitude),breakdown,expires_at:new Date(Date.now()+240000).toISOString()}).select("id,amount_rub,expires_at,breakdown").single();
   if(qe)throw qe;
   if(waitOrder){
     const {error:updateError}=await db.from("orders").update({price_rub:total,estimated_price_rub:total,price_quote_id:q.id,pricing_breakdown:breakdown}).eq("id",waitOrder.id).eq("driver_id",who.user.id);
