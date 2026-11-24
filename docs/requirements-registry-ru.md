@@ -192,3 +192,24 @@
 - PR #11 остаётся Draft/open. Не переводить в Ready и не объединять до зелёного CI на актуальном head, теста установки на Android, полного trip E2E с SQL-доказательствами, подтверждения push и юридической приёмки.
 - Известные блокеры владельца: production release keystore; реальные устройства/две независимые сессии; backup/restore drill перед live schema changes; Leaked Password Protection (требует настройки Supabase Auth владельцем/плана); правовая проверка и платёжный провайдер. Платежи не считать работающими без интеграции.
 
+
+
+## Release gate refresh (24.11.2026, 11:32 UTC)
+
+| Область | Фактическое состояние | Проверено | Осталось |
+|---|---|---|---|
+| Android CI | Runs #552/#553 для head 71ef337 ещё выполняются на assembleRelease; apksigner/upload pending | GitHub Actions job steps | Дождаться завершения, скачать artifact, сверить SHA-256 и сертификат |
+| Версия Android | 6.9.1 / versionCode 52 / com.ladygo.app | app.json | Установка и вход на устройстве |
+| Dispatch wiring | INSERT orders, offer push, offer-response continuation, driver-presence triggers присутствуют | information_schema.triggers | Полный trip E2E на новом заказе |
+| Водители | 2 approved; 0 online; у одного нет presence/GPS, другой offline | SQL read-only snapshot | Два отдельных устройства/сессии, водитель online с свежим GPS |
+| Текущие заказы | 1 accepted, 7 cancelled, 2 completed | SQL read-only snapshot | Существующий accepted заказ не трогать |
+| Push | 0 driver tokens, 0 user tokens | SQL read-only snapshot | Регистрация токенов и доставка на устройствах |
+| RLS | 23/23 public tables с RLS | pg_class catalog | A↛B на двух независимых JWT |
+| SECURITY DEFINER | 36 функций; 16 authenticated EXECUTE, 0 anon EXECUTE; dispatch_next_driver только service_role | pg_proc / has_function_privilege | Runtime негативные пробы под JWT; Security Advisor предупреждения требуют контекстной проверки |
+| Admin | 1 super-admin; 15→16 concurrency race не запускался | SQL / ранее зафиксированные пробы | Синтетические тестовые аккаунты и безопасный concurrency harness |
+| CSV | Не реализован | UI/source inspection | Утвердить экспортируемые поля, доступ и privacy review; затем реализовать |
+| Auth | Leaked Password Protection Disabled | Supabase Security Advisor | Владелец включает в Auth при доступном тарифе |
+| Backup | Нет подтверждённого внешнего backup artifact/restore drill | Доступные project metadata недостаточны | Владелец экспортирует backup и подтверждает restore до новых live DDL |
+| Legal | Checklist есть, sign-off отсутствует | docs/legal-and-compliance.md | Юрист/оператор утверждает privacy, geolocation, carrier, insurance, Data Safety |
+
+Статус: **НЕ ГОТОВО К РЕЛИЗУ**. Причины — нет онлайн-водителя и push tokens, нет подтверждённого полного trip E2E, текущий head APK ещё не собран/не проверен, нет device QA, backup/restore и legal sign-off.
