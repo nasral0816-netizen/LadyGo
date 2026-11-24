@@ -1131,7 +1131,7 @@ export default function LadyGoApp() {
           } catch (notificationError) {
             console.warn('LadyGo offer alert sound unavailable:', notificationError?.message);
           }
-          Alert.alert('🚕 Новый заказ', 'У тебя есть 15 секунд, чтобы принять заказ или отказаться. Если не ответить, предложение перейдёт следующему водителю.', [
+          Alert.alert('🚕 Новый заказ', 'У тебя есть 60 секунд, чтобы принять заказ или отказаться. Если не ответить, предложение перейдёт следующему водителю.', [
             { text: 'Отклонить', style: 'destructive', onPress: async () => {
               const { error } = await supabase.rpc('ladygo_decline_order', { p_order_id: offer.order_id });
               if (error) Alert.alert('Не удалось отклонить заказ', translateError(error));
