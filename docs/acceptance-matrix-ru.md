@@ -74,7 +74,7 @@ Supabase Auth/Postgres/Storage/Realtime/Edge/Vault/pg_net, Expo Push, Yandex Map
 
 ## Live acceptance update — 24.11.2026 (имеет приоритет над исторической матрицей выше)
 
-- Backend Supabase активен. pricing-service v6 (JWT on), send-driver-offer-push v5 (Vault webhook auth) активны.
+- Backend Supabase активен. pricing-service v7 (JWT on), send-driver-offer-push v5 (Vault webhook auth) активны.
 - Текущая цена и create_order используют city_tariff_configs и price_quotes; tariff_rates/dispatch-loop architecture не включать без отдельной миграции.
 - Dispatch triggers/RPC, cron expiration/scheduled-order jobs и GPS-before-online миграция применены; cron активен раз в минуту.
 - Лимит 15 обычных администраторов защищён advisory transaction lock в миграции 20261124180000_ladygo_admin_cap_serialization.
@@ -83,3 +83,11 @@ Supabase Auth/Postgres/Storage/Realtime/Edge/Vault/pg_net, Expo Push, Yandex Map
 - 0 online drivers, 0 driver tokens, 0 user tokens, 1 active order (не трогать). Реальный поездочный цикл и push delivery не проверены.
 - Runs #404/#405 отменены последующими коммитами; актуальный run #417 выполняет build для head SHA 147e61845aa4f3c4a769b59f3c6de784b72c2fe8. APK artifact ещё не получен, install/login не проверены.
 - Платежи, SMS OTP/password recovery, CSV export, admin audit, offline/outbox, backup restore и юридический sign-off остаются непроверенными/незавершёнными.
+
+
+## Quote route binding — live update 24.11.2026
+
+- pricing-service v7 ACTIVE, verify_jwt=true.
+- Миграция 20261124190000_ladygo_quote_route_binding применена: price_quotes хранит координаты pickup/destination, DB trigger сверяет их с заказом; старые quote без координат не принимаются для нового заказа.
+- Edge Function create_order дополнительно проверяет совпадение координат quote с запросом.
+- Статически подтверждён deploy и наличие колонок; authenticated device order request не выполнялся.
