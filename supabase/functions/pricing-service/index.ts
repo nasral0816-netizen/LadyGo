@@ -33,7 +33,7 @@ async function getDrivingRoute(routeCoords:string) {
         || distance <= 0 || distance > 1000000 || duration <= 0 || duration > 86400) {
         throw new Error("invalid route response");
       }
-      return { distance, duration };
+      return { distance, duration, estimated: false };
     } catch (error) {
       console.warn("pricing route provider failed:", provider.name,
         error instanceof Error ? error.message : "unknown error");
@@ -41,7 +41,27 @@ async function getDrivingRoute(routeCoords:string) {
       clearTimeout(timeout);
     }
   }
-  throw new Error("Не удалось построить дорожный маршрут. Попробуй ещё раз.");
+
+  // Offline-friendly fallback: estimate road distance from the straight-line
+  // distance. This is explicitly marked as approximate in the returned quote.
+  const coordinates = routeCoords.split(";").map((pair) => pair.split(",").map(Number));
+  const first = coordinates[0], last = coordinates[coordinates.length - 1];
+  if (!first || !last || first.length !== 2 || last.length !== 2
+    || ![...first, ...last].every(Number.isFinite)) {
+    throw new Error("Не удалось определить координаты маршрута.");
+  }
+  const toRad = (value: number) => value * Math.PI / 180;
+  const [lon1, lat1] = first, [lon2, lat2] = last;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const h = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const straightKm = 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  if (!Number.isFinite(straightKm) || straightKm <= 0 || straightKm > 500) {
+    throw new Error("Не удалось оценить расстояние маршрута.");
+  }
+  const estimatedRoadKm = straightKm * 1.35;
+  const estimatedSeconds = Math.max(60, estimatedRoadKm / 35 * 3600);
+  return { distance: estimatedRoadKm * 1000, duration: estimatedSeconds, estimated: true };
 }
 Deno.serve(async req=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
@@ -157,7 +177,7 @@ Deno.serve(async req=>{
   const waitCost=Math.max(0,waitMinutes-n(t.free_wait_min))*n(t.wait_per_min_rub);
   const tolls=0,discount=0;
   const total=Math.round(Math.max(n(t.min_price_rub)*0.7,baseFareRub+routeCost+optionsCost+tolls+waitCost-discount));
-  const breakdown={tariff:t.name,city_id:city,route_km:+routeKm.toFixed(2),route_min:Math.round(routeMin),included_km:n(t.included_km),included_min:n(t.included_min),billable_km:+billableKm.toFixed(2),billable_min:+billableMin.toFixed(2),min_price:n(t.min_price_rub),base_fare:baseFareRub,route_cost:+routeCost.toFixed(2),pickup_km:+pickupKm.toFixed(2),pickup_min:Math.round(pickupMin),pickup_cost:+pickupCost.toFixed(2),surge_multiplier:surge,surge_reason:surgeReason,pickup_surcharge_removed:true,options:opts,options_cost:optionsCost,tolls,discount,free_wait_min:n(t.free_wait_min),wait_minutes:waitMinutes,wait_cost:waitCost,total,currency:"RUB"};
+  const breakdown={tariff:t.name,city_id:city,route_km:+routeKm.toFixed(2),route_min:Math.round(routeMin),route_estimated:route.estimated===true,included_km:n(t.included_km),included_min:n(t.included_min),billable_km:+billableKm.toFixed(2),billable_min:+billableMin.toFixed(2),min_price:n(t.min_price_rub),base_fare:baseFareRub,route_cost:+routeCost.toFixed(2),pickup_km:+pickupKm.toFixed(2),pickup_min:Math.round(pickupMin),pickup_cost:+pickupCost.toFixed(2),surge_multiplier:surge,surge_reason:surgeReason,pickup_surcharge_removed:true,options:opts,options_cost:optionsCost,tolls,discount,free_wait_min:n(t.free_wait_min),wait_minutes:waitMinutes,wait_cost:waitCost,total,currency:"RUB"};
   const {data:q,error:qe}=await db.from("price_quotes").insert({passenger_id:waitOrder?.passenger_id||who.user.id,city_id:city,tariff_id:tariffId,route_km:routeKm,route_min:routeMin,amount_rub:total,pickup_lat:n(start.latitude),pickup_lng:n(start.longitude),destination_lat:n(end.latitude),destination_lng:n(end.longitude),breakdown,expires_at:new Date(Date.now()+240000).toISOString()}).select("id,amount_rub,expires_at,breakdown").single();
   if(qe)throw qe;
   if(waitOrder){
@@ -166,6 +186,6 @@ Deno.serve(async req=>{
     const {error:consumeError}=await db.from("price_quotes").update({consumed_at:new Date().toISOString()}).eq("id",q.id);
     if(consumeError)throw consumeError;
   }
-  return json({price_token:q.id,amount_rub:q.amount_rub,expires_at:q.expires_at,breakdown});
+  return json({price_token:q.id,amount_rub:q.amount_rub,expires_at:q.expires_at,breakdown,route_estimated:route.estimated===true});
  }catch(e){console.error("pricing-service",e);return json({error:e instanceof Error?e.message:"Ошибка расчёта цены."},400);}
 });
