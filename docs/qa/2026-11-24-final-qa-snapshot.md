@@ -119,3 +119,11 @@ All probes used SET LOCAL ROLE authenticated and simulated request.jwt.claim.sub
 
 - Live schema contains `saved_places(id,user_id,label,address,latitude,longitude,created_at)`, but current `src/LadyGoApp.js` has no references to `saved_places`; Home/Work/favourites/recent-address persistence is not wired into the client.
 - Live support schema contains only `support_tickets(id,user_id,order_id,subject,message,status,admin_reply,created_at,updated_at)`. No support attachment table, attachment columns, or separate support message/reply history table was found. The current UI stores one admin_reply field; attachments and threaded conversation remain unimplemented.
+
+
+## Gradle/Hermes failure and corrective commit — 24.11.2026
+
+- Run #561 failed at JS bundle step, not at dependency install, Expo Doctor, prebuild, Gradle setup or signing setup. Hermes reported: `src/LadyGoApp.js: 'import' and 'export' may only appear at the top level (325:0)`.
+- Root cause found in `removeRealtimeChannelSafely`: the `else` branch and function closing braces were missing, so the following top-level `export default function LadyGoApp` was parsed inside an open function.
+- Fixed in commit `8edd6ad8d939e6a31aa1655cce650d3a2886d60d` by restoring fallback cleanup via `removeSubscriptionSafely(channel)` and closing both scopes.
+- Run #563 is queued for the corrected source. No APK artifact or signature verification exists until #563 completes successfully.
