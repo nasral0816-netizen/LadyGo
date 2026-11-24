@@ -1344,7 +1344,11 @@ export default function LadyGoApp() {
           idempotency_key: orderIdempotencyKey.current,
           pickup_address: pickupText,
           destination_address: destinationText,
-          payment_method: payment
+          payment_method: payment,
+          pickup_lat: Number(pickup.latitude),
+          pickup_lng: Number(pickup.longitude),
+          destination_lat: Number(destination.latitude),
+          destination_lng: Number(destination.longitude)
         }
       });
       if (error) throw error;
