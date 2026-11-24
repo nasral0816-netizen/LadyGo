@@ -31,7 +31,7 @@ LadyGo — существующее Android-приложение сервиса 
 ## Текущая серверная конфигурация (24.11.2026)
 
 - Supabase project активен, статус ACTIVE_HEALTHY, регион eu-west-2.
-- pricing-service — активная версия 6, JWT verification включён. Создание заказа проверяет авторизованного пассажира, действующую запись price_quotes, срок действия и координаты; вставка заказа запускает существующий DB dispatch trigger.
+- pricing-service — активная версия 7, JWT verification включён. Создание заказа проверяет авторизованного пассажира, действующую запись price_quotes, срок действия и координаты; вставка заказа запускает существующий DB dispatch trigger.
 - Тарификация использует действующую модель city_tariff_configs; не переключать её на неактивную/нулевую tariff_rates без отдельной миграции тарифов.
 - send-driver-offer-push — активная версия 5, JWT verification выключен для webhook вызова; авторизация выполняется через секрет из Supabase Vault и RPC-проверку. Service-role key используется только серверной функцией.
 - Диспетчеризация работает через DB triggers, клиентский fallback poll и cron для истечения офферов/запланированных заказов. Отдельная dispatch-loop не развёрнута и не требуется текущей схеме; LADYGO_DISPATCH_SECRET не нужен.
@@ -44,7 +44,7 @@ LadyGo — существующее Android-приложение сервиса 
 - Рабочая ветка: fix/order-submit-diagnostics-2026-11-24.
 - Draft PR #11: https://github.com/nasral0816-netizen/LadyGo/pull/11
 - APK workflow: https://github.com/nasral0816-netizen/LadyGo/actions
-- Сборки №404 и №405 на последней проверке находились на шаге Build release APK; артефакты ещё не опубликованы. Не распространяйте APK до успешного CI, скачивания артефакта и проверки SHA-256.
+- Сборки №404/405 отменены. Runs #440 и #441 успешно собрали APK для commit f57e274c24e96224063d2005948bc2b08336eeaf. Полученный app-release.apk (version 6.9.1, versionCode 52) оказался БЕЗ подписи; этот файл не устанавливать и не распространять. Workflow обновляется, чтобы собирать installable QA APK с debug signing; это не production signing.
 - Установка, запуск, авторизация и поездка на физическом устройстве пока не подтверждены.
 
 ## Ограничения и обязательные приёмочные проверки
@@ -58,6 +58,8 @@ Supabase Security Advisor сообщает 14 предупреждений о д
 Реальные платежи не подключены. Выбор «наличные/перевод водителю» — только предпочтение способа расчёта, не подтверждение платежа. Юридическая проверка перевозчика, страхования, персональных данных, Google Play disclosures и согласий ещё требует независимого sign-off.
 
 ## Android APK
+
+APK run #441 (2026-11-24 06:31 UTC) version 6.9.1 (versionCode 52), package com.ladygo.app, размер 252,968,198 bytes, SHA-256 `96040f0e927bda6f582e2b324f441215b0e90650ba692c65798cab3693f0aba6`. Архив CI: 110,242,761 bytes, SHA-256 `33f8aeccb547064bd7f067d2a3728713af7103fc67f73247d58f3fc63a26e10d`. ВАЖНО: проверка архива показала, что APK не подписан (нет APK Signing Block и сертификата); это успешная компиляция, но не installable release. Требуется QA build с debug signing и отдельный release keystore от владельца для production/update.
 
 Release APK собирается GitHub Actions workflow .github/workflows/android-apk.yml. Для каждого релизного файла фиксируйте commit SHA, build run, версию приложения, размер, SHA-256 и дату скачивания. Сам факт успешной сборки не подтверждает E2E/production готовность.
 
