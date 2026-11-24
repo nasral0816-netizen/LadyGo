@@ -7,11 +7,13 @@ on:
     branches:
       - main
       - tech/stabilize-android-dispatch-2026-11-23
+      - fix/order-submit-diagnostics-2026-11-24
   push:
     branches:
       - main
       - tech/stabilize-android-dispatch-2026-11-23
       - fix/order-submit-diagnostics-2026-11-24
+      - fix/android-unmount-driver-offers-2026-11-24
     paths:
       - '**'
       - '!README.md'
