@@ -81,3 +81,8 @@ CI runs #440/#441 собрали APK 6.9.1 (versionCode 52), но проверк
 Этот документ остаётся checklist, не юридическим заключением. Юридический допуск перевозчика, страхование, договоры водителей, privacy policy, GDPR/152-ФЗ applicability, Google Play Data safety и Background Location declaration не подписаны независимым ответственным.
 
 Технически: Security Advisor показывает Leaked Password Protection Disabled; владелец должен включить настройку Supabase Auth и проверить signup/reset. Состояние резервного копирования/PITR и restore drill не подтверждено доступными метаданными проекта; до релиза владелец должен проверить план бэкапов и провести восстановление на отдельном проекте/ветке. Реальный push/trip E2E и установка APK на устройстве не подтверждены.
+
+
+## Последняя техническая сверка (24.11.2026)
+
+QA APK run #453 debug-signed and apksigner v2 verified, but install/login on a device are unverified. Live DB has 0 online drivers, 0 push tokens and one active order left untouched; trip E2E and push delivery are not proven. Security Advisor reports 14 authenticated SECURITY DEFINER warnings and Leaked Password Protection Disabled. The Supabase organization is on Free tier; Supabase docs state leaked-password protection requires Pro or above. CSV export is absent. Backup inventory and restore drill are not accessible through the connected tools and remain an owner/operator confirmation item. This checklist is not legal approval.
