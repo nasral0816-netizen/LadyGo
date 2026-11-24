@@ -127,3 +127,25 @@ All probes used SET LOCAL ROLE authenticated and simulated request.jwt.claim.sub
 - Root cause found in `removeRealtimeChannelSafely`: the `else` branch and function closing braces were missing, so the following top-level `export default function LadyGoApp` was parsed inside an open function.
 - Fixed in commit `8edd6ad8d939e6a31aa1655cce650d3a2886d60d` by restoring fallback cleanup via `removeSubscriptionSafely(channel)` and closing both scopes.
 - Run #563 is queued for the corrected source. No APK artifact or signature verification exists until #563 completes successfully.
+
+
+
+## Security function definition review — 24.11.2026 12:05 UTC
+
+Live catalog query of all 16 public SECURITY DEFINER RPCs callable by authenticated returned:
+- All 16 have a pinned `search_path` in `proconfig` (15: `public, pg_temp`; assigned-passenger contact RPC: `public, auth, pg_temp`).
+- All 16 reference `auth.uid()`; all 16 deny EXECUTE to `anon`.
+- `ladygo_get_assigned_driver_contact(order_id)` requires `orders.passenger_id = auth.uid()`, active trip status and matching unexpired `contact_shares`.
+- `ladygo_get_assigned_passenger_contact(order_id)` requires `orders.driver_id = auth.uid()`, active trip status and matching unexpired `contact_shares`.
+- `ladygo_list_admins()` and `ladygo_set_admin_by_email(...)` explicitly require the caller to be the super-admin. Admin grant uses an advisory transaction lock and protects the super-admin from self-modification.
+- `ladygo_accept_order(order_id)` verifies approved driver profile, locks the order row FOR UPDATE, requires the caller's own pending unexpired offer, assigns driver and cancels competing pending offers. This is strong code-level evidence for atomicity, but not a two-JWT runtime concurrency test.
+- `ladygo_update_trip_status` requires an approved driver and updates only an order assigned to auth.uid(), with allowed sequential status transitions.
+- `ladygo_driver_heartbeat` requires an approved driver and valid GPS before setting online.
+- `ladygo_dispatch_next_driver` remains service_role-only.
+- Security Advisor still reports 16 warnings because authenticated users can invoke SECURITY DEFINER functions. This is not automatically a vulnerability when the function enforces caller/row ownership, but it is not a clean Advisor state. Runtime cross-account tests remain mandatory.
+
+## Android build correction — 24.11.2026 12:06 UTC
+
+- The last confirmed failed build (#561) failed because `removeRealtimeChannelSafely` lacked the closing `else` and function braces, leaving `export default` nested. This was fixed in commit `8edd6ad8d939e6a31aa1655cce650d3a2886d60d`.
+- Run #563 on that corrected commit passed install, Expo Doctor, Expo prebuild, Gradle repository configuration and QA signing setup; `assembleRelease` remains in progress. No APK artifact, apksigner output, SHA-256 or certificate fingerprint has been produced yet.
+- The APK signing configuration uses the CI debug certificate and is strictly a sideload QA build, not a Google Play release signature.
