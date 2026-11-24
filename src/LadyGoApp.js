@@ -506,10 +506,10 @@ export default function LadyGoApp() {
     let alive = true;
     const handleAuthUrl = async url => {
       try {
-        const parsed = Linking.parse(url);
-        const code = parsed?.queryParams?.code;
+        const codeMatch = String(url).match(/[?&]code=([^&#]+)/);
+        const code = codeMatch ? decodeURIComponent(codeMatch[1]) : null;
         if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(String(code));
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) throw error;
         }
       } catch (error) {
