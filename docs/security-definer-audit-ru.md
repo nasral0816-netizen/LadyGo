@@ -106,3 +106,62 @@ The Advisor warning is not itself proof of a vulnerability: these RPCs are inten
 - `ladygo_dispatch_next_driver(uuid)`: authenticated/anon EXECUTE=false, service_role=true. Прямой вызов под authenticated JWT simulation отклонён permission check до выполнения функции.
 - `ladygo_cancel_my_order(uuid,text)`: authenticated owner cancellation успешно выполнил реальный update собственного заказа; другая учётная запись получила отказ/no matching owned active order. SQL probe использовал simulated JWT claim; independent signed JWT device test остаётся открытым.
 - Advisor: Leaked Password Protection Disabled; проект на Free plan, требуется upgrade Pro+ и включение Auth setting владельцем.
+
+
+## Актуальный live catalog audit — 24.11.2026 11:43 UTC (перекрывает историческое число 14)
+
+Последний запрос к live PostgreSQL 17.11 обнаружил **36** функций SECURITY DEFINER в схеме public. Число 14 в предыдущих разделах — исторический набор exposed RPC из раннего снимка, а не полный текущий каталог.
+
+### Все 36 функций
+
+| Функция | EXECUTE authenticated | EXECUTE anon | Комментарий |
+|---|---:|---:|---|
+| approve_driver_application() | Нет | Нет | Trigger/service_role path |
+| guard_order_update() | Нет | Нет | Trigger/service_role path |
+| handle_new_user() | Нет | Нет | Auth trigger |
+| ladygo_accept_order(uuid,numeric) | Да | Нет | Проверка verified driver, row lock, собственный pending offer, единичное назначение |
+| ladygo_cancel_active_order(uuid,text) | Да | Нет | Проверка участника и статуса |
+| ladygo_cancel_my_order(uuid,text) | Да | Нет | Только собственный новый неназначенный заказ |
+| ladygo_close_order_offers() | Нет | Нет | Trigger/service_role path |
+| ladygo_create_order_from_quote(...) | Да | Нет | Authenticated quote-bound order creation |
+| ladygo_create_order_offers() | Нет | Нет | Orders INSERT trigger |
+| ladygo_decline_order(uuid) | Да | Нет | Только собственный pending offer |
+| ladygo_dispatch_after_offer_response() | Нет | Нет | Offer status trigger |
+| ladygo_dispatch_next_driver(uuid) | Нет | Нет | service_role-only; прямой клиентский вызов запрещён |
+| ladygo_dispatch_notification_push() | Нет | Нет | Notification trigger, Vault/net path |
+| ladygo_dispatch_offer_push() | Нет | Нет | Offer trigger, Vault/net path |
+| ladygo_dispatch_scheduled_orders() | Нет | Нет | Cron/service_role path |
+| ladygo_dispatch_waiting_after_trip_release() | Нет | Нет | Order status trigger |
+| ladygo_driver_heartbeat(boolean,double precision,double precision,double precision) | Да | Нет | Driver presence/GPS heartbeat |
+| ladygo_expire_my_offer(uuid) | Да | Нет | Собственный offer expiry |
+| ladygo_expire_stale_order_offers() | Нет | Нет | Cron/service_role path |
+| ladygo_get_assigned_driver_contact(uuid) | Да | Нет | Только passenger-заказчик с active contact lease |
+| ladygo_get_assigned_passenger_contact(uuid) | Да | Нет | Только назначенный driver с active contact lease |
+| ladygo_handle_driver_presence_change() | Нет | Нет | Presence trigger |
+| ladygo_list_admins() | Да | Нет | Только super-admin |
+| ladygo_log_order_event() | Нет | Нет | Orders audit trigger |
+| ladygo_notify_new_order() | Нет | Нет | Trigger/service_role path |
+| ladygo_notify_order_change() | Нет | Нет | Order notification trigger |
+| ladygo_notify_support_reply() | Нет | Нет | Support reply trigger |
+| ladygo_offer_waiting_orders_to_new_driver() | Нет | Нет | Driver approval/presence trigger path |
+| ladygo_record_trip_location(uuid,...) | Да | Нет | Только участник активной поездки |
+| ladygo_register_push_token(text,text) | Да | Нет | Только собственный токен |
+| ladygo_review_driver_application() | Нет | Нет | Application review trigger |
+| ladygo_set_admin_by_email(text,boolean) | Да | Нет | Только super-admin; advisory lock на лимит 15; self-change запрещён |
+| ladygo_unregister_push_token(text) | Да | Нет | Только собственный токен |
+| ladygo_update_my_phone(text) | Да | Нет | Только собственный профиль |
+| ladygo_update_trip_status(uuid,text) | Да | Нет | Только назначенный verified driver и допустимые переходы |
+| ladygo_verify_push_webhook_secret(text) | Нет | Нет | Internal Vault verification |
+| refresh_driver_rating_stats() | Нет | Нет | Rating trigger |
+| validate_ladygo_price_quote() | Нет | Нет | Quote validation trigger |
+
+### Итоги catalog/grant audit
+- 36 SECURITY DEFINER функций всего.
+- 16 функций имеют EXECUTE для authenticated; 0 функций имеют EXECUTE для anon.
+- 20 внутренних trigger/cron/service functions не доступны authenticated/anon.
+- `ladygo_dispatch_next_driver(uuid)`: authenticated=false, anon=false, service_role=true.
+- У всех 36 функций задан function-level search_path. 33 используют явный schema path; три функции `approve_driver_application`, `handle_new_user`, `refresh_driver_rating_stats` задают пустой search_path. Их тела используют schema-qualified таблицы/функции; пустой путь не является отсутствующим параметром и исключает пользовательские схемы из разрешения имён.
+- Supabase Security Advisor на 11:37 UTC сообщает 16 warnings: это ровно exposed authenticated SECURITY DEFINER RPC, а не 36 функций и не доказательство эксплуатации. Нельзя массово отзывать EXECUTE, пока не проверен call graph.
+
+### Ограничения доказательств
+Этот аудит проверяет каталог, grants и определения функций. Он **не** доказывает runtime-поведение всех 16 exposed RPC под двумя независимыми подписанными JWT. В этой сессии не запускались 16 новых runtime probes, конкурентная гонка accept, 15→16 admin race или full trip E2E. Ранее задокументированные SQL claim simulations остаются SQL simulations, а не device JWT tests.
