@@ -213,10 +213,10 @@ const translateError = error => {
 async function findAddresses(q) {
   const clean = String(q || '').replace(/\s+/g, ' ').trim();
   if (clean.length < 2) return [];
-  const results = await geocodeAddress(clean, {
+  const results = await withTimeout(geocodeAddress(clean, {
     userPosition: { latitude: 43.9052, longitude: 42.7168 },
     resultPageSize: 12
-  });
+  }), 12000, 'Яндекс Карты не ответили на поиск адреса за 12 секунд. Попробуй ещё раз.');
   return (results || []).filter(item => item.point &&
     Number.isFinite(Number(item.point.latitude)) &&
     Number.isFinite(Number(item.point.longitude))
@@ -1498,7 +1498,8 @@ export default function LadyGoApp() {
     setDestination(point);
     setDestinationText('Выбранная точка');
     try {
-      const response = await fetch('https://photon.komoot.io/reverse?lat=' + point.latitude + '&lon=' + point.longitude + '&lang=ru');
+      const response = await withTimeout(fetch('https://photon.komoot.io/reverse?lat=' + point.latitude + '&lon=' + point.longitude + '&lang=ru'), 8000, 'Сервис адресов не ответил.');
+      if (!response.ok) throw new Error('Reverse geocoding HTTP ' + response.status);
       const data = await response.json();
       const feature = data?.features?.[0];
       const p = feature?.properties || {};
@@ -1522,7 +1523,7 @@ export default function LadyGoApp() {
     const build = async () => {
       if (!pickup || !destination) { setRoute([]); setRouteInfo(null); setQuote(null); return; }
       try {
-        const routes = await findDrivingRoutes([pickup, destination], { vehicleType: 'taxi' });
+        const routes = await withTimeout(findDrivingRoutes([pickup, destination], { vehicleType: 'taxi' }), 12000, 'Яндекс Карты не ответили на построение маршрута.');
         const r = routes?.[0];
         if (!r || !Array.isArray(r.points) || r.points.length < 2) throw new Error('Маршрут не найден');
         const points = r.points.map(p => ({ latitude: Number(p.latitude), longitude: Number(p.longitude) }));
