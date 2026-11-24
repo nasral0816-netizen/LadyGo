@@ -35,3 +35,8 @@
 - Транзакционные SQL probes подтвердили запрет главному снять собственные права и снять другого super-admin. Обычный admin проверен через временную роль существующего тестового профиля с ROLLBACK: чтение orders/driver_applications разрешено по админским RLS, управление списком админов и назначение ролей запрещено.
 - CSV export отсутствует в src/LadyGoApp.js и админском UI. Экспорт заявок, пользователей и поездок не поддерживается текущей версией.
 - Для production-приёмки нужны отдельный синтетический admin account, 15/16 concurrent test и legal/privacy approval.
+
+
+## Самая свежая проверка (24.11.2026)
+
+В live БД по-прежнему 1 super-admin и 0 обычных admin. 15→16 race не выполнялся. CSV export отсутствует. Storage policy review выявил более широкую старую SELECT policy на private bucket; её removal migration подготовлена, но не применена до подтверждения backup/restore.
