@@ -156,6 +156,20 @@ function removeRealtimeChannelSafely(client, channel) {
   }
 }
 
+async function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function extractBackendError(error) {
   // Supabase FunctionsHttpError stores the actual HTTP Response in context.
   // Read a clone so the SDK response remains untouched.
@@ -1467,40 +1481,38 @@ export default function LadyGoApp() {
     const getQuote = async () => {
       setQuote(null);
       setQuoteError('');
-      if (!pickup || !destination || !routeInfo || !supabase) {
+      // Price calculation is server-side and only needs the two coordinates.
+      // Do not wait for Yandex MapKit to finish drawing the visual route: its
+      // routing request can be unavailable on networks without VPN.
+      if (!pickup || !destination || !supabase) {
         setQuoteLoading(false);
         return;
       }
       setQuoteLoading(true);
-      let lastError = '';
       try {
-        // Retry once for transient mobile-network failures. Never invent a local fare.
-        for (let attempt = 0; attempt < 2; attempt++) {
-          try {
-            const { data, error } = await supabase.functions.invoke('pricing-service', {
-              body: { action: 'quote', city_id: 'kislovodsk', tariff_id: tariff, points: [pickup, destination], options: [] }
-            });
-            if (error) throw error;
-            const payload = data?.data && typeof data.data === 'object' ? data.data : data;
-            const token = payload?.price_token || payload?.quote?.price_token;
-            const amount = Number(payload?.amount_rub ?? payload?.quote?.amount_rub);
-            if (payload?.error) throw new Error(String(payload.error));
-            if (!token || !Number.isFinite(amount) || amount <= 0) {
-              throw new Error('Сервер ответил без действительной цены. Попробуй пересчитать.');
-            }
-            if (alive) {
-              setQuote({ ...payload, price_token: token, amount_rub: amount });
-              setQuoteError('');
-            }
-            return;
-          } catch (requestError) {
-            lastError = String(requestError?.message || 'Не удалось получить ответ сервера.');
-            if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 1200));
-          }
+        const { data, error } = await withTimeout(
+          supabase.functions.invoke('pricing-service', {
+            body: { action: 'quote', city_id: 'kislovodsk', tariff_id: tariff, points: [pickup, destination], options: [] }
+          }),
+          15000,
+          'Сервер цены не ответил за 15 секунд. Проверь интернет и нажми «Пересчитать стоимость».'
+        );
+        if (error) throw error;
+        const payload = data?.data && typeof data.data === 'object' ? data.data : data;
+        const token = payload?.price_token || payload?.quote?.price_token;
+        const amount = Number(payload?.amount_rub ?? payload?.quote?.amount_rub);
+        if (payload?.error) throw new Error(String(payload.error));
+        if (!token || !Number.isFinite(amount) || amount <= 0) {
+          throw new Error('Сервер ответил без действительной цены. Попробуй пересчитать.');
         }
         if (alive) {
+          setQuote({ ...payload, price_token: token, amount_rub: amount });
+          setQuoteError('');
+        }
+      } catch (requestError) {
+        if (alive) {
           setQuote(null);
-          setQuoteError(lastError);
+          setQuoteError(String(requestError?.message || 'Не удалось получить ответ сервера.'));
         }
       } finally {
         if (alive) setQuoteLoading(false);
@@ -1512,8 +1524,8 @@ export default function LadyGoApp() {
 
   const createOrder = async () => {
     if (!session?.user?.id || !supabase) return;
-    if (!pickup || !destination || !routeInfo) {
-      return Alert.alert('Укажи маршрут', 'Выбери оба адреса и дождись построения маршрута.');
+    if (!pickup || !destination) {
+      return Alert.alert('Укажи маршрут', 'Выбери оба адреса.');
     }
     if (activeOrder && ['new','accepted','arrived','in_progress'].includes(activeOrder.status)) {
       setTab('orders');
@@ -1804,7 +1816,7 @@ export default function LadyGoApp() {
               {previewFare ? 'Подтверждено сервером. Цена действует ограниченное время.' : quoteLoading ? 'Получаем точную цену с сервера…' : quoteError ? 'Не удалось получить серверную цену.' : routeInfo ? 'Ожидается подтверждение тарифа сервером.' : 'Укажи оба адреса для расчёта'}
             </Text>
             {!!quoteError && <Text style={{ color: P.pinkDark, fontSize: 12, marginTop: 6 }}>{quoteError}</Text>}
-            {routeInfo && !previewFare && !quoteLoading && <TouchableOpacity onPress={() => setQuoteRetry(value => value + 1)} style={{ alignSelf: 'flex-start', marginTop: 8, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 10, backgroundColor: P.pale }}>
+            {pickup && destination && !previewFare && !quoteLoading && <TouchableOpacity onPress={() => setQuoteRetry(value => value + 1)} style={{ alignSelf: 'flex-start', marginTop: 8, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 10, backgroundColor: P.pale }}>
               <Text style={{ color: P.pinkDark, fontWeight: '700' }}>↻ Пересчитать стоимость</Text>
             </TouchableOpacity>}
           </View>
@@ -1814,7 +1826,7 @@ export default function LadyGoApp() {
         <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>Р</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <Text style={st.muted}>Онлайн-оплата в приложении пока не подключена. Выбор способа — только предпочтение, списания не происходит.</Text>
         <Text style={st.muted}>Для связи используется номер, сохранённый в профиле.</Text>
-        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || !quote?.price_token || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || !quote?.price_token || busy}>
+        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !quote?.price_token || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !quote?.price_token || busy}>
           {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={st.phoneOrderBtn} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com?subject=Поддержка%20LadyGo')}>
