@@ -499,27 +499,33 @@ grant execute on function public.ladygo_dispatch_next_driver(uuid) to service_ro
 -- Contacts are revealed only to the other participant while the lease and trip
 -- are both active. The functions return a narrow projection, not profile rows.
 create or replace function public.ladygo_get_assigned_driver_contact(p_order_id uuid)
-returns table(full_name text, phone text, experience text)
+returns table(
+  full_name text, phone text, experience text, avatar_url text,
+  vehicle_make text, vehicle_model text, vehicle_color text, vehicle_plate text,
+  vehicle_year smallint, vehicle_photo_url text, average_rating numeric, rating_count bigint
+)
 language sql
 stable
 security definer
 set search_path = 'public', 'pg_temp'
 as $function$
   select
-    coalesce(application.full_name, 'Водитель LadyGo') as full_name,
-    coalesce(application.phone, profile.phone) as phone,
-    coalesce(application.experience, '') as experience
+    coalesce(dp.display_name, 'Водитель LadyGo'),
+    dp.phone,
+    coalesce(dp.experience, ''),
+    dp.avatar_url,
+    dp.vehicle_make,
+    dp.vehicle_model,
+    dp.vehicle_color,
+    dp.vehicle_plate,
+    dp.vehicle_year,
+    dp.vehicle_photo_url,
+    (select round(avg(r.rating)::numeric, 1) from public.order_ratings r where r.driver_id = o.driver_id),
+    (select count(*) from public.order_ratings r where r.driver_id = o.driver_id)
   from public.orders o
-  join public.profiles profile on profile.id = o.driver_id
-  left join lateral (
-    select da.full_name, da.phone, da.experience
-    from public.driver_applications da
-    where da.user_id = o.driver_id and da.status = 'approved'
-    order by da.reviewed_at desc nulls last, da.created_at desc
-    limit 1
-  ) application on true
+  join public.driver_profiles dp on dp.driver_id = o.driver_id
   where o.id = p_order_id
-    and o.passenger_id = auth.uid()
+    and o.passenger_id = (select auth.uid())
     and o.status in ('accepted','arrived','in_progress')
     and exists (
       select 1 from public.contact_shares cs
