@@ -1813,7 +1813,7 @@ export default function LadyGoApp() {
           <View style={{ flex: 1 }}>
             <Text style={st.priceTitle}>Стоимость поездки</Text>
             <Text style={st.priceHint}>
-              {previewFare ? 'Подтверждено сервером. Цена действует ограниченное время.' : quoteLoading ? 'Получаем точную цену с сервера…' : quoteError ? 'Не удалось получить серверную цену.' : routeInfo ? 'Ожидается подтверждение тарифа сервером.' : 'Укажи оба адреса для расчёта'}
+              {previewFare ? (quote?.route_estimated ? 'Предварительная оценка по координатам: дорожный маршрут недоступен.' : 'Маршрут рассчитан по дорожным данным Яндекс/OSRM. Цена действует ограниченное время.') : quoteLoading ? 'Получаем стоимость поездки…' : quoteError ? 'Не удалось получить цену.' : routeInfo ? 'Ожидается подтверждение тарифа сервером.' : 'Укажи оба адреса для расчёта'}
             </Text>
             {!!quoteError && <Text style={{ color: P.pinkDark, fontSize: 12, marginTop: 6 }}>{quoteError}</Text>}
             {pickup && destination && !previewFare && !quoteLoading && <TouchableOpacity onPress={() => setQuoteRetry(value => value + 1)} style={{ alignSelf: 'flex-start', marginTop: 8, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 10, backgroundColor: P.pale }}>
