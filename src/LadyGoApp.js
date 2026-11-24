@@ -138,6 +138,25 @@ const TARIFFS = [
 const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Ищем водителя', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
 
+async function extractBackendError(error) {
+  // Supabase FunctionsHttpError stores the actual HTTP Response in context.
+  // Read a clone so the SDK response remains untouched.
+  const response = error?.context;
+  if (response && typeof response.clone === 'function') {
+    try {
+      const payload = await response.clone().json();
+      const detail = payload?.error || payload?.message || payload?.msg;
+      if (detail) return String(detail);
+    } catch (_) {
+      try {
+        const rawBody = await response.clone().text();
+        if (rawBody) return rawBody.slice(0, 500);
+      } catch (_) {}
+    }
+  }
+  return String(error?.message || error || '').trim();
+}
+
 const translateError = error => {
   const raw = String(error?.message || error || '').trim();
   const message = raw.toLowerCase();
@@ -150,7 +169,10 @@ const translateError = error => {
   if (/network request failed|failed to fetch|fetch failed|networkerror|timeout|timed out/.test(message)) return 'Не удалось подключиться к серверу. Проверь интернет и попробуй ещё раз.';
   if (/duplicate key|unique constraint|orders_one_active_per_passenger_idx/.test(message)) return 'У тебя уже есть активный заказ. Открой раздел «Мои поездки».';
   if (/permission denied|not allowed|unauthorized|forbidden|jwt/.test(message)) return 'Недостаточно прав для этого действия. Перезайди в аккаунт и попробуй снова.';
-  if (/function .* not found|could not find the function|schema cache/.test(message)) return 'Функция временно недоступна. Обнови приложение или попробуй позже.';
+  if (/pricing service is not configured|service is not configured/.test(message)) return 'Сервер заказов ещё не настроен. Администратору нужно настроить серверные ключи Supabase и развернуть pricing-service.';
+  if (/unable to process pricing request|relation .* does not exist|column .* does not exist|function .* does not exist/.test(message)) return 'Сервер не смог сохранить заказ: вероятно, не применены необходимые миграции LadyGo или не настроена функция pricing-service. Это не ошибка интернета.';
+  if (/price quote expired|quote.*expired/.test(message)) return 'Срок расчёта цены истёк. Обнови маршрут и попробуй заказать ещё раз.';
+  if (/function .* not found|could not find the function|schema cache/.test(message)) return 'Серверная функция заказов не найдена. Нужно развернуть pricing-service в Supabase.';
   if (/row-level security|violates row-level security/.test(message)) return 'Действие не разрешено для этого аккаунта.';
   if (/маршрут не найден/.test(message)) return 'Не удалось построить маршрут. Проверь выбранные адреса.';
   return 'Не удалось выполнить действие. Проверь подключение к интернету и попробуй ещё раз.';
@@ -1334,8 +1356,14 @@ export default function LadyGoApp() {
       await loadOrders();
       Alert.alert('Заказ отправлен', 'LadyGo ищет ближайшего свободного водителя. Когда водитель примет заказ, его имя, автомобиль и геопозиция появятся здесь.');
     } catch (error) {
-      const message = String(error?.message || '');
-      if (/orders_one_active_per_passenger|duplicate key|unique constraint/i.test(message)) {
+      const backendMessage = await extractBackendError(error);
+      console.error('LadyGo order submission failed:', {
+        message: backendMessage,
+        status: error?.context?.status,
+        name: error?.name
+      });
+      const message = backendMessage || String(error?.message || '');
+      if (/orders_one_active_per_passenger|duplicate key|unique constraint|active order already exists/i.test(message)) {
         await loadOrders();
         setTab('orders');
         Alert.alert('У тебя уже есть активный заказ', 'Открой «Мои поездки», чтобы посмотреть его статус.');
