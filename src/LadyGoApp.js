@@ -528,13 +528,27 @@ export default function LadyGoApp() {
   }, [searchField, tab]);
 
   useEffect(() => {
-    if (!session?.user?.id || profile?.role !== 'passenger' || !supabase) return;
+    // Passenger-side orders must keep syncing even when this same account has
+    // the driver role and the user switches between Passenger / Driver modes.
+    if (!session?.user?.id || !supabase) return;
+    let alive = true;
+    const refreshPassengerOrders = () => {
+      if (alive) loadOrders();
+    };
+    refreshPassengerOrders();
     const channel = supabase.channel('ladygo-passenger-orders-' + session.user.id)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders',
-        filter: 'passenger_id=eq.' + session.user.id }, () => loadOrders())
+        filter: 'passenger_id=eq.' + session.user.id }, refreshPassengerOrders)
       .subscribe();
-    return () => { removeRealtimeChannelSafely(supabase, channel); };
-  }, [session?.user?.id, profile?.role, loadOrders]);
+    // Realtime is best-effort on mobile networks; polling guarantees the
+    // passenger card catches accepted / arrived / in-progress changes.
+    const refresh = setInterval(refreshPassengerOrders, 5000);
+    return () => {
+      alive = false;
+      clearInterval(refresh);
+      removeRealtimeChannelSafely(supabase, channel);
+    };
+  }, [session?.user?.id, loadOrders]);
 
   // Matching is server-side (orders INSERT trigger + offer-expiry cron).
   // The client must never call the restricted dispatch primitive directly.
@@ -1526,7 +1540,7 @@ export default function LadyGoApp() {
     ]);
   };
 
-  const chatOrder = profile?.role === 'driver'
+  const chatOrder = tab === 'driver'
     ? driverOrders.find(order => ['accepted','arrived','in_progress'].includes(order.status)) || null
     : (activeOrder && ['accepted','arrived','in_progress'].includes(activeOrder.status) ? activeOrder : null);
 
@@ -1536,7 +1550,7 @@ export default function LadyGoApp() {
       setTripContact(null);
       return;
     }
-    const rpcName = profile?.role === 'driver'
+    const rpcName = tab === 'driver'
       ? 'ladygo_get_assigned_passenger_contact'
       : 'ladygo_get_assigned_driver_contact';
     supabase.rpc(rpcName, { p_order_id: chatOrder.id }).then(({ data, error }) => {
@@ -1549,7 +1563,7 @@ export default function LadyGoApp() {
       setTripContact(Array.isArray(data) ? (data[0] || null) : (data || null));
     });
     return () => { alive = false; };
-  }, [chatOrder?.id, profile?.role, session?.user?.id]);
+  }, [chatOrder?.id, tab, session?.user?.id]);
 
   const loadTripMessages = useCallback(async () => {
     if (!chatOrder?.id || !session?.user?.id || !supabase) {
