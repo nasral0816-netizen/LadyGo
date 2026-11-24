@@ -7,7 +7,7 @@ Live backend использует DB triggers, защищённые RPC, Realtim
 ## Поток заказа
 
 1. Пассажир получает серверную цену через pricing-service и отправляет create_order с ID quote и координатами.
-2. pricing-service v7 проверяет JWT, что пользователь — пассажир, quote принадлежит ему, не истёк и не использован; проверяет адреса и координаты.
+2. pricing-service v7 проверяет JWT, что пользователь — пассажир, quote принадлежит ему, не истёк и не использован; сверяет pickup/destination coordinates с координатами подписанного quote.
 3. Заказ вставляется через пользовательский Supabase client. DB trigger выполняет проверку quote и запускает ladygo_dispatch_next_driver.
 4. Кандидат должен иметь роль driver, approved driver application и driver profile, свежую online presence и GPS; исключаются занятые водители и водители с незакрытым оффером.
 5. Создаётся персональный order_offers со сроком действия 25 секунд.
@@ -46,6 +46,8 @@ Cron выполняет обработку просроченных предло
 - Проверка на чужие данные под независимыми JWT и реальная двойная гонка accept ещё должны быть выполнены на staging.
 
 ## Что подтверждено / не подтверждено
+
+Последняя CI-сборка #441 для commit f57e274c24e96224063d2005948bc2b08336eeaf завершилась успешно, но APK оказался unsigned; его нельзя считать installable. Версия приложения 6.9.1 / versionCode 52. Workflow переводится на QA debug signing; production signing key должен предоставить владелец.
 
 Подтверждено по live БД/конфигурации: Edge Functions pricing-service v7 и send-driver-offer-push v5 активны; cron jobs активны; миграция GPS-before-online и миграция сериализации лимита администраторов применены; RLS включён на ключевых таблицах.
 
