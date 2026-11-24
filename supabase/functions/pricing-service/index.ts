@@ -6,6 +6,43 @@ const FREE = ["luggage_help","text_only","quiet_ride","wheelchair"];
 const PAID:Record<string,number>={child_seat:45,pet:35,bulky_luggage:35};
 const n=(v:unknown)=>Number.isFinite(Number(v))?Number(v):0;
 const inside=(p:any)=>n(p?.latitude)>=43.88&&n(p?.latitude)<=44.10&&n(p?.longitude)>=42.60&&n(p?.longitude)<=42.82;
+
+// Try independent OSRM-compatible routing services in order. A failed provider
+// must never produce an estimated/fabricated quote.
+async function getDrivingRoute(routeCoords:string) {
+  const providers = [
+    { name: "osrm-primary", url: "https://router.project-osrm.org" },
+    { name: "fossgis-fallback", url: "https://routing.openstreetmap.de/routed-car" }
+  ];
+  for (const provider of providers) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    try {
+      const url = `${provider.url}/route/v1/driving/${routeCoords}?overview=false&steps=false`;
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      const route = payload?.code === "Ok" ? payload?.routes?.[0] : null;
+      const distance = Number(route?.distance);
+      const duration = Number(route?.duration);
+      if (!Number.isFinite(distance) || !Number.isFinite(duration)
+        || distance <= 0 || distance > 1000000 || duration <= 0 || duration > 86400) {
+        throw new Error("invalid route response");
+      }
+      return { distance, duration };
+    } catch (error) {
+      console.warn("pricing route provider failed:", provider.name,
+        error instanceof Error ? error.message : "unknown error");
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw new Error("Не удалось построить дорожный маршрут. Попробуй ещё раз.");
+}
 Deno.serve(async req=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
  if(req.method!=="POST")return json({error:"POST required"},405);
@@ -93,10 +130,7 @@ Deno.serve(async req=>{
   const points=Array.isArray(body.points)?body.points:[];
   if(points.length<2||!points.every((p:any)=>Number.isFinite(Number(p.latitude))&&Number.isFinite(Number(p.longitude))))return json({error:"Сначала построй маршрут на карте."},400);
   const routeCoords=points.map((p:any)=>`${n(p.longitude)},${n(p.latitude)}`).join(";");
-  const routeResponse=await fetch(`https://router.project-osrm.org/route/v1/driving/${routeCoords}?overview=false&steps=false`);
-  if(!routeResponse.ok)throw new Error("Не удалось проверить дорожный маршрут.");
-  const route=(await routeResponse.json()).routes?.[0];
-  if(!route||route.distance<=0||route.distance>1000000||route.duration>86400)throw new Error("Маршрут не найден.");
+  const route=await getDrivingRoute(routeCoords);
   const routeKm=route.distance/1000,routeMin=route.duration/60,start=points[0],end=points[points.length-1];
   const outside=!(inside(start)&&inside(end));
   const perKm=outside?n(t.out_per_km_rub):n(t.city_per_km_rub),perMin=outside?n(t.out_per_min_rub):n(t.city_per_min_rub);
