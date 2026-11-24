@@ -42,3 +42,33 @@
 ## Повторная SQL-сверка grants/search_path (24.11.2026, live)
 
 Повторный запрос к pg_proc подтвердил для всех 14 функций: prosecdef=true; задан function-level search_path (13 функций: public, pg_temp; get_assigned_passenger_contact: public, auth, pg_temp); EXECUTE для authenticated=true; EXECUTE для anon=false; в тексте каждой функции присутствует auth.uid(). Это подтверждает базовые настройки, но не заменяет ручной review ветвей авторизации, runtime negative tests, проверку SECURITY DEFINER owner и ограничение search_path на trusted schemas. Security Advisor продолжает показывать 14 предупреждений, поскольку signed-in users могут вызывать SECURITY DEFINER RPC. Не отзывать гранты массово: приложение использует эти RPC.
+
+
+## Runtime negative probes — 24.11.2026
+
+Тесты выполнялись в транзакциях с ROLLBACK под `SET LOCAL ROLE authenticated` и тестовыми `request.jwt.claim.sub`; это не независимые подписанные JWT и не device test.
+
+| RPC | Негативный сценарий | Результат |
+|---|---|---|
+| ladygo_accept_order | Passenger вызывает accept | Отклонено: Only verified drivers can accept orders |
+| ladygo_cancel_active_order | Passenger A отменяет чужой активный заказ | Отклонено: Нет прав на отмену этого заказа |
+| ladygo_decline_order | Passenger вызывает decline | Отклонено: Only verified drivers can decline offers |
+| ladygo_dispatch_next_driver | Прямой вызов | Не запускался: функция может обновлять истёкшие offers и запускать dispatch; нужен отдельный staging order/изоляция |
+| ladygo_driver_heartbeat | Passenger вызывает heartbeat | Отклонено: Only verified drivers can change availability |
+| ladygo_get_assigned_driver_contact | Чужой passenger запрашивает контакт по не назначенному заказу | 0 rows |
+| ladygo_get_assigned_passenger_contact | Не назначенный driver запрашивает контакт | 0 rows |
+| ladygo_list_admins | Passenger вызывает список администраторов | Отклонено: Недостаточно прав |
+| ladygo_record_trip_location | Чужой passenger пишет координаты по неактивному заказу | Отклонено: Trip is not active |
+| ladygo_register_push_token | Пустой Expo token | Отклонено: Invalid Expo push token |
+| ladygo_set_admin_by_email | Passenger пытается назначить администратора | Отклонено: Недостаточно прав |
+| ladygo_unregister_push_token | Неизвестный тестовый token | RPC завершился без ошибки; совпадающей записи нет, удалять было нечего |
+| ladygo_update_my_phone | Некорректные значения x / abc1234567 / ++++ / 12-34 | После миграции все отклонены: Invalid phone number |
+| ladygo_update_trip_status | Не назначенный driver пытается изменить статус чужого заказа | Отклонено: Trip status cannot be changed |
+
+Дополнительно: super-admin вызвал попытку снять собственные права; RPC вернул `Нельзя изменять собственные права главного администратора`. Passenger A/B видели только собственный профиль и 0 строк в 10 остальных ключевых таблицах. В driver role context видны 2 доступных заказа и собственная заявка; чужие offers, locations, tracks, tokens и support — 0.
+
+### Исправление phone RPC
+
+Обнаружено, что исходная нормализация удаляла буквы и могла превращать произвольную строку в NULL, очищая телефон. Добавлена и применена миграция `20261124200000_ladygo_phone_input_validation`: разрешены цифры, плюс, скобки, пробелы и дефисы; после нормализации номер должен содержать 7–15 цифр и необязательный начальный плюс. Пустое значение по-прежнему означает явную очистку поля. Негативные пробы после применения прошли.
+
+Остаются непроверенными: прямой dispatch RPC, успешная регистрация/отзыв существующего push token, обновление собственного телефона валидным номером, назначенный-contact flow на реальной поездке, 15/16 concurrent admin grants, обычный admin и два независимых device JWT. Leaked Password Protection отключён по Advisor. Не отзывать grants массово.
