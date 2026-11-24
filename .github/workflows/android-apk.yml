@@ -78,9 +78,47 @@ jobs:
           print("Configured plugin repositories")
           PY
 
+      - name: Configure QA APK signing
+        run: |
+          # This CI signing identity is only for sideloaded QA builds, never Google Play production releases.
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path("android/app/build.gradle")
+          content = path.read_text()
+          build_types = re.search(r"\bbuildTypes\s*\{", content)
+          if not build_types:
+              raise SystemExit("android buildTypes block not found")
+          release = re.search(r"\brelease\s*\{", content[build_types.end():])
+          if not release:
+              raise SystemExit("release build type not found")
+          start = build_types.end() + release.end()
+          close = content.find("\n        }", start)
+          if close < 0:
+              close = content.find("\n    }", start)
+          if close < 0:
+              raise SystemExit("release build type closing brace not found")
+          block = content[start:close]
+          if "signingConfig signingConfigs.debug" not in block:
+              content = content[:start] + "\n            signingConfig signingConfigs.debug" + content[start:]
+              path.write_text(content)
+          print("Release APK configured with CI debug signing (QA only)")
+          PY
+
       - name: Build release APK
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Verify APK signature
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ]; then echo "apksigner not found"; exit 1; fi
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
