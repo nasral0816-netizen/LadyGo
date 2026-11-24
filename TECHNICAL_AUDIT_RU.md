@@ -4,9 +4,9 @@
 ## Подтверждено на live Supabase
 
 - Проект активен: ACTIVE_HEALTHY, регион eu-west-2.
-- pricing-service v6 активна, verify_jwt=true; send-driver-offer-push v5 активна, verify_jwt=false с Vault-backed webhook validation.
+- pricing-service v7 активна, verify_jwt=true; send-driver-offer-push v5 активна, verify_jwt=false с Vault-backed webhook validation.
 - Действующая модель тарифов — city_tariff_configs; неактивная/нулевая tariff_rates не используется.
-- Создание заказа реализовано в pricing-service: JWT/роль пассажира, принадлежащий пассажиру действующий price_quotes, expiry/consumed checks, адреса/координаты; DB trigger проверяет quote и запускает dispatch.
+- Создание заказа реализовано в pricing-service v7: JWT/роль пассажира, принадлежащий пассажиру действующий price_quotes, expiry/consumed checks, адреса/координаты; quote хранит pickup/destination и Edge Function + DB trigger сверяют маршрут заказа с рассчитанным маршрутом.
 - Диспетчеризация — SQL triggers + RPC + Realtime + клиентский fallback polling. Отдельной dispatch-loop нет и не требуется текущей схеме.
 - Cron ladygo-expire-stale-offers и ladygo-dispatch-scheduled-orders активны каждую минуту.
 - Миграция GPS-before-online применена: driver_locations сохраняется до переключения driver_presence.
@@ -17,7 +17,7 @@
 ## Изменения PR #11
 
 - Диагностика ошибок создания заказа и передача координат pickup/destination.
-- create_order в pricing-service v6 с использованием текущей price_quotes и city_tariff_configs.
+- create_order в pricing-service v7 с использованием текущей price_quotes и city_tariff_configs.
 - Совместимость с существующей order_offers и расширенным driver-contact RPC.
 - Защита триггерной диспетчеризации от некорректного контекста вызова.
 - Проверенные водительские анкеты, атомарное принятие, статусы, GPS tracking и contact lease.
