@@ -62,3 +62,39 @@ All probes used SET LOCAL ROLE authenticated and simulated request.jwt.claim.sub
 - Direct dispatch RPC hardened: migration `20261124073317_ladygo_restrict_direct_dispatch_rpc`; authenticated=false, anon=false, service_role=true; direct authenticated invocation was rejected in a rollback probe.
 - Live recheck: 1 online driver, 1 GPS sample newer than 15m, 0 driver push tokens, 0 passenger push tokens, 0 active orders, 1 super-admin, 0 ordinary admins. This makes an offer test possible only after a passenger session creates a new order; push remains blocked by zero tokens.
 - Current-head Android build after cancellation and dispatch ACL changes is running in GitHub Actions; no claim of a new APK until signature verification and artifact download complete.
+
+
+## Повторная live-сверка и CI (24.11.2026, 11:32 UTC)
+
+Проверено непосредственно через GitHub Actions и SQL в Supabase project `itlzvcklnxznrtaqjttc`. Это снимок состояния, а не утверждение о полном E2E.
+
+### Текущий Android CI
+- PR head: `71ef3376d4555a4f7e6b65bbbe3b5ecb8a50c705` (ветка `fix/order-submit-diagnostics-2026-11-24`).
+- Runs #552 (push) и #553 (pull_request) для одного head SHA на момент сверки находятся в `in_progress`. Установка зависимостей, Expo prebuild, конфигурация Gradle и создание QA debug signing identity завершились успешно; `assembleRelease` ещё выполняется. Шаги `apksigner verify` и upload artifact ещё не запускались. Поэтому текущего APK для этого head пока нет.
+- Workflow использует временный Android Debug keystore, созданный в CI, и явно маркирует его как QA-only. Постоянный release keystore владельца не подтверждён.
+- app.json: version `6.9.1`, Android versionCode `52`, package `com.ladygo.app`. В манифесте запрошены fine/coarse location, notifications, background location и foreground location service; background location используется для включённой смены водителя и требует отдельного Google Play declaration/review.
+
+### Live dispatch / данные — только read-only проверка
+- В live `public.orders` обнаружено: 1 `accepted`, 7 `cancelled`, 2 `completed`. Существующий `accepted` заказ не изменялся и не использовался для QA.
+- Два профиля водителя имеют одобренные анкеты. У одного нет строки `driver_presence` и GPS; у второго `is_online=false`. На момент SQL-снимка доступных онлайн-водителей нет.
+- `driver_push_tokens` = 0, `user_push_tokens` = 0. Push-доставка на устройствах не проверена и сейчас не может быть подтверждена этим снимком.
+- Каталог подтверждает цепочку триггеров: INSERT `orders` → `ladygo_create_order_offers()`; INSERT `order_offers` → push trigger; UPDATE `order_offers` → dispatch continuation; INSERT/UPDATE `driver_presence` → presence dispatch handler. Это подтверждает наличие wiring в БД, но не успешную отправку оффера реальному водителю.
+- RLS включён на 23 из 23 обычных таблиц схемы `public`. Это не заменяет A↛B тест двумя независимыми подписанными JWT.
+
+### SECURITY DEFINER / Auth
+- Live catalog содержит 36 функций `SECURITY DEFINER`, а не 14. У всех зафиксирован function-level `search_path` (33 с явным путём, 3 с пустым путём); у пустого пути тела используют schema-qualified обращения, что не даёт подменять объекты через пользовательский search_path.
+- 16 функций имеют EXECUTE для `authenticated`, ни одна — для `anon`; `ladygo_dispatch_next_driver(uuid)` доступна только `service_role`. Это каталог/grant audit, не runtime-тест под независимыми JWT.
+- Security Advisor на текущем снимке сообщает 16 предупреждений об authenticated SECURITY DEFINER. Это предупреждение об exposed RPC; каждый RPC всё равно требует проверки авторизации и негативных сценариев.
+- Security Advisor сообщает `Leaked Password Protection Disabled`. Владелец должен включить защиту в Supabase Auth после решения по тарифу/доступности.
+
+### Нерешённые release gates
+- Реальный полный trip E2E не выполнен: нет онлайн-водителя с актуальным GPS, а существующий accepted заказ неприкосновенен.
+- Atomic dual-accept, timeout/redispatch, рост `trip_tracks`, завершение, rating, passenger/driver cancellation и network recovery на новом тестовом заказе не подтверждены.
+- Доставка push не подтверждена; токенов в обеих таблицах нет.
+- Установка APK, вход и основные сценарии на Android-устройстве не проверены.
+- CSV export отсутствует в админском UI; оставить как явно не реализованную функцию до утверждения полей экспорта, модели доступа и privacy review.
+- 15→16 concurrent admin race не запускался; ordinary-admin и cross-account RLS probes на двух реальных JWT не выполнены.
+- Backup artifact/restore drill не подтверждены. Не выполнять новые live DDL-изменения до внешнего backup/restore подтверждения владельцем.
+- Юридический sign-off, privacy policy, перевозочные разрешения/страхование, Google Play Data Safety и release keystore не подтверждены.
+
+**Вердикт этого снимка: НЕ ГОТОВО К РЕЛИЗУ.** Технически можно продолжать QA после появления отдельной тестовой водительской сессии и устройства; не объявлять готовность к закрытому тесту до успешной установки и поездки.
