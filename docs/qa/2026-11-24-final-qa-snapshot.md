@@ -53,3 +53,12 @@ All probes used SET LOCAL ROLE authenticated and simulated request.jwt.claim.sub
 - One existing active order remains untouched. The database currently reports 0 online drivers and no push tokens.
 - PR #11 remains Draft/open. Do not mark ready or merge until current-head CI, device install/login, full real trip, push delivery and legal/privacy sign-off are complete.
 - Production Google Play build requires owner-provided persistent release keystore and passwords stored only in GitHub Actions Secrets.
+
+
+## Дополнение после обращения пассажира — 24.11.2026 07:28 UTC
+- Найден и отменён заказ владельца: `e1a4ebef-cbe7-4ad0-8cda-854e4cca77ae`, маршрут Зеленогорская улица, 28 → Мечеть, Кисловодск, 195 ₽. RPC вернула `status=cancelled`; запись оставлена в истории. Активных заказов по маршруту 0.
+- Исправлен mismatch UI/RPC: приложение вызывало отсутствующую `cancel_my_order`; теперь вызывает `ladygo_cancel_my_order(p_order_id,p_reason)`. RPC ограничивает отмену владельцем его нового неназначенного заказа. Guard разрешает owner cancellation, если роль профиля driver, но заказ был создан как пассажирский и ещё не назначен.
+- Cancellation migrations live: `20261124072817_ladygo_owner_cancel_unassigned_order`, `20261124072830_ladygo_passenger_cancel_order_rpc`.
+- Direct dispatch RPC hardened: migration `20261124073317_ladygo_restrict_direct_dispatch_rpc`; authenticated=false, anon=false, service_role=true; direct authenticated invocation was rejected in a rollback probe.
+- Live recheck: 1 online driver, 1 GPS sample newer than 15m, 0 driver push tokens, 0 passenger push tokens, 0 active orders, 1 super-admin, 0 ordinary admins. This makes an offer test possible only after a passenger session creates a new order; push remains blocked by zero tokens.
+- Current-head Android build after cancellation and dispatch ACL changes is running in GitHub Actions; no claim of a new APK until signature verification and artifact download complete.
