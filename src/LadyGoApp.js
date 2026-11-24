@@ -549,7 +549,7 @@ export default function LadyGoApp() {
           latitude: Number(row.latitude), longitude: Number(row.longitude), heading: row.heading
         });
       }).subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { removeRealtimeChannelSafely(supabase, channel); };
   }, [activeOrder?.driver_id, activeOrder?.status]);
 
   useEffect(() => {
@@ -802,7 +802,7 @@ export default function LadyGoApp() {
         if (isAdmin) loadAdminOrders();
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { removeRealtimeChannelSafely(supabase, channel); };
   }, [session?.user?.id, profile?.role, loadDemoOrders, loadAdminOrders]);
 
   const loadAdminApplications = useCallback(async () => {
@@ -1600,7 +1600,7 @@ export default function LadyGoApp() {
         filter: 'order_id=eq.' + chatOrder.id
       }, () => loadTripMessages())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { removeRealtimeChannelSafely(supabase, channel); };
   }, [chatOrder?.id, session?.user?.id, loadTripMessages]);
 
   const renderTripChat = order => {
