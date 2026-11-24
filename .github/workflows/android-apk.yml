@@ -6,10 +6,12 @@ on:
   pull_request:
     branches:
       - main
+      - tech/stabilize-android-dispatch-2026-11-23
   push:
     branches:
       - main
       - tech/stabilize-android-dispatch-2026-11-23
+      - fix/order-submit-diagnostics-2026-11-24
     paths:
       - '**'
       - '!README.md'
