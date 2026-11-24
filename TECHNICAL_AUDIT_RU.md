@@ -34,7 +34,7 @@ RLS/policy definitions просмотрены SQL. Это не равно runtim
 
 ## Не подтверждено
 
-- Runs #404 и #405 были отменены последующими коммитами; run #417 собирает актуальный commit. APK artifact пока не получен.
+- Runs #404/#405 отменены. Runs #440 и #441 завершились success для commit f57e274c24e96224063d2005948bc2b08336eeaf и artifact получен. APK version 6.9.1 / versionCode 52 (com.ladygo.app), размер 252,968,198 bytes, SHA-256 96040f0e927bda6f582e2b324f441215b0e90650ba692c65798cab3693f0aba6. Однако APK unsigned: APK Signing Block отсутствует, сертификата нет. Он не устанавливаем; исправляется workflow QA debug signing. Production signing key нужен от владельца.
 - APK установка, первый запуск, login и runtime permissions на Android.
 - Реальный passenger order с авторизованной сессией.
 - Online heartbeat с устройства, push token registration и реальная Expo push delivery.
@@ -54,7 +54,7 @@ RLS/policy definitions просмотрены SQL. Это не равно runtim
 
 ## Следующие шаги
 
-1. Дождаться run #417; скачать только artifact актуального head SHA, проверить APK version, size, SHA-256 и build date.
+1. Обновить workflow: подписывать QA APK debug key, проверить apksigner verify; production keystore получить от владельца.
 2. Установить APK и проверить запуск/login на Android; если устройство недоступно — явно оставить это непроверенным.
 3. Получить два отдельных Android устройства/эмулятора и две тестовые сессии.
 4. Проверить push token, online heartbeat, заказ, offer, accept, статусы, GPS, completion, rating и DB state на каждом шаге.
