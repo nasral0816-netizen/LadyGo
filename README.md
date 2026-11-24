@@ -65,3 +65,15 @@ Release APK собирается GitHub Actions workflow .github/workflows/andro
 
 
 Дополнительная защита цены: миграция 20261124190000_ladygo_quote_route_binding добавляет координаты подачи/назначения в price_quotes; Edge Function и DB trigger сверяют их с маршрутом заказа. Старые quote без координат требуют повторного расчёта.
+
+
+## QA-сверка 24.11.2026 — актуальное дополнение
+
+- Android Actions run [#453](https://github.com/nasral0816-netizen/LadyGo/actions/runs/45342314598) собрал APK version 6.9.1 / versionCode 52, package `com.ladygo.app`. Скачанный `app-release.apk`: 252,968,198 bytes; SHA-256 `e6994a3b6a1794491245d558c9bf048d4ec3dd0c9156892492ca45b649cac790`; скачан 2026-11-24 07:02 UTC. CI `apksigner` подтвердил APK Signature v2. Это QA APK с Android Debug certificate, не production Play release. Установка на физическом устройстве/эмуляторе не проверена (adb отсутствует).
+- Клиентский `src/supabase.js` содержит URL проекта и публичный `sb_publishable_` fallback. Пустые GitHub Actions env secrets сами по себе не отключают Supabase client в этой сборке. Публичный publishable key не является service_role; приватные ключи в клиент не добавлять.
+- Live Supabase остаётся ACTIVE_HEALTHY, eu-west-2; pricing-service v7 и send-driver-offer-push v5 активны. Последняя миграция `20261124200000_ladygo_phone_input_validation` применена; исправлена проверка телефонного ввода.
+- Live DB snapshot: 2 approved drivers, 0 online drivers, 1 GPS position fresh within 15 minutes, 0 driver push tokens, 0 passenger push tokens, 1 active order. Активный заказ не использовался и не изменялся. Реальный оффер/поездка/push не подтверждены.
+- SQL role-context probes: пассажиры A и B видели только собственный профиль (1 row) и 0 rows в orders, order_offers, driver_locations, driver_presence, trip_tracks, order_ratings, driver_applications, user_push_tokens, driver_push_tokens, support_tickets. Одобренный водитель видел свой профиль (1), 2 доступных ему заказа и свою заявку (1); другие проверенные таблицы — 0. Это имитация JWT claims через SET LOCAL ROLE, не независимые подписанные мобильные JWT.
+- Дополнительные RPC негативные пробы: passenger не смог cancel foreign order, accept/decline, heartbeat, list/grant admins; не назначенный driver не смог менять trip status или получать passenger contact. Главный администратор не смог снять собственные права. 16-й admin concurrency и ordinary-admin isolation остаются непроверенными.
+- CSV export в `src/LadyGoApp.js` не найден. Backup/restore не проверен: доступный Supabase project metadata не предоставляет состояние backup/PITR. Leaked Password Protection остаётся disabled по Security Advisor; требуется владелец проекта.
+- PR #11 остаётся Draft/open и не переводится в Ready/merge до устройства, двух независимых сессий, реального trip E2E, push delivery и legal sign-off.
