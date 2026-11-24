@@ -31,7 +31,12 @@ Deno.serve(async req=>{
     const validPoint=(p:any)=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude)&&p.latitude>=-90&&p.latitude<=90&&p.longitude>=-180&&p.longitude<=180;
     const {data:profile,error:profileError}=await db.from("profiles").select("role").eq("id",who.user.id).maybeSingle();
     if(profileError)throw profileError;
-    if(profile?.role!=="passenger")return json({error:"Создавать поездки может только аккаунт пассажира."},403);
+    if(profile?.role!=="passenger" && profile?.role!=="driver")return json({error:"Этот аккаунт не может создавать поездки."},403);
+    if(profile?.role==="driver"){
+      const {data:approved,error:approvalError}=await db.from("driver_applications").select("user_id").eq("user_id",who.user.id).eq("status","approved").maybeSingle();
+      if(approvalError)throw approvalError;
+      if(!approved)return json({error:"Аккаунт водителя не прошёл проверку и не может создавать поездки."},403);
+    }
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(quoteId))return json({error:"Некорректная фиксация цены."},400);
     if(!validPoint(pickup)||!validPoint(destination)||pickupAddress.length<2||destinationAddress.length<2)return json({error:"Укажи корректные адреса и точки маршрута."},400);
     const {data:existing,error:existingError}=await userClient.from("orders").select("*").eq("passenger_id",who.user.id).in("status",["new","accepted","arrived","in_progress"]).maybeSingle();
@@ -63,7 +68,9 @@ Deno.serve(async req=>{
       price_quote_id:quote.id,
       status:"new"
     };
-    const {data:order,error:insertError}=await userClient.from("orders").insert(orderPayload).select("*").single();
+    // JWT and quote ownership were verified above. Use the service client for the insert
+    // so a verified driver account can also order as a passenger without weakening table RLS.
+    const {data:order,error:insertError}=await db.from("orders").insert(orderPayload).select("*").single();
     if(insertError){
       if(/orders_one_active_per_passenger|duplicate key|unique constraint/i.test(insertError.message??"")){
         const {data:active,error:activeError}=await userClient.from("orders").select("*").eq("passenger_id",who.user.id).in("status",["new","accepted","arrived","in_progress"]).maybeSingle();
