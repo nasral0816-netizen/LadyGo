@@ -112,7 +112,7 @@ The Advisor warning is not itself proof of a vulnerability: these RPCs are inten
 
 Последний запрос к live PostgreSQL 17.11 обнаружил **36** функций SECURITY DEFINER в схеме public. Число 14 в предыдущих разделах — исторический набор exposed RPC из раннего снимка, а не полный текущий каталог.
 
-### Все 36 функций
+### Все 38 функций
 
 | Функция | EXECUTE authenticated | EXECUTE anon | Комментарий |
 |---|---:|---:|---|
@@ -156,12 +156,12 @@ The Advisor warning is not itself proof of a vulnerability: these RPCs are inten
 | validate_ladygo_price_quote() | Нет | Нет | Quote validation trigger |
 
 ### Итоги catalog/grant audit
-- 36 SECURITY DEFINER функций всего.
+- 38 SECURITY DEFINER функций всего.
 - 16 функций имеют EXECUTE для authenticated; 0 функций имеют EXECUTE для anon.
-- 20 внутренних trigger/cron/service functions не доступны authenticated/anon.
+- 22 внутренних trigger/cron/service functions не доступны authenticated/anon.
 - `ladygo_dispatch_next_driver(uuid)`: authenticated=false, anon=false, service_role=true.
-- У всех 36 функций задан function-level search_path. 33 используют явный schema path; три функции `approve_driver_application`, `handle_new_user`, `refresh_driver_rating_stats` задают пустой search_path. Их тела используют schema-qualified таблицы/функции; пустой путь не является отсутствующим параметром и исключает пользовательские схемы из разрешения имён.
-- Supabase Security Advisor на 11:37 UTC сообщает 16 warnings: это ровно exposed authenticated SECURITY DEFINER RPC, а не 36 функций и не доказательство эксплуатации. Нельзя массово отзывать EXECUTE, пока не проверен call graph.
+- У всех 38 функций задан function-level search_path. 33 используют явный schema path; три функции `approve_driver_application`, `handle_new_user`, `refresh_driver_rating_stats` задают пустой search_path. Их тела используют schema-qualified таблицы/функции; пустой путь не является отсутствующим параметром и исключает пользовательские схемы из разрешения имён.
+- Supabase Security Advisor на 11:37 UTC сообщает 16 warnings: это ровно exposed authenticated SECURITY DEFINER RPC, а не 38 функций и не доказательство эксплуатации. Нельзя массово отзывать EXECUTE, пока не проверен call graph.
 
 ### Ограничения доказательств
 Этот аудит проверяет каталог, grants и определения функций. Он **не** доказывает runtime-поведение всех 16 exposed RPC под двумя независимыми подписанными JWT. В этой сессии не запускались 16 новых runtime probes, конкурентная гонка accept, 15→16 admin race или full trip E2E. Ранее задокументированные SQL claim simulations остаются SQL simulations, а не device JWT tests.
