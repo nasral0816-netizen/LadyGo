@@ -102,3 +102,18 @@ Release APK собирается GitHub Actions workflow .github/workflows/andro
 - Прямой EXECUTE для `ladygo_dispatch_next_driver` отозван у authenticated/anon; service_role доступ сохранён. Проверено ACL-запросом.
 - Live snapshot после отмены: 1 online driver, 1 свежая GPS-точка, 0 push-токенов водителя/пассажира, 0 активных заказов. Push delivery и реальный trip E2E остаются непроверенными.
 - Сборка с этими изменениями выполняется; предыдущий APK #453 не содержит последнюю правку отмены и не является актуальной сборкой для проверки кнопки.
+
+
+## Повторная проверка release gates (24.11.2026, 11:35 UTC)
+
+Актуальный статус подтверждается также в `docs/qa/2026-11-24-final-qa-snapshot.md` и `docs/requirements-registry-ru.md`.
+
+- Live Supabase: `ACTIVE_HEALTHY`, PostgreSQL 17.11, регион `eu-west-2`. Edge Function `pricing-service` — v9, JWT verification включён; `send-driver-offer-push` — v5, секрет webhook проверяется сервером через Vault.
+- Live dispatch triggers присутствуют; оба cron задания `ladygo-expire-stale-offers` и `ladygo-dispatch-scheduled-orders` завершили последние запуски со статусом `succeeded` в 11:34 UTC.
+- Read-only DB snapshot: 2 одобренных driver profiles, 0 online; 1 существующий accepted order, который не изменяется и не используется для теста; 0 driver push tokens и 0 user push tokens. Реальная поездка и push delivery не подтверждены.
+- RLS включён на 23/23 обычных таблиц `public`. Live catalog содержит 36 `SECURITY DEFINER` функций; 16 имеют EXECUTE для authenticated, 0 для anon. Это не отменяет необходимости JWT runtime tests.
+- Android: app version 6.9.1, versionCode 52, package `com.ladygo.app`. Build runs #552/#553 и #554–#558 были отменены при конкурирующих push/PR событиях. Workflow исправлен: один push build на ветку, документационные изменения не запускают APK build, добавлен `npx expo-doctor`. Run #559 запущен/ожидает выполнения на commit `f6aaececd7129d15ce1d7c96c2cd99662d1e7ad0`; пока нет подтверждённого artifact для этого head.
+- CI signing — временный Android Debug certificate для QA. Google Play release keystore владельца отсутствует/не подтверждён.
+- CSV export отсутствует; Leaked Password Protection отключён; backup/restore drill не подтверждён; legal/privacy sign-off отсутствует.
+
+**Релизный статус: НЕ ГОТОВО К РЕЛИЗУ.** Не публиковать текущую сборку в Google Play. Нужны полный trip E2E на отдельном тестовом заказе, push/device QA, APK artifact с проверенным сертификатом, release keystore и юридическая приёмка.
