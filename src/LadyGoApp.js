@@ -152,6 +152,9 @@ function removeRealtimeChannelSafely(client, channel) {
       console.warn('LadyGo realtime cleanup failed:', error?.message)
     );
   } else {
+    removeSubscriptionSafely(channel);
+  }
+}
 
 async function extractBackendError(error) {
   // Supabase FunctionsHttpError stores the actual HTTP Response in context.
