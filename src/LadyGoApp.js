@@ -138,6 +138,27 @@ const TARIFFS = [
 const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Ищем водителя', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
 
+// Native event subscriptions differ slightly across React Native / Expo versions.
+// A guarded cleanup prevents an absent remove/unsubscribe method from crashing
+// React while it is unmounting a screen.
+function removeSubscriptionSafely(subscription) {
+  if (typeof subscription?.remove === 'function') {
+    subscription.remove();
+  } else if (typeof subscription?.unsubscribe === 'function') {
+    subscription.unsubscribe();
+  }
+}
+
+function removeRealtimeChannelSafely(client, channel) {
+  if (typeof client?.removeChannel === 'function') {
+    Promise.resolve(client.removeChannel(channel)).catch(error =>
+      console.warn('LadyGo realtime cleanup failed:', error?.message)
+    );
+  } else {
+    removeSubscriptionSafely(channel);
+  }
+}
+
 async function extractBackendError(error) {
   // Supabase FunctionsHttpError stores the actual HTTP Response in context.
   // Read a clone so the SDK response remains untouched.
@@ -476,7 +497,7 @@ export default function LadyGoApp() {
       setSession(next);
       if (next?.user) await loadProfile(next.user); else { setProfile(null); setOrders([]); setActiveOrder(null); }
     }) || { data: { subscription: null } };
-    return () => { alive = false; listener?.subscription?.unsubscribe(); };
+    return () => { alive = false; removeSubscriptionSafely(listener?.subscription); };
   }, [loadProfile]);
 
   useEffect(() => {
@@ -503,7 +524,7 @@ export default function LadyGoApp() {
       ]);
       return true;
     });
-    return () => subscription.remove();
+    return () => removeSubscriptionSafely(subscription);
   }, [searchField, tab]);
 
   useEffect(() => {
@@ -512,7 +533,7 @@ export default function LadyGoApp() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders',
         filter: 'passenger_id=eq.' + session.user.id }, () => loadOrders())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { removeRealtimeChannelSafely(supabase, channel); };
   }, [session?.user?.id, profile?.role, loadOrders]);
 
   // Matching is server-side (orders INSERT trigger + offer-expiry cron).
@@ -603,14 +624,17 @@ export default function LadyGoApp() {
     return () => {
       alive = false;
       if (heartbeatTimer) clearInterval(heartbeatTimer);
-      watch?.remove?.();
+      removeSubscriptionSafely(watch);
       // Stopping/restarting the GPS watcher (navigation, React remount, permission
       // refresh) must NOT silently take the driver offline. Only the explicit
       // "Завершить смену" action writes is_online=false. Presence expires server-side
       // when heartbeats stop, so a closed app cannot remain dispatchable indefinitely.
-      Location.hasStartedLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK)
-        .then(started => started ? Location.stopLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK) : null)
-        .catch(() => {});
+      if (typeof Location.hasStartedLocationUpdatesAsync === 'function' &&
+          typeof Location.stopLocationUpdatesAsync === 'function') {
+        Location.hasStartedLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK)
+          .then(started => started ? Location.stopLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK) : null)
+          .catch(() => {});
+      }
     };
   }, [profile?.role, session?.user?.id, driverOnline]);
 
@@ -624,7 +648,7 @@ export default function LadyGoApp() {
         filter: 'driver_id=eq.' + session.user.id }, () => loadDriverOrders())
       .subscribe();
     const refresh = setInterval(loadDriverOrders, 15000);
-    return () => { clearInterval(refresh); supabase.removeChannel(channel); };
+    return () => { clearInterval(refresh); removeRealtimeChannelSafely(supabase, channel); };
   }, [profile?.role, session?.user?.id, loadDriverOrders]);
 
   useEffect(() => {
@@ -676,7 +700,7 @@ export default function LadyGoApp() {
     });
     return () => {
       alive = false;
-      responseSubscription.remove();
+      removeSubscriptionSafely(responseSubscription);
     };
   }, [profile?.role, session?.user?.id, loadDriverOrders, loadOrders]);
 
