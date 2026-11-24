@@ -535,6 +535,7 @@ export default function LadyGoApp() {
     if (profile?.role !== 'driver' || !session?.user?.id || !driverOnline || !supabase) return;
     let alive = true;
     let watch = null;
+    let heartbeatTimer = null;
     (async () => {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (permission.status !== 'granted') {
@@ -580,9 +581,28 @@ export default function LadyGoApp() {
           if (error) console.warn('LadyGo GPS heartbeat failed:', error.message);
         });
       }
+      // Location callbacks can be sparse while the car is stationary. Keep the
+      // 90-second server presence lease alive while the foreground app is open.
+      heartbeatTimer = setInterval(async () => {
+        if (!alive) return;
+        try {
+          const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          if (!alive) return;
+          const { error } = await supabase.rpc('ladygo_driver_heartbeat', {
+            p_is_online: true,
+            p_latitude: current.coords.latitude,
+            p_longitude: current.coords.longitude,
+            p_heading: current.coords.heading
+          });
+          if (error) console.warn('LadyGo periodic heartbeat failed:', error.message);
+        } catch (heartbeatError) {
+          console.warn('LadyGo periodic GPS heartbeat failed:', heartbeatError?.message);
+        }
+      }, 30000);
     })().catch(error => console.warn('LadyGo GPS watcher failed:', error?.message));
     return () => {
       alive = false;
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
       watch?.remove?.();
       // Stopping/restarting the GPS watcher (navigation, React remount, permission
       // refresh) must NOT silently take the driver offline. Only the explicit
