@@ -1,55 +1,124 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS"};
-const reply=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,"Content-Type":"application/json"}});
-const enc=new TextEncoder();
-const b64=(bytes:Uint8Array)=>btoa(String.fromCharCode(...bytes)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
-const unb64=(s:string)=>{const n=s.replace(/-/g,"+").replace(/_/g,"/");const v=atob(n+"=".repeat((4-n.length%4)%4));return Uint8Array.from(v,c=>c.charCodeAt(0));};
-const toHex=(b:Uint8Array)=>Array.from(b).map(v=>v.toString(16).padStart(2,"0")).join("");
-const distanceKm=(a:any,b:any)=>{const r=(v:number)=>v*Math.PI/180;const dl=r(b.latitude-a.latitude),dn=r(b.longitude-a.longitude);const h=Math.sin(dl/2)**2+Math.cos(r(a.latitude))*Math.cos(r(b.latitude))*Math.sin(dn/2)**2;return 6371.0088*2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));};
-const validPoint=(p:any)=>p&&Number.isFinite(Number(p.latitude))&&Number.isFinite(Number(p.longitude))&&Number(p.latitude)>=-90&&Number(p.latitude)<=90&&Number(p.longitude)>=-180&&Number(p.longitude)<=180;
-const sign=async(payload:Record<string,unknown>,secret:string)=>{const key=await crypto.subtle.importKey("raw",enc.encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);const body=b64(enc.encode(JSON.stringify(payload)));const sig=new Uint8Array(await crypto.subtle.sign("HMAC",key,enc.encode(body)));return body+"."+b64(sig);};
-const verify=async(token:string,secret:string)=>{const parts=token.split(".");if(parts.length!==2)throw new Error("Bad token");const key=await crypto.subtle.importKey("raw",enc.encode(secret),{name:"HMAC",hash:"SHA-256"},false,["verify"]);if(!await crypto.subtle.verify("HMAC",key,unb64(parts[1]),enc.encode(parts[0])))throw new Error("Bad signature");const claims=JSON.parse(new TextDecoder().decode(unb64(parts[0])));if(!claims.exp||claims.exp<=Math.floor(Date.now()/1000))throw new Error("Expired");return claims;};
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { latLngToCell } from "npm:h3-js@4.1.0";
+const cors = { "Access-Control-Allow-Origin":"*", "Access-Control-Allow-Headers":"authorization, apikey, content-type, x-client-info", "Access-Control-Allow-Methods":"POST, OPTIONS" };
+const json = (body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,"Content-Type":"application/json"}});
+const FREE = ["luggage_help","text_only","quiet_ride","wheelchair"];
+const PAID:Record<string,number>={child_seat:45,pet:35,bulky_luggage:35};
+const n=(v:unknown)=>Number.isFinite(Number(v))?Number(v):0;
+const inside=(p:any)=>n(p?.latitude)>=43.88&&n(p?.latitude)<=44.10&&n(p?.longitude)>=42.60&&n(p?.longitude)<=42.82;
+const kmBetween=(a:any,b:any)=>{const rad=(x:number)=>x*Math.PI/180;const dLat=rad(n(b.latitude)-n(a.latitude)),dLon=rad(n(b.longitude)-n(a.longitude));const h=Math.sin(dLat/2)**2+Math.cos(rad(n(a.latitude)))*Math.cos(rad(n(b.latitude)))*Math.sin(dLon/2)**2;return 6371*2*Math.asin(Math.sqrt(h));};
+async function road(a:any,b:any){const url=`https://router.project-osrm.org/route/v1/driving/${n(a.longitude)},${n(a.latitude)};${n(b.longitude)},${n(b.latitude)}?overview=false`;const r=await fetch(url);if(!r.ok)return null;const x=(await r.json()).routes?.[0];return x?{km:x.distance/1000,min:x.duration/60}:null;}
+Deno.serve(async req=>{
+ if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
+ if(req.method!=="POST")return json({error:"POST required"},405);
+ const url=Deno.env.get("SUPABASE_URL")!,anon=Deno.env.get("SUPABASE_ANON_KEY")!,service=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+ const auth=req.headers.get("Authorization")||"";
+ if(!auth.startsWith("Bearer "))return json({error:"Требуется авторизация."},401);
+ const userClient=createClient(url,anon,{global:{headers:{Authorization:auth}}});
+ const {data:who,error:authErr}=await userClient.auth.getUser();
+ if(authErr||!who.user)return json({error:"Сессия недействительна."},401);
+ const db=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
+ try{
+  const body=await req.json(),city=String(body.city_id||"kislovodsk"),tariffId=String(body.tariff_id||"economy"),action=String(body.action||"quote");
+  if(action==="create_order"){
+    const quoteId=String(body.price_token??"");
+    const pickup={latitude:Number(body.pickup_lat),longitude:Number(body.pickup_lng)};
+    const destination={latitude:Number(body.destination_lat),longitude:Number(body.destination_lng)};
+    const pickupAddress=String(body.pickup_address??"").trim();
+    const destinationAddress=String(body.destination_address??"").trim();
+    const paymentMethod=body.payment_method==="transfer_to_driver"?"transfer_to_driver":"cash";
+    const validPoint=(p:any)=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude)&&p.latitude>=-90&&p.latitude<=90&&p.longitude>=-180&&p.longitude<=180;
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(quoteId))return json({error:"Некорректная фиксация цены."},400);
+    if(!validPoint(pickup)||!validPoint(destination)||pickupAddress.length<2||destinationAddress.length<2)return json({error:"Укажи корректные адреса и точки маршрута."},400);
+    const {data:existing,error:existingError}=await userClient.from("orders").select("*").eq("passenger_id",who.user.id).in("status",["new","accepted","arrived","in_progress"]).maybeSingle();
+    if(existingError)throw existingError;
+    if(existing)return json({order:existing});
+    const {data:quote,error:quoteError}=await userClient.from("price_quotes").select("id,tariff_id,amount_rub,expires_at,consumed_at").eq("id",quoteId).eq("passenger_id",who.user.id).maybeSingle();
+    if(quoteError)throw quoteError;
+    if(!quote||quote.consumed_at||new Date(quote.expires_at).getTime()<=Date.now())return json({error:"Расчёт цены истёк. Построй маршрут заново."},409);
+    const orderPayload={
+      passenger_id:who.user.id,
+      driver_id:null,
+      pickup_address:pickupAddress,
+      destination_address:destinationAddress,
+      pickup_lat:pickup.latitude,
+      pickup_lng:pickup.longitude,
+      destination_lat:destination.latitude,
+      destination_lng:destination.longitude,
+      tariff_id:quote.tariff_id,
+      estimated_price_rub:Number(quote.amount_rub),
+      payment_method:paymentMethod,
+      service_type:quote.tariff_id==="comfort_plus"?"courier":"ride",
+      price_quote_id:quote.id,
+      status:"new"
+    };
+    const {data:order,error:insertError}=await userClient.from("orders").insert(orderPayload).select("*").single();
+    if(insertError){
+      if(/orders_one_active_per_passenger|duplicate key|unique constraint/i.test(insertError.message??"")){
+        const {data:active,error:activeError}=await userClient.from("orders").select("*").eq("passenger_id",who.user.id).in("status",["new","accepted","arrived","in_progress"]).maybeSingle();
+        if(activeError)throw activeError;
+        if(active)return json({order:active});
+      }
+      throw insertError;
+    }
+    return json({order});
+  }
+  if(!["economy","comfort","comfort_plus"].includes(tariffId))return json({error:"Неизвестный тариф."},400);
+  const {data:t,error:te}=await db.from("city_tariff_configs").select("*").eq("city_id",city).eq("tariff_id",tariffId).eq("active",true).single();
+  if(te||!t)return json({error:"Тариф недоступен в этом городе."},404);
+  const points=Array.isArray(body.points)?body.points:[];
+  if(points.length<2||!points.every((p:any)=>Number.isFinite(Number(p.latitude))&&Number.isFinite(Number(p.longitude))))return json({error:"Сначала построй маршрут на карте."},400);
+  const routeCoords=points.map((p:any)=>`${n(p.longitude)},${n(p.latitude)}`).join(";");
+  const routeResponse=await fetch(`https://router.project-osrm.org/route/v1/driving/${routeCoords}?overview=false&steps=false`);
+  if(!routeResponse.ok)throw new Error("Не удалось проверить дорожный маршрут.");
+  const route=(await routeResponse.json()).routes?.[0];
+  if(!route||route.distance<=0||route.distance>1000000||route.duration>86400)throw new Error("Маршрут не найден.");
+  const routeKm=route.distance/1000,routeMin=route.duration/60,start=points[0],end=points[points.length-1];
+  const outside=!(inside(start)&&inside(end));
+  const perKm=outside?n(t.out_per_km_rub):n(t.city_per_km_rub),perMin=outside?n(t.out_per_min_rub):n(t.city_per_min_rub);
+  const billableKm=Math.max(0,routeKm-n(t.included_km)),billableMin=Math.max(0,routeMin-n(t.included_min));
+  const routeCost=n(t.min_price_rub)+billableKm*perKm+billableMin*perMin;
 
-Deno.serve(async(req:Request)=>{
-  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
-  if(req.method!=="POST")return reply({error:"Method not allowed"},405);
-  const url=Deno.env.get("SUPABASE_URL")??"",anon=Deno.env.get("SUPABASE_ANON_KEY")??"",service=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")??"",secret=Deno.env.get("LADYGO_PRICING_SECRET")??"";
-  if(!url||!anon||!service||secret.length<32)return reply({error:"Pricing service is not configured"},503);
-  const jwt=(req.headers.get("Authorization")??"").replace(/^Bearer\s+/i,"");if(!jwt)return reply({error:"Authentication required"},401);
-  const auth=createClient(url,anon,{auth:{persistSession:false,autoRefreshToken:false},global:{headers:{Authorization:"Bearer "+jwt}}});
-  const {data:userData,error:userError}=await auth.auth.getUser(jwt);if(userError||!userData.user)return reply({error:"Invalid session"},401);
-  const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
-  try{
-    const body=await req.json();if(JSON.stringify(body).length>16000)return reply({error:"Request too large"},413);
-    const {data:profile,error:profileError}=await admin.from("profiles").select("role").eq("id",userData.user.id).maybeSingle();
-    if(profileError)throw profileError;if(!profile||profile.role!=="passenger")return reply({error:"Passenger account required"},403);
-    if(body.action==="quote"){
-      const points=body.points;if(!Array.isArray(points)||points.length!==2||!validPoint(points[0])||!validPoint(points[1]))return reply({error:"Two valid route coordinates are required"},400);
-      const tariff=String(body.tariff_id??"");
-      const {data:rate,error:rateError}=await admin.from("tariff_rates").select("tariff_id,base_fare_rub,per_km_rub,per_minute_rub,minimum_fare_rub,is_active").eq("tariff_id",tariff).maybeSingle();
-      if(rateError)throw rateError;if(!rate||!rate.is_active||Number(rate.per_km_rub)<=0)return reply({error:"Тариф пока не настроен администратором"},409);
-      // Preliminary geodesic estimate only; not represented as a road-route distance.
-      const km=Math.max(.1,Math.round(distanceKm(points[0],points[1])*1.3*1000)/1000);
-      const minutes=Math.max(1,Math.ceil(km/30*60+5));
-      const base=Number(rate.base_fare_rub),perKm=Number(rate.per_km_rub),perMinute=Number(rate.per_minute_rub),minimum=Number(rate.minimum_fare_rub);
-      const amount=Math.round(Math.max(minimum,base+km*perKm+minutes*perMinute)*100)/100;
-      if(![base,perKm,perMinute,minimum,amount].every(Number.isFinite)||amount<=0)return reply({error:"Некорректные тарифные параметры"},409);
-      const id=crypto.randomUUID(),exp=Math.floor(Date.now()/1000)+90;
-      const token=await sign({quote_id:id,sub:userData.user.id,tariff_id:tariff,pickup:points[0],destination:points[1],amount,distance_km:km,duration_min:minutes,exp},secret);
-      const hash=toHex(new Uint8Array(await crypto.subtle.digest("SHA-256",enc.encode(token))));
-      const {error:insertError}=await admin.from("ladygo_price_quotes").insert({id,passenger_id:userData.user.id,token_hash:hash,tariff_id:tariff,pickup_lat:Number(points[0].latitude),pickup_lng:Number(points[0].longitude),destination_lat:Number(points[1].latitude),destination_lng:Number(points[1].longitude),estimated_distance_km:km,estimated_duration_min:minutes,estimated_price_rub:amount,base_fare_rub:base,per_km_rub:perKm,per_minute_rub:perMinute,minimum_fare_rub:minimum,expires_at:new Date(exp*1000).toISOString()});
-      if(insertError)throw insertError;
-      return reply({price_token:token,amount_rub:amount,price_rub:amount,distance_km:km,duration_min:minutes,expires_at:new Date(exp*1000).toISOString(),pricing_method:"server_geodesic_estimate"});
-    }
-    if(body.action==="create_order"){
-      const token=String(body.price_token??""),claims=await verify(token,secret);
-      if(claims.sub!==userData.user.id||!claims.quote_id)return reply({error:"Price quote does not belong to this passenger"},403);
-      const idem=String(body.idempotency_key??"");if(idem.length<12||idem.length>128)return reply({error:"Invalid idempotency key"},400);
-      const hash=toHex(new Uint8Array(await crypto.subtle.digest("SHA-256",enc.encode(token))));
-      const {data:order,error:orderError}=await admin.rpc("ladygo_create_order_from_quote",{p_passenger_id:userData.user.id,p_quote_id:claims.quote_id,p_token_hash:hash,p_idempotency_key:idem,p_pickup_address:String(body.pickup_address??""),p_destination_address:String(body.destination_address??""),p_payment_method:body.payment_method==="transfer_to_driver"?"transfer_to_driver":"cash"});
-      if(orderError){if(/quote|expired|already used/i.test(orderError.message??""))return reply({error:"Price quote expired. Request a new quote."},409);if(/active order|duplicate|unique/i.test(orderError.message??""))return reply({error:"An active order already exists"},409);throw orderError;}
-      return reply({order});
-    }
-    return reply({error:"Unsupported pricing action"},400);
-  }catch(error){console.error("LadyGo pricing service error",error);return reply({error:"Unable to process pricing request"},500);}
+  // Real-time H3 cell demand is calculated from currently online drivers and new orders.
+  const cell=latLngToCell(n(start.latitude),n(start.longitude),8);
+  const {data:presence}=await db.from("driver_presence").select("driver_id").eq("is_online",true);
+  const driverIds=(presence||[]).map((x:any)=>x.driver_id);
+  const {data:locations}=driverIds.length?await db.from("driver_locations").select("driver_id,latitude,longitude,updated_at").in("driver_id",driverIds).gte("updated_at",new Date(Date.now()-120000).toISOString()):{data:[]};
+  const drivers=(locations||[]).filter((p:any)=>latLngToCell(n(p.latitude),n(p.longitude),8)===cell);
+  const {data:orders}=await db.from("orders").select("pickup_lat,pickup_lng").eq("status","new").gte("created_at",new Date(Date.now()-20*60000).toISOString());
+  const requests=(orders||[]).filter((p:any)=>p.pickup_lat!=null&&p.pickup_lng!=null&&latLngToCell(n(p.pickup_lat),n(p.pickup_lng),8)===cell);
+  const available=drivers.length,active=requests.length;
+  const raw=available===0&&active>0?2.5:active>available?1+(active-available)/Math.max(1,available)*0.25:1;
+  const surge=Math.min(2.5,Math.max(1,Math.round(raw*10)/10));
+  const surgeReason=surge>1?"Повышенный спрос: рядом мало свободных машин":"Обычный спрос: машин достаточно";
+
+  // Nearest currently online driver contributes pickup cost only beyond both free thresholds.
+  let pickupKm=0,pickupMin=0,pickupCost=0;
+  const nearest=(locations||[]).filter((p:any)=>n(p.latitude)!==0&&n(p.longitude)!==0).sort((a:any,b:any)=>kmBetween(a,start)-kmBetween(b,start))[0];
+  if(nearest){const pickup=await road(nearest,start);if(pickup){pickupKm=pickup.km;pickupMin=pickup.min;if(pickupKm>n(t.pickup_free_km)||pickupMin>n(t.pickup_free_min))pickupCost=Math.max(0,pickupKm-n(t.pickup_free_km))*perKm+Math.max(0,pickupMin-n(t.pickup_free_min))*perMin;}}
+  const opts=Array.isArray(body.options)?body.options.filter((x:string)=>FREE.includes(x)||Object.hasOwn(PAID,x)):[];
+  const optionsCost=opts.reduce((sum:number,x:string)=>sum+(PAID[x]||0),0);
+  let waitMinutes=0;
+  let waitOrder:any=null;
+  if(action==="recalculate_wait"){
+    const {data:order,error:orderError}=await db.from("orders").select("*").eq("id",String(body.order_id||"")).maybeSingle();
+    if(orderError||!order||order.driver_id!==who.user.id||order.status!=="arrived"||!order.arrived_at) return json({error:"Пересчёт ожидания доступен назначенному водителю после прибытия."},403);
+    waitOrder=order;
+    waitMinutes=Math.max(0,(Date.now()-new Date(order.arrived_at).getTime())/60000);
+  }
+  const waitCost=Math.max(0,waitMinutes-n(t.free_wait_min))*n(t.wait_per_min_rub);
+  const tolls=0,discount=0;
+  const total=Math.round(Math.max(n(t.min_price_rub)*0.7,(routeCost+pickupCost)*surge+optionsCost+tolls+waitCost-discount));
+  const breakdown={tariff:t.name,city_id:city,route_km:+routeKm.toFixed(2),route_min:Math.round(routeMin),included_km:n(t.included_km),included_min:n(t.included_min),billable_km:+billableKm.toFixed(2),billable_min:+billableMin.toFixed(2),min_price:n(t.min_price_rub),route_cost:+routeCost.toFixed(2),pickup_km:+pickupKm.toFixed(2),pickup_min:Math.round(pickupMin),pickup_cost:+pickupCost.toFixed(2),surge_multiplier:surge,surge_reason:surgeReason,h3_cell:cell,available_drivers:available,active_requests:active,options:opts,options_cost:optionsCost,tolls,discount,free_wait_min:n(t.free_wait_min),wait_minutes:waitMinutes,wait_cost:waitCost,total,currency:"RUB"};
+  const {data:q,error:qe}=await db.from("price_quotes").insert({passenger_id:waitOrder?.passenger_id||who.user.id,city_id:city,tariff_id:tariffId,route_km:routeKm,route_min:routeMin,amount_rub:total,breakdown,expires_at:new Date(Date.now()+240000).toISOString()}).select("id,amount_rub,expires_at,breakdown").single();
+  if(qe)throw qe;
+  if(waitOrder){
+    const {error:updateError}=await db.from("orders").update({price_rub:total,estimated_price_rub:total,price_quote_id:q.id,pricing_breakdown:breakdown}).eq("id",waitOrder.id).eq("driver_id",who.user.id);
+    if(updateError)throw updateError;
+    const {error:consumeError}=await db.from("price_quotes").update({consumed_at:new Date().toISOString()}).eq("id",q.id);
+    if(consumeError)throw consumeError;
+  }
+  return json({price_token:q.id,amount_rub:q.amount_rub,expires_at:q.expires_at,breakdown});
+ }catch(e){console.error("pricing-service",e);return json({error:e instanceof Error?e.message:"Ошибка расчёта цены."},400);}
 });
