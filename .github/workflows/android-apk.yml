@@ -86,7 +86,7 @@ jobs:
               repo_start = kotlin.find("repositories {", start)
               if start >= 0 and repo_start >= 0 and "maven-central.storage-download.googleapis.com" not in kotlin:
                   insert_at = repo_start + len("repositories {")
-                  kotlin = kotlin[:insert_at] + '\\n        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }' + kotlin[insert_at:]
+                  kotlin = kotlin[:insert_at] + '\n        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }' + kotlin[insert_at:]
                   included.write_text(kotlin)
                   print("Configured mirror for React Native included build")
           print("Configured plugin repositories")
