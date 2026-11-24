@@ -82,7 +82,7 @@ All probes used SET LOCAL ROLE authenticated and simulated request.jwt.claim.sub
 - RLS включён на 23 из 23 обычных таблиц схемы `public`. Это не заменяет A↛B тест двумя независимыми подписанными JWT.
 
 ### SECURITY DEFINER / Auth
-- Live catalog содержит 36 функций `SECURITY DEFINER`, а не 14. У всех зафиксирован function-level `search_path` (33 с явным путём, 3 с пустым путём); у пустого пути тела используют schema-qualified обращения, что не даёт подменять объекты через пользовательский search_path.
+- Live catalog содержит 38 функций `SECURITY DEFINER`, а не 14. У всех зафиксирован function-level `search_path` (33 с явным путём, 3 с пустым путём); у пустого пути тела используют schema-qualified обращения, что не даёт подменять объекты через пользовательский search_path.
 - 16 функций имеют EXECUTE для `authenticated`, ни одна — для `anon`; `ladygo_dispatch_next_driver(uuid)` доступна только `service_role`. Это каталог/grant audit, не runtime-тест под независимыми JWT.
 - Security Advisor на текущем снимке сообщает 16 предупреждений об authenticated SECURITY DEFINER. Это предупреждение об exposed RPC; каждый RPC всё равно требует проверки авторизации и негативных сценариев.
 - Security Advisor сообщает `Leaked Password Protection Disabled`. Владелец должен включить защиту в Supabase Auth после решения по тарифу/доступности.
