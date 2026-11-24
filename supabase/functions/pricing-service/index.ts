@@ -45,17 +45,21 @@ async function getDrivingRoute(routeCoords:string) {
   // Offline-friendly fallback: estimate road distance from the straight-line
   // distance. This is explicitly marked as approximate in the returned quote.
   const coordinates = routeCoords.split(";").map((pair) => pair.split(",").map(Number));
-  const first = coordinates[0], last = coordinates[coordinates.length - 1];
-  if (!first || !last || first.length !== 2 || last.length !== 2
-    || ![...first, ...last].every(Number.isFinite)) {
+  if (coordinates.length < 2 || coordinates.some((point) =>
+    point.length !== 2 || !point.every(Number.isFinite)
+    || Math.abs(point[1]) > 90 || Math.abs(point[0]) > 180)) {
     throw new Error("Не удалось определить координаты маршрута.");
   }
   const toRad = (value: number) => value * Math.PI / 180;
-  const [lon1, lat1] = first, [lon2, lat2] = last;
-  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
-  const h = Math.sin(dLat / 2) ** 2
-    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  const straightKm = 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  // Sum every leg so intermediate stops are not lost in fallback mode.
+  const straightKm = coordinates.slice(1).reduce((sum, point, index) => {
+    const previous = coordinates[index];
+    const dLat = toRad(point[1] - previous[1]);
+    const dLon = toRad(point[0] - previous[0]);
+    const h = Math.sin(dLat / 2) ** 2
+      + Math.cos(toRad(previous[1])) * Math.cos(toRad(point[1])) * Math.sin(dLon / 2) ** 2;
+    return sum + 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  }, 0);
   if (!Number.isFinite(straightKm) || straightKm <= 0 || straightKm > 500) {
     throw new Error("Не удалось оценить расстояние маршрута.");
   }
