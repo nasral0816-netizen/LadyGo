@@ -485,14 +485,48 @@ export default function LadyGoApp() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!supabase) { setBoot(false); return; }
-      const { data } = await supabase.auth.getSession();
-      if (alive && data.session) { setSession(data.session); await loadProfile(data.session.user); }
-      if (alive) setBoot(false);
+      try {
+        if (!supabase) return;
+        // Startup must not depend indefinitely on a reachable backend.
+        // A cached session is restored locally; profile refresh happens in the background.
+        const sessionResult = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise(resolve => setTimeout(() => resolve({ data: { session: null }, error: new Error('Session restore timed out') }), 5000))
+        ]);
+        if (!alive) return;
+        const restoredSession = sessionResult?.data?.session || null;
+        if (restoredSession) {
+          setSession(restoredSession);
+          setProfile({
+            id: restoredSession.user.id,
+            email: restoredSession.user.email,
+            role: 'passenger'
+          });
+          loadProfile(restoredSession.user).catch(error =>
+            console.warn('LadyGo profile restore failed:', error?.message)
+          );
+        }
+        if (sessionResult?.error) {
+          console.warn('LadyGo session restore warning:', sessionResult.error.message);
+        }
+      } catch (error) {
+        console.warn('LadyGo startup restore failed:', error?.message);
+      } finally {
+        if (alive) setBoot(false);
+      }
     })();
     const { data: listener } = supabase?.auth.onAuthStateChange(async (_event, next) => {
       setSession(next);
-      if (next?.user) await loadProfile(next.user); else { setProfile(null); setOrders([]); setActiveOrder(null); }
+      if (next?.user) {
+        setProfile({ id: next.user.id, email: next.user.email, role: 'passenger' });
+        loadProfile(next.user).catch(error =>
+          console.warn('LadyGo profile refresh failed:', error?.message)
+        );
+      } else {
+        setProfile(null);
+        setOrders([]);
+        setActiveOrder(null);
+      }
     }) || { data: { subscription: null } };
     return () => { alive = false; removeSubscriptionSafely(listener?.subscription); };
   }, [loadProfile]);
