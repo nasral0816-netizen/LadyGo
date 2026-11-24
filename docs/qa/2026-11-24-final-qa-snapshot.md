@@ -98,3 +98,11 @@ All probes used SET LOCAL ROLE authenticated and simulated request.jwt.claim.sub
 - Юридический sign-off, privacy policy, перевозочные разрешения/страхование, Google Play Data Safety и release keystore не подтверждены.
 
 **Вердикт этого снимка: НЕ ГОТОВО К РЕЛИЗУ.** Технически можно продолжать QA после появления отдельной тестовой водительской сессии и устройства; не объявлять готовность к закрытому тесту до успешной установки и поездки.
+
+
+## Storage policy review — 24.11.2026 11:42 UTC
+
+- Bucket `ladygo-driver-media` is private (`public=false`), file limit 5 MiB, MIME allowlist JPEG/PNG/WebP. Four objects exist; filenames/content were not read.
+- Storage policy catalog shows a second, legacy permissive SELECT policy `ladygo driver media read own or active passenger` that allows an assigned passenger to read any object under the driver's folder. A narrower policy `ladygo driver media read owner admin assigned passenger` also exists and restricts assigned-passenger reads to the exact `avatar_url` / `vehicle_photo_url` paths during an active trip.
+- Because permissive RLS policies combine with OR, the broader legacy policy weakens the narrower rule. A review migration was committed: `20261124114000_ladygo_remove_broad_driver_media_select_policy.sql`.
+- Migration is **not applied to live Supabase** because a current backup/restore artifact is not confirmed. Keep existing production policy until owner confirms backup and review the migration before applying.
