@@ -68,9 +68,18 @@ Deno.serve(async req=>{
       price_quote_id:quote.id,
       status:"new"
     };
-    // JWT and quote ownership were verified above. Use the service client for the insert
-    // so a verified driver account can also order as a passenger without weakening table RLS.
-    const {data:order,error:insertError}=await db.from("orders").insert(orderPayload).select("*").single();
+    // Keep auth.uid() available to the quote-validation trigger. The SECURITY DEFINER
+    // RPC performs strict ownership/role/route checks and inserts atomically without broadening RLS.
+    const {data:order,error:insertError}=await userClient.rpc("ladygo_create_order_from_quote",{
+      p_pickup_address:pickupAddress,
+      p_destination_address:destinationAddress,
+      p_pickup_lat:pickup.latitude,
+      p_pickup_lng:pickup.longitude,
+      p_destination_lat:destination.latitude,
+      p_destination_lng:destination.longitude,
+      p_payment_method:paymentMethod,
+      p_price_quote_id:quote.id
+    });
     if(insertError){
       if(/orders_one_active_per_passenger|duplicate key|unique constraint/i.test(insertError.message??"")){
         const {data:active,error:activeError}=await userClient.from("orders").select("*").eq("passenger_id",who.user.id).in("status",["new","accepted","arrived","in_progress"]).maybeSingle();
