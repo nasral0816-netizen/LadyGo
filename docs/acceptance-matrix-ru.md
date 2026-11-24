@@ -118,3 +118,25 @@ Supabase Auth/Postgres/Storage/Realtime/Edge/Vault/pg_net, Expo Push, Yandex Map
 ### Address book / support detail
 - Live `saved_places` table exists, but no client code references it; home/work/favourites/recent address UI persistence is not wired.
 - Support currently has one `support_tickets.admin_reply` field only. No attachment table/columns or threaded support messages table was found; attachments and conversation history are absent.
+
+
+
+## Latest verified gate — 24.11.2026 12:11 UTC
+
+| Проверка | Результат | Доказательство |
+|---|---|---|
+| APK #563 | Успешно | [GitHub Actions #563](https://github.com/nasral0816-netizen/LadyGo/actions/runs/45389004792), все шаги success |
+| APK signature | QA/debug signed | apksigner v2 true, 1 signer, RSA-2048; не release keystore |
+| APK artifact | Доступен | Artifact ID 14917274196, LadyGo-Android-APK; APK SHA-256 указан в final QA snapshot |
+| Package/version | Конфигурация подтверждена | com.ladygo.app, 6.9.1 (versionCode 52) в app.json того же коммита |
+| Две роли в БД | Есть аккаунты | 4 passenger profiles, 2 driver profiles; 2 driver applications approved |
+| Реальный online driver | Блокер | 0 approved online drivers; 0 with fresh GPS in last 2 minutes |
+| Push registration | Блокер | 0 driver push tokens, 0 passenger push tokens |
+| E2E trip | Не выполнен | 1 существующий active order сохранён без изменений; тестовый заказ не создавался, т.к. нет online driver |
+| CSV export | Отсутствует | Не добавлять PII export без определения полей/прав/audit/privacy |
+| Backup/restore | Не подтверждено | Project metadata не содержит доказательства backup artifact/restore drill |
+| Release key | Не предоставлен | CI APK подписан ephemeral Android Debug QA key |
+| Device install | Не проверено | Нет adb/эмулятора в среде; два отдельных устройства/сессии не предоставлены |
+| PR #11 | Open, Draft | Не мержить до реальной поездки |
+
+**Вердикт после #563: QA APK готов для установки и тестирования; LadyGo НЕ ГОТОВО К РЕЛИЗУ.** Release blockers: driver online+GPS, push tokens/delivery, complete trip E2E, device QA, CSV decision/implementation, backup restore proof, owner release keystore, legal sign-off.
