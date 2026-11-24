@@ -149,3 +149,40 @@ Live catalog query of all 16 public SECURITY DEFINER RPCs callable by authentica
 - The last confirmed failed build (#561) failed because `removeRealtimeChannelSafely` lacked the closing `else` and function braces, leaving `export default` nested. This was fixed in commit `8edd6ad8d939e6a31aa1655cce650d3a2886d60d`.
 - Run #563 on that corrected commit passed install, Expo Doctor, Expo prebuild, Gradle repository configuration and QA signing setup; `assembleRelease` remains in progress. No APK artifact, apksigner output, SHA-256 or certificate fingerprint has been produced yet.
 - The APK signing configuration uses the CI debug certificate and is strictly a sideload QA build, not a Google Play release signature.
+
+
+
+## APK №563 — окончательная проверка артефакта (24.11.2026 12:10 UTC)
+
+- GitHub Actions run #563: `45389004792`, conclusion `success`, commit `8edd6ad8d939e6a31aa1655cce650d3a2886d60d`.
+- Все шаги job завершены успешно: Expo Doctor, prebuild, QA signing setup, Gradle `assembleRelease`, `apksigner verify`, Upload APK.
+- Gradle: `BUILD SUCCESSFUL in 11m 34s`; 475 tasks executed.
+- apksigner: `Verifies`; APK Signature Scheme v2 = true; one signer; certificate DN `CN=Android Debug, O=Android, C=US`; RSA 2048; certificate SHA-256 `fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`. This is CI debug/QA signing, not owner release signing.
+- Artifact `LadyGo-Android-APK`, artifact ID `14917274196`, archive digest `sha256:feaa42f341cc90f5b8c88b483f5562fed188020944269ecfc63ed8d481e8fe55`, expires 2026-12-08 12:10 UTC.
+- Extracted APK: `app-release.apk`, 252,973,818 bytes; SHA-256 `48a260d8817aaec35741d67e3935ee3fa7a058385fff163111904df408415375`.
+- app.json at the same branch commit declares version `6.9.1`, versionCode `52`, package `com.ladygo.app`.
+- CI confirms Android Signing Block via v2 verification. Local adb/apksigner binaries are not installed in the analysis container; no device installation was performed.
+
+## Live dispatch / push preflight — 24.11.2026 12:11 UTC
+
+Read-only SQL against live Supabase project `itlzvcklnxznrtaqjttc`:
+- Distinct approved driver accounts: 2.
+- Approved drivers currently online: 0.
+- Approved drivers with GPS updated in the last 2 minutes while online: 0.
+- Approved drivers with a registered driver push token: 0.
+- Passenger accounts: 4; passenger accounts with registered user push token: 0.
+- Existing active orders: 1. It was not modified.
+- Unexpired pending offers: 0.
+- Profiles by role: 4 passenger, 2 driver, 1 admin. These are existing distinct profile rows, but no credentials/session handoff exists here to perform the two-device login flow.
+- Driver applications: 2 approved; presence table has only offline row(s).
+
+**E2E result: BLOCKED BEFORE NEW ORDER CREATION.** No approved driver is online with fresh GPS, and there are no push tokens. Do not create a test order that cannot be offered; do not touch the one existing active order. Owner/QA must bring one approved driver account online with GPS and install/login to the APK on two separate devices/accounts, then repeat passenger create → offer → accept → status transitions.
+
+## Remaining blockers
+
+- Push delivery: not tested; both push-token tables have zero rows.
+- CSV export: not implemented in admin UI. It is deliberately not added as a rushed untested PII export; define fields, role gate, audit event, and privacy/retention policy before implementation.
+- Backup/restore: cannot be confirmed from available project metadata/tools; project is ACTIVE_HEALTHY but that is not evidence of a backup or restore test. Owner must confirm backup/PITR plan and perform restore drill to a separate project.
+- Release signing: workflow currently generates a CI debug keystore on runner. For Play release, owner must provide a durable release keystore and passwords through GitHub Actions Secrets (never commit/upload in chat). Suggested secrets: `ANDROID_RELEASE_KEYSTORE_BASE64`, `ANDROID_RELEASE_STORE_PASSWORD`, `ANDROID_RELEASE_KEY_ALIAS`, `ANDROID_RELEASE_KEY_PASSWORD`; workflow must decode keystore to a protected temporary path and use dedicated release signingConfig, then verify certificate fingerprint and preserve key backups offline.
+- Device install/login, push receipt and real ride remain unverified.
+- PR #11 remains open and draft; do not merge before successful real trip E2E.
