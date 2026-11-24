@@ -92,3 +92,13 @@ Release APK собирается GitHub Actions workflow .github/workflows/andro
 - CSV export в админ-панели не найден в исходниках; функция отсутствует и не должна считаться реализованной. Backup/restore и наличие свежего backup через доступные интеграции проверить не удалось; destructive DB-изменения не выполнялись.
 - Leaked Password Protection отключена по Security Advisor. Организация Supabase на Free plan; Supabase указывает, что эта функция доступна на Pro и выше. Владелец должен решить вопрос тарифа и включить настройку в Auth settings.
 - PR #11 остаётся Draft. Не переводить в Ready и не объединять до подтверждения реального trip cycle, push delivery, device QA и оставшихся security gates.
+
+
+## Дополнение после исправления отмены (24.11.2026)
+
+- Заказ владельца по маршруту Зеленогорская улица, 28 → Мечеть, Кисловодск отменён в БД через authenticated RPC; статус `cancelled`, запись сохранена в истории. Активных заказов по маршруту не осталось.
+- Исправлено имя RPC в клиенте: `cancel_my_order` → `ladygo_cancel_my_order`. Серверная проверка ограничивает отмену собственным новым неназначенным заказом.
+- Применены migrations `20261124072817_ladygo_owner_cancel_unassigned_order` и `20261124072830_ladygo_passenger_cancel_order_rpc`.
+- Прямой EXECUTE для `ladygo_dispatch_next_driver` отозван у authenticated/anon; service_role доступ сохранён. Проверено ACL-запросом.
+- Live snapshot после отмены: 1 online driver, 1 свежая GPS-точка, 0 push-токенов водителя/пассажира, 0 активных заказов. Push delivery и реальный trip E2E остаются непроверенными.
+- Сборка с этими изменениями выполняется; предыдущий APK #453 не содержит последнюю правку отмены и не является актуальной сборкой для проверки кнопки.
