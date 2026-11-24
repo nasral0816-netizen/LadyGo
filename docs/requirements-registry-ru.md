@@ -88,7 +88,7 @@
 - Supabase: ACTIVE_HEALTHY, eu-west-2.
 - Edge Functions: pricing-service v7 (verify_jwt=true), send-driver-offer-push v5 (verify_jwt=false с Vault-backed webhook auth).
 - Cron: ladygo-expire-stale-offers и ladygo-dispatch-scheduled-orders, оба активны каждую минуту. Отдельной dispatch-loop нет и не требуется текущей архитектуре.
-- Миграции применены до 20261124190000_ladygo_quote_route_binding; не повторять их вручную.
+- Миграции применены до 20261124190000_ladygo_quote_route_binding; не повторять их вручную. Последняя Edge Function pricing-service v7.
 - В БД: 0 online drivers, 0 driver push tokens, 0 user push tokens, 1 active order. Активный заказ не трогать.
 - PR #11 draft открыт; runs #404/#405 ещё не предоставили APK artifact на последней проверке.
 - Установка APK, вход, доставка push, реальная поездка и runtime negative RLS tests не подтверждены.
