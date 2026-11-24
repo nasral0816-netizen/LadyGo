@@ -79,3 +79,16 @@ Security Advisor на 24.11.2026 показывает 14 предупрежде�
 5. Повторить негативные сценарии и проверить БД после каждого шага.
 
 До выполнения этих шагов реальный цикл поездки и push delivery остаются непроверенными.
+
+
+## Повторная операционная сверка 24.11.2026
+
+- Android QA build #453 подписан debug identity; файл проверен CI apksigner (v2), но установка и вход на устройстве не выполнены. Build metadata/checksum находятся в README.
+- `src/supabase.js` имеет публичный Supabase URL и `sb_publishable_` fallback; это не service_role и не webhook secret. Не считать пустые env secrets CI доказательством отсутствия подключения в APK.
+- Live counts: approved drivers=2; online=0; fresh GPS <15m=1; driver push tokens=0; user push tokens=0; active orders=1 (не трогать).
+- RLS SQL probes подтверждают ограничения в simulated authenticated contexts; для passenger A/B по 10 не-профильным таблицам получено 0 rows. Это не real JWT/device test.
+- Admin probes: пассажир не может list/grant admins; super-admin не может снять собственные права. Concurrency 15/16 и ordinary admin не тестировались.
+- Migration `20261124200000_ladygo_phone_input_validation` исправила принятие произвольных букв как команды очистки телефона; live migration применена.
+- CSV export не найден в app source. Backup/PITR status и restore drill недоступны через используемые project metadata; owner action required.
+- Leaked Password Protection отключён (Security Advisor). Включение требует владельца Supabase Auth settings.
+- До двух реальных аккаунтов/устройств, heartbeat online, token registration и end-to-end trip/push не заявлять production readiness.
