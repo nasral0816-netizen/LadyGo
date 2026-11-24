@@ -340,6 +340,7 @@ export default function LadyGoApp() {
   const [driverOrders, setDriverOrders] = useState([]);
   const [offerClock, setOfferClock] = useState(Date.now());
   const notifiedOfferIds = useRef(new Set());
+  const expiredOfferIds = useRef(new Set());
   const [driverPrices, setDriverPrices] = useState({});
   const [driverSection, setDriverSection] = useState('overview');
   const [driverLoading, setDriverLoading] = useState(false);
@@ -1123,6 +1124,21 @@ export default function LadyGoApp() {
       Alert.alert('Не удалось загрузить заказы', translateError(e));
     } finally { setDriverLoading(false); }
   }, [session?.user?.id, profile?.role]);
+
+  useEffect(() => {
+    if (profile?.role !== 'driver' || !session?.user?.id || !supabase) return;
+    for (const order of driverOrders) {
+      if (!order.offer_id || !order.offer_expires_at || expiredOfferIds.current.has(order.offer_id)) continue;
+      if (new Date(order.offer_expires_at).getTime() <= offerClock) {
+        expiredOfferIds.current.add(order.offer_id);
+        supabase.rpc('ladygo_expire_my_offer', { p_order_id: order.id })
+          .then(({ error }) => {
+            if (error) console.warn('LadyGo offer timeout processing failed:', error.message);
+            loadDriverOrders();
+          });
+      }
+    }
+  }, [driverOrders, offerClock, profile?.role, session?.user?.id, loadDriverOrders]);
 
   const toggleDriverShift = async () => {
     if (!session?.user?.id || driverPresenceLoading) return;
