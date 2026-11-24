@@ -113,3 +113,8 @@ Supabase Auth/Postgres/Storage/Realtime/Edge/Vault/pg_net, Expo Push, Yandex Map
 | Legal | Блокер | Checklist есть; независимый legal/privacy sign-off, перевозочные документы, страхование и Google Play Data Safety не подтверждены. |
 
 **Вердикт: НЕ ГОТОВО К РЕЛИЗУ.** Ни реальная поездка, ни push, ни установка текущего APK на Android не заявляются как проверенные.
+
+
+### Address book / support detail
+- Live `saved_places` table exists, but no client code references it; home/work/favourites/recent address UI persistence is not wired.
+- Support currently has one `support_tickets.admin_reply` field only. No attachment table/columns or threaded support messages table was found; attachments and conversation history are absent.
