@@ -36,7 +36,7 @@
 
 ## Edge Functions и секреты
 
-- pricing-service: ACTIVE v6, verify_jwt=true. Использует стандартные Supabase Edge environment variables (SUPABASE_URL, anon key, service-role key); JWT пользователя проверяется перед операциями. Отдельный LADYGO_PRICING_SECRET текущей версии не нужен.
+- pricing-service: ACTIVE v7, verify_jwt=true. Использует стандартные Supabase Edge environment variables (SUPABASE_URL, anon key, service-role key); JWT пользователя проверяется перед операциями. Отдельный LADYGO_PRICING_SECRET текущей версии не нужен.
 - send-driver-offer-push: ACTIVE v5, verify_jwt=false для webhook вызова. Функция проверяет заголовок через ladygo_verify_push_webhook_secret, секрет хранится в Vault; service-role key доступен только в серверной среде.
 - Не помещать секреты в приложение, APK, клиентские переменные или Git. Не публиковать ключи в отчётах.
 
@@ -48,7 +48,7 @@
 
 ## Тарификация и платежи
 
-pricing-service использует действующие активные строки city_tariff_configs для города/тарифа, строит дорожный маршрут через OSRM, учитывает параметры тарифа/дополнительных опций и записывает серверную строку price_quotes с истечением срока. При create_order функция проверяет JWT, роль passenger, quote ownership/expiry/consumed state и координаты, затем вставляет заказ через пользовательскую сессию; DB trigger выполняет серверную проверку quote и запускает dispatch.
+pricing-service использует действующие активные строки city_tariff_configs для города/тарифа, строит дорожный маршрут через OSRM, учитывает параметры тарифа/дополнительных опций и записывает серверную строку price_quotes с истечением срока и координатами pickup/destination. При create_order функция проверяет JWT, роль passenger, quote ownership/expiry/consumed state и совпадение всех координат маршрута, затем вставляет заказ через пользовательскую сессию; DB trigger выполняет серверную проверку quote и запускает dispatch.
 
 Не использовать tariff_rates: эта модель сейчас не активирована и содержит нулевые/неактивные ставки. Не менять активные тарифы без утверждения владельца тарифной сетки.
 
