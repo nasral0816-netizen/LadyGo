@@ -1559,8 +1559,8 @@ export default function LadyGoApp() {
           supabase.functions.invoke('pricing-service', {
             body: { action: 'quote', city_id: 'kislovodsk', tariff_id: tariff, points: [pickup, destination], options: [] }
           }),
-          15000,
-          'Сервер цены не ответил за 15 секунд. Проверь интернет и нажми «Пересчитать стоимость».'
+          20000,
+          'Сервер цены не ответил за 20 секунд. Проверь интернет и нажми «Пересчитать стоимость».'
         );
         if (error) throw error;
         const payload = data?.data && typeof data.data === 'object' ? data.data : data;
