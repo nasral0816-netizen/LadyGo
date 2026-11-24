@@ -60,3 +60,16 @@ RLS/policy definitions просмотрены SQL. Это не равно runtim
 4. Проверить push token, online heartbeat, заказ, offer, accept, статусы, GPS, completion, rating и DB state на каждом шаге.
 5. Пройти негативные RLS/RBAC тесты и полный регрессионный чек-лист.
 6. Получить независимый legal/privacy/security sign-off до пилота.
+
+
+## Live update после QA build #453 (24.11.2026)
+
+- QA artifact #453 downloaded and hashed: 6.9.1 / versionCode 52 / com.ladygo.app / 252,968,198 bytes / SHA-256 e6994a3b6a1794491245d558c9bf048d4ec3dd0c9156892492ca45b649cac790. CI apksigner v2 verification passed; debug cert only. Build run: https://github.com/nasral0816-netizen/LadyGo/actions/runs/45342314598. Artifact: https://github.com/nasral0816-netizen/LadyGo/actions/runs/45342314598/artifacts/14896897554.
+- Correction: CI env values for Supabase are blank, but src/supabase.js has public project URL and publishable-key fallback. This build is configured to point to Supabase; the publishable key is not a service-role secret.
+- No adb/device/emulator available; install/launch/login are unverified.
+- Live DB: 2 approved drivers, 0 online, 1 fresh location, 0 driver tokens, 0 passenger tokens, 1 active order (untouched). No end-to-end trip or push delivery evidence.
+- RLS probes with simulated authenticated claims: passengers A and B each saw one own profile and zero rows in the other ten tested tables; driver saw own profile, 2 associated orders, 1 own driver application, and zero unrelated offers/location/presence/tracks/tokens/support. Not a signed-JWT device test.
+- 14 exposed SECURITY DEFINER warnings remain. See detailed function-by-function probes in docs/security-definer-audit-ru.md.
+- Admin probes: self-removal and removal of another super-admin rejected; ordinary-admin role-management/list-admins calls rejected. Role simulation was transactionally rolled back. 15/16 concurrent cap test remains unperformed because there are not 15 synthetic admin accounts and no safe concurrent staging harness.
+- CSV export is absent. Leaked Password Protection is disabled; Supabase organization is Free tier, while this feature requires Pro or above. Backup availability/restore drill could not be inspected via available connector; no destructive database changes were made.
+- PR #11 remains Draft because trip, push and device acceptance gates are open.
