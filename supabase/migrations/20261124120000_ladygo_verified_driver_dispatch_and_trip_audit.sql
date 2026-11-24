@@ -152,7 +152,7 @@ grant execute on function public.ladygo_dispatch_next_driver(uuid) to authentica
 
 create or replace function public.ladygo_accept_order(
   p_order_id uuid,
-  p_price_rub numeric default null
+  p_price numeric default null
 )
 returns public.orders
 language plpgsql
@@ -189,7 +189,7 @@ begin
   if v_price is null or v_price <= 0 then
     raise exception 'Server-quoted order price is missing';
   end if;
-  if p_price_rub is not null and abs(p_price_rub - v_price) > 0.01 then
+  if p_price is not null and abs(p_price - v_price) > 0.01 then
     raise exception 'Driver cannot change the quoted order price';
   end if;
 
