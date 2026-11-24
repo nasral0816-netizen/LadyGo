@@ -75,6 +75,20 @@ jobs:
           """
           content = content.replace(marker, repositories, 1)
           path.write_text(content)
+          # React Native's included Gradle build resolves its own plugin classpath.
+          # Add the mirror there too; the root settings repositories do not propagate
+          # into included builds (the previous CI failure was gson:2.9.1 resolution).
+          included = Path("node_modules/@react-native/gradle-plugin/settings.gradle.kts")
+          if included.exists():
+              kotlin = included.read_text()
+              marker = "pluginManagement {"
+              start = kotlin.find(marker)
+              repo_start = kotlin.find("repositories {", start)
+              if start >= 0 and repo_start >= 0 and "maven-central.storage-download.googleapis.com" not in kotlin:
+                  insert_at = repo_start + len("repositories {")
+                  kotlin = kotlin[:insert_at] + '\\n        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }' + kotlin[insert_at:]
+                  included.write_text(kotlin)
+                  print("Configured mirror for React Native included build")
           print("Configured plugin repositories")
           PY
 
