@@ -91,3 +91,25 @@ Supabase Auth/Postgres/Storage/Realtime/Edge/Vault/pg_net, Expo Push, Yandex Map
 - Миграция 20261124190000_ladygo_quote_route_binding применена: price_quotes хранит координаты pickup/destination, DB trigger сверяет их с заказом; старые quote без координат не принимаются для нового заказа.
 - Edge Function create_order дополнительно проверяет совпадение координат quote с запросом.
 - Статически подтверждён deploy и наличие колонок; authenticated device order request не выполнялся.
+
+
+
+## Live release gate update — 24.11.2026 11:39 UTC (перекрывает исторические статусы выше)
+
+| Модуль | Статус сейчас | Доказательство / следующий шаг |
+|---|---|---|
+| Пассажирские поездки | Частично | Код читает собственные orders без проверки profile.role; Realtime + polling 5s добавлены для same-account Driver mode. Проверить на APK и двух независимых сессиях. |
+| Driver offers | Частично | UI показывает 60-секундный countdown; live DB триггеры dispatch/offer есть. Нет online driver и push tokens, поэтому device offer не подтверждён. |
+| Atomic accept | Реализовано по SQL | RPC блокирует строку заказа FOR UPDATE, проверяет собственный неистёкший pending offer, назначает driver_id и отменяет остальные offers. Двойной accept двух независимых клиентов не тестировался. |
+| Dispatch | Частично | Trigger chain, cron, 60s offer TTL, service_role-only dispatch RPC подтверждены каталогом. Нет доступного онлайн-водителя с GPS для реального dispatch. |
+| RLS | Частично | 23/23 public tables с RLS; A↛B на независимых JWT не проверен. |
+| SECURITY DEFINER | Частично | 36 функций; 16 authenticated EXECUTE, 0 anon EXECUTE; Advisor сообщает 16 предупреждений. Нужны JWT runtime probes по каждой exposed RPC. |
+| Администраторы | Частично | В БД 1 super-admin, 0 ordinary admin; advisory lock и запрет self-removal видны в функции. Race 15→16 не проверялся. |
+| CSV | Отсутствует | Не реализован; отложен до утверждения полей, прав доступа и privacy review. |
+| Auth leaked-password | Блокер | Отключён; Supabase organization plan = Free. Требуется владелец/тарифное решение. |
+| Backup/restore | Не подтверждено | Backup artifact и restore drill не доступны в подключённой проверке. |
+| Android build | В процессе | Run #559; expo-doctor, npm install, Expo prebuild и QA signing setup прошли; Gradle assembleRelease ещё выполняется. apksigner и artifact pending. |
+| Android device | Не проверено | Нет доступного adb/emulator и физического QA в текущей среде. |
+| Legal | Блокер | Checklist есть; независимый legal/privacy sign-off, перевозочные документы, страхование и Google Play Data Safety не подтверждены. |
+
+**Вердикт: НЕ ГОТОВО К РЕЛИЗУ.** Ни реальная поездка, ни push, ни установка текущего APK на Android не заявляются как проверенные.
