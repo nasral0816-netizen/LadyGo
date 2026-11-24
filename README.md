@@ -36,7 +36,7 @@ LadyGo — существующее Android-приложение сервиса 
 - send-driver-offer-push — активная версия 5, JWT verification выключен для webhook вызова; авторизация выполняется через секрет из Supabase Vault и RPC-проверку. Service-role key используется только серверной функцией.
 - Диспетчеризация работает через DB triggers, клиентский fallback poll и cron для истечения офферов/запланированных заказов. Отдельная dispatch-loop не развёрнута и не требуется текущей схеме; LADYGO_DISPATCH_SECRET не нужен.
 - Cron ladygo-expire-stale-offers и ladygo-dispatch-scheduled-orders активны, выполняются раз в минуту.
-- Миграция GPS-before-online и сериализация лимита 15 обычных администраторов применены к live БД.
+- Миграция GPS-before-online, сериализация лимита 15 обычных администраторов и привязка quote к координатам маршрута применены к live БД.
 - RLS включён на ключевых таблицах заказов, предложений, профилей, геолокации, push-токенов, поддержки и треков.
 
 ## Текущий статус GitHub / Android
@@ -60,3 +60,6 @@ Supabase Security Advisor сообщает 14 предупреждений о д
 ## Android APK
 
 Release APK собирается GitHub Actions workflow .github/workflows/android-apk.yml. Для каждого релизного файла фиксируйте commit SHA, build run, версию приложения, размер, SHA-256 и дату скачивания. Сам факт успешной сборки не подтверждает E2E/production готовность.
+
+
+Дополнительная защита цены: миграция 20261124190000_ladygo_quote_route_binding добавляет координаты подачи/назначения в price_quotes; Edge Function и DB trigger сверяют их с маршрутом заказа. Старые quote без координат требуют повторного расчёта.
