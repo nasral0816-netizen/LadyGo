@@ -108,7 +108,7 @@ Supabase Auth/Postgres/Storage/Realtime/Edge/Vault/pg_net, Expo Push, Yandex Map
 | CSV | Отсутствует | Не реализован; отложен до утверждения полей, прав доступа и privacy review. |
 | Auth leaked-password | Блокер | Отключён; Supabase organization plan = Free. Требуется владелец/тарифное решение. |
 | Backup/restore | Не подтверждено | Backup artifact и restore drill не доступны в подключённой проверке. |
-| Android build | В процессе | Run #559; expo-doctor, npm install, Expo prebuild и QA signing setup прошли; Gradle assembleRelease ещё выполняется. apksigner и artifact pending. |
+| Android build | В процессе | Run #561; expo-doctor, npm install, Expo prebuild и QA signing setup прошли; Gradle assembleRelease ещё выполняется. apksigner и artifact pending. |
 | Android device | Не проверено | Нет доступного adb/emulator и физического QA в текущей среде. |
 | Legal | Блокер | Checklist есть; независимый legal/privacy sign-off, перевозочные документы, страхование и Google Play Data Safety не подтверждены. |
 
