@@ -346,6 +346,8 @@ export default function LadyGoApp() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [register, setRegister] = useState(false);
+  const [authPhone, setAuthPhone] = useState('');
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [tab, setTab] = useState('ride');
@@ -500,7 +502,23 @@ export default function LadyGoApp() {
   }, [session?.user?.id]);
 
   useEffect(() => {
+    if (!supabase) return;
     let alive = true;
+    const handleAuthUrl = async url => {
+      try {
+        const parsed = Linking.parse(url);
+        const code = parsed?.queryParams?.code;
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(String(code));
+          if (error) throw error;
+        }
+      } catch (error) {
+        console.warn('LadyGo auth callback failed:', error?.message);
+        Alert.alert('Не удалось подтвердить действие', 'Открой ссылку из письма ещё раз или запроси новую.');
+      }
+    };
+    Linking.getInitialURL().then(url => { if (url && alive) handleAuthUrl(url); }).catch(() => {});
+    const urlSubscription = Linking.addEventListener('url', event => handleAuthUrl(event.url));
     (async () => {
       try {
         if (!supabase) return;
@@ -532,7 +550,8 @@ export default function LadyGoApp() {
         if (alive) setBoot(false);
       }
     })();
-    const { data: listener } = supabase?.auth.onAuthStateChange(async (_event, next) => {
+    const { data: listener } = supabase?.auth.onAuthStateChange(async (event, next) => {
+      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
       setSession(next);
       if (next?.user) {
         setProfile({ id: next.user.id, email: next.user.email, role: 'passenger' });
@@ -545,7 +564,11 @@ export default function LadyGoApp() {
         setActiveOrder(null);
       }
     }) || { data: { subscription: null } };
-    return () => { alive = false; removeSubscriptionSafely(listener?.subscription); };
+    return () => {
+      alive = false;
+      removeSubscriptionSafely(listener?.subscription);
+      removeSubscriptionSafely(urlSubscription);
+    };
   }, [loadProfile]);
 
   useEffect(() => {
@@ -1372,37 +1395,78 @@ export default function LadyGoApp() {
   const signIn = async () => {
     const identifier = email.trim();
     const phoneDigits = identifier.replace(/\D/g, '');
-    const isEmail = identifier.includes('@');
-    if (!identifier || password.length < 6) return Alert.alert('Проверь данные', 'Введи номер телефона и пароль не короче 6 символов.');
-    if (register && (isEmail || phoneDigits.length < 10 || phoneDigits.length > 15)) {
-      return Alert.alert('Проверь номер', 'Укажи номер телефона в международном формате, например +79991234567.');
-    }
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+    if (!identifier || password.length < 6) return Alert.alert('Проверь данные', 'Введи email или номер телефона и пароль не короче 6 символов.');
+    if (register && !isEmail) return Alert.alert('Нужен действующий email', 'Для регистрации укажи свой настоящий email: на него придёт ссылка подтверждения. Вход по номеру останется доступен для существующих аккаунтов.');
     if (!register && !isEmail && (phoneDigits.length < 10 || phoneDigits.length > 15)) {
       return Alert.alert('Проверь номер', 'Укажи номер телефона в международном формате.');
     }
-    // Для двух существующих аккаунтов телефон служит новым логином:
-    // авторизация идёт в прежний Supabase Auth аккаунт, поэтому пароль и ID сохраняются.
-    // Остальные телефонные аккаунты используют технический email; SMS-кода здесь нет.
     const legacyPhoneLogins = {
       '79911124353': 'nasral08.16@gmail.com',
       '79911116922': 'ladygoadmin@gmail.com',
     };
-    const authEmail = isEmail && !register
-      ? identifier.toLowerCase()
-      : (!register && legacyPhoneLogins[phoneDigits]
-        ? legacyPhoneLogins[phoneDigits]
-        : 'phone-' + phoneDigits + '@auth.ladygo.app');
+    const authEmail = isEmail ? identifier.toLowerCase()
+      : (legacyPhoneLogins[phoneDigits] || 'phone-' + phoneDigits + '@auth.ladygo.app');
     setBusy(true);
     try {
-      const result = register
-        ? await supabase.auth.signUp({ email: authEmail, password, options: { data: { phone: phoneDigits } } })
-        : await supabase.auth.signInWithPassword({ email: authEmail, password });
+      const request = register
+        ? supabase.auth.signUp({
+            email: authEmail,
+            password,
+            options: {
+              data: { phone: authPhone.replace(/\D/g, '') || null },
+              emailRedirectTo: 'ladygo://auth/callback'
+            }
+          })
+        : supabase.auth.signInWithPassword({ email: authEmail, password });
+      const result = await withTimeout(request, 20000, 'Сервер авторизации не ответил за 20 секунд. Проверь интернет и попробуй ещё раз.');
       if (result.error) throw result.error;
-      // public.handle_new_user() creates the passenger profile transactionally.
-      // Do not upsert profiles from the client: profiles has no client INSERT/UPDATE policy.
-      if (register && !result.data.session) Alert.alert('Требуется настройка', 'В Supabase включено подтверждение email. Для этого временного способа его нужно отключить; SMS-подтверждения пока нет.');
-    } catch (e) { Alert.alert('Не удалось войти', translateError(e)); }
-    finally { setBusy(false); }
+      if (register && !result.data.session) {
+        setRegister(false);
+        Alert.alert('Проверь почту', 'Аккаунт создан. Открой письмо от Supabase и подтверди email, затем войди с этим email и паролем. Если письмо не пришло, проверь папку «Спам».');
+      } else if (register) {
+        setRegister(false);
+        setAuthPhone('');
+      }
+    } catch (e) {
+      const detail = await extractBackendError(e);
+      Alert.alert(register ? 'Не удалось зарегистрироваться' : 'Не удалось войти', translateError(new Error(detail)));
+    } finally { setBusy(false); }
+  };
+
+  const sendPasswordReset = async () => {
+    const address = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+      return Alert.alert('Нужен email', 'Для восстановления введи email, указанный при регистрации. Для старых аккаунтов только с номером телефона восстановление по SMS пока не подключено.');
+    }
+    setBusy(true);
+    try {
+      const { error } = await withTimeout(
+        supabase.auth.resetPasswordForEmail(address, { redirectTo: 'ladygo://auth/callback' }),
+        20000,
+        'Сервер восстановления не ответил за 20 секунд.'
+      );
+      if (error) throw error;
+      Alert.alert('Письмо отправлено', 'Если аккаунт с таким email существует, ссылка для восстановления придёт на почту. Проверь также папку «Спам».');
+    } catch (e) {
+      const detail = await extractBackendError(e);
+      Alert.alert('Не удалось отправить ссылку', translateError(new Error(detail)));
+    } finally { setBusy(false); }
+  };
+
+  const saveRecoveredPassword = async () => {
+    if (password.length < 8) return Alert.alert('Слишком короткий пароль', 'Новый пароль должен содержать не менее 8 символов.');
+    setBusy(true);
+    try {
+      const { error } = await withTimeout(supabase.auth.updateUser({ password }), 20000, 'Сервер не ответил за 20 секунд.');
+      if (error) throw error;
+      setRecoveryMode(false);
+      setPassword('');
+      Alert.alert('Пароль изменён', 'Теперь можно пользоваться LadyGo с новым паролем.');
+    } catch (e) {
+      const detail = await extractBackendError(e);
+      Alert.alert('Не удалось изменить пароль', translateError(new Error(detail)));
+    } finally { setBusy(false); }
   };
 
   const locate = async ({ silent = false } = {}) => {
@@ -1520,7 +1584,7 @@ export default function LadyGoApp() {
     };
     getQuote();
     return () => { alive = false; };
-  }, [pickup, destination, routeInfo, tariff, quoteRetry]);
+  }, [pickup, destination, tariff, quoteRetry]);
 
   const createOrder = async () => {
     if (!session?.user?.id || !supabase) return;
@@ -1759,12 +1823,23 @@ export default function LadyGoApp() {
   const previewFare = quote?.amount_rub ?? null;
 
   if (boot) return <View style={st.loading}><ActivityIndicator size="large" color={P.pink}/><Text style={st.muted}>Загружаем LadyGo…</Text></View>;
+  if (recoveryMode) return <SafeAreaView style={st.auth}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
+    <View style={st.authLogo}><Text style={st.logo}>LadyGo</Text><Text style={st.tagline}>Новый пароль</Text></View>
+    <View style={st.authCard}><Text style={st.heading}>Восстановление доступа</Text>
+      <Text style={st.muted}>Придумай новый пароль длиной не менее 8 символов.</Text>
+      <TextInput style={st.authInput} value={password} onChangeText={setPassword} placeholder="Новый пароль" secureTextEntry textContentType="newPassword"/>
+      <TouchableOpacity style={st.primaryBtn} onPress={saveRecoveredPassword} disabled={busy}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Сохранить пароль</Text>}</TouchableOpacity>
+    </View>
+  </SafeAreaView>;
+
   if (!session) return <SafeAreaView style={st.auth}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
     <View style={st.authLogo}><Text style={st.logo}>LadyGo</Text><Text style={st.tagline}>Поездки с заботой</Text></View>
     <View style={st.authCard}><Text style={st.heading}>{register ? 'Создать аккаунт' : 'С возвращением'}</Text>
-      <TextInput style={st.authInput} value={email} onChangeText={setEmail} placeholder={register ? "+7-(999)-999-99-99" : "Номер телефона или email"} autoCapitalize="none" keyboardType={register || !email.includes("@") ? "phone-pad" : "email-address"} textContentType="telephoneNumber"/>
-      <TextInput style={st.authInput} value={password} onChangeText={setPassword} placeholder="Пароль" secureTextEntry/>
+      <TextInput style={st.authInput} value={email} onChangeText={setEmail} placeholder={register ? 'Ваш действующий email' : 'Номер телефона или email'} autoCapitalize="none" autoCorrect={false} keyboardType={register || email.includes('@') ? 'email-address' : 'phone-pad'} textContentType="username"/>
+      {register && <TextInput style={st.authInput} value={authPhone} onChangeText={setAuthPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad" textContentType="telephoneNumber"/>}
+      <TextInput style={st.authInput} value={password} onChangeText={setPassword} placeholder="Пароль" secureTextEntry textContentType={register ? 'newPassword' : 'password'}/>
       <TouchableOpacity style={st.primaryBtn} onPress={signIn} disabled={busy}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>{register ? 'Зарегистрироваться' : 'Войти'}</Text>}</TouchableOpacity>
+      {!register && <TouchableOpacity onPress={sendPasswordReset} disabled={busy}><Text style={st.switchText}>Забыли пароль? Восстановить по email</Text></TouchableOpacity>}
       <TouchableOpacity onPress={() => setRegister(!register)}><Text style={st.switchText}>{register ? 'Уже есть аккаунт? Войти' : 'Создать новый аккаунт'}</Text></TouchableOpacity>
     </View>
     <Text style={st.footnote}>Создано независимым автором @acyma</Text>
