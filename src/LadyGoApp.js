@@ -512,23 +512,8 @@ export default function LadyGoApp() {
     return () => { supabase.removeChannel(channel); };
   }, [session?.user?.id, profile?.role, loadOrders]);
 
-  useEffect(() => {
-    if (!activeOrder?.id || activeOrder.status !== 'new' || !supabase) return;
-    let running = false;
-    const dispatch = async () => {
-      if (running) return;
-      running = true;
-      try {
-        await supabase.rpc('ladygo_dispatch_next_driver', { p_order_id: activeOrder.id });
-        await loadOrders();
-      } catch (_) {
-        // Server owns matching; next poll retries safely.
-      } finally { running = false; }
-    };
-    dispatch();
-    const timer = setInterval(dispatch, 12000);
-    return () => clearInterval(timer);
-  }, [activeOrder?.id, activeOrder?.status, loadOrders]);
+  // Matching is server-side (orders INSERT trigger + offer-expiry cron).
+  // The client must never call the restricted dispatch primitive directly.
 
   useEffect(() => {
     if (!activeOrder?.driver_id || !['accepted','arrived','in_progress'].includes(activeOrder.status) || !supabase) return;
