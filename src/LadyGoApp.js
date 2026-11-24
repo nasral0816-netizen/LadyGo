@@ -349,6 +349,9 @@ export default function LadyGoApp() {
   const [tariff, setTariff] = useState('economy');
   const [payment, setPayment] = useState('cash');
   const [quote, setQuote] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState('');
+  const [quoteRetry, setQuoteRetry] = useState(0);
   const [orders, setOrders] = useState([]);
   const [presentationOrders, setPresentationOrders] = useState([]);
   const [demoOrders, setDemoOrders] = useState([]);
@@ -1463,18 +1466,49 @@ export default function LadyGoApp() {
     let alive = true;
     const getQuote = async () => {
       setQuote(null);
-      if (!pickup || !destination || !routeInfo || !supabase) return;
+      setQuoteError('');
+      if (!pickup || !destination || !routeInfo || !supabase) {
+        setQuoteLoading(false);
+        return;
+      }
+      setQuoteLoading(true);
+      let lastError = '';
       try {
-        const { data, error } = await supabase.functions.invoke('pricing-service', {
-          body: { action: 'quote', city_id: 'kislovodsk', tariff_id: tariff, points: [pickup, destination], options: [] }
-        });
-        if (error) throw error;
-        if (alive && data?.price_token) setQuote(data); else if (alive) setQuote(null);
-      } catch (_) { if (alive) setQuote(null); }
+        // Retry once for transient mobile-network failures. Never invent a local fare.
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const { data, error } = await supabase.functions.invoke('pricing-service', {
+              body: { action: 'quote', city_id: 'kislovodsk', tariff_id: tariff, points: [pickup, destination], options: [] }
+            });
+            if (error) throw error;
+            const payload = data?.data && typeof data.data === 'object' ? data.data : data;
+            const token = payload?.price_token || payload?.quote?.price_token;
+            const amount = Number(payload?.amount_rub ?? payload?.quote?.amount_rub);
+            if (payload?.error) throw new Error(String(payload.error));
+            if (!token || !Number.isFinite(amount) || amount <= 0) {
+              throw new Error('Сервер ответил без действительной цены. Попробуй пересчитать.');
+            }
+            if (alive) {
+              setQuote({ ...payload, price_token: token, amount_rub: amount });
+              setQuoteError('');
+            }
+            return;
+          } catch (requestError) {
+            lastError = String(requestError?.message || 'Не удалось получить ответ сервера.');
+            if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 1200));
+          }
+        }
+        if (alive) {
+          setQuote(null);
+          setQuoteError(lastError);
+        }
+      } finally {
+        if (alive) setQuoteLoading(false);
+      }
     };
     getQuote();
     return () => { alive = false; };
-  }, [pickup, destination, routeInfo, tariff]);
+  }, [pickup, destination, routeInfo, tariff, quoteRetry]);
 
   const createOrder = async () => {
     if (!session?.user?.id || !supabase) return;
@@ -1763,7 +1797,19 @@ export default function LadyGoApp() {
         <View style={st.tariffs}>{TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[st.tariff, tariff === t.id && st.tariffSelected]}>
           <Text style={st.tariffIcon}>{t.icon}</Text><Text style={st.tariffName}>{t.name}</Text>{(previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
         </TouchableOpacity>)}</View>
-        <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>{(previewFare) ? 'Предварительная стоимость' : 'Стоимость поездки'}</Text><Text style={st.priceHint}>{previewFare ? 'Серверная оценка по прямой дистанции; это не финальный счёт' : routeInfo ? 'Серверный тариф пока недоступен — заказ не будет создан' : 'Укажи оба адреса для расчёта'}</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
+        <View style={st.priceCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={st.priceTitle}>Стоимость поездки</Text>
+            <Text style={st.priceHint}>
+              {previewFare ? 'Подтверждено сервером. Цена действует ограниченное время.' : quoteLoading ? 'Получаем точную цену с сервера…' : quoteError ? 'Не удалось получить серверную цену.' : routeInfo ? 'Ожидается подтверждение тарифа сервером.' : 'Укажи оба адреса для расчёта'}
+            </Text>
+            {!!quoteError && <Text style={{ color: P.pinkDark, fontSize: 12, marginTop: 6 }}>{quoteError}</Text>}
+            {routeInfo && !previewFare && !quoteLoading && <TouchableOpacity onPress={() => setQuoteRetry(value => value + 1)} style={{ alignSelf: 'flex-start', marginTop: 8, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 10, backgroundColor: P.pale }}>
+              <Text style={{ color: P.pinkDark, fontWeight: '700' }}>↻ Пересчитать стоимость</Text>
+            </TouchableOpacity>}
+          </View>
+          {quoteLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text>}
+        </View>
         <Text style={st.sectionTitle}>Предпочтительный способ оплаты</Text>
         <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>Р</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <Text style={st.muted}>Онлайн-оплата в приложении пока не подключена. Выбор способа — только предпочтение, списания не происходит.</Text>
