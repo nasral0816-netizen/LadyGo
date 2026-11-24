@@ -168,3 +168,14 @@
 - Миграции cancellation зарегистрированы в БД: `20261124072817_ladygo_owner_cancel_unassigned_order`, `20261124072830_ladygo_passenger_cancel_order_rpc`.
 - Дополнительно применена `20261124073317_ladygo_restrict_direct_dispatch_rpc`: `ladygo_dispatch_next_driver(uuid)` больше не исполняется напрямую authenticated/anon; service_role сохраняет EXECUTE. ACL проверен SQL.
 - Повторная live-сверка: 1 online driver, 1 GPS location за 15 минут, 0 driver push tokens, 0 passenger push tokens, 0 активных заказов, 1 super-admin, 0 обычных админов. Online/GPS уже не блокируют тестирование, но без токена и отдельной пассажирской сессии нельзя подтвердить push и полный trip E2E.
+
+
+### Исправление отправки заказа и оффера с таймером — 24.11.2026
+
+- По Supabase Edge logs зафиксированы два POST 403 в `pricing-service` для пользователя `40ad5fb0-2960-4bbd-b666-182b6e3f46b6` (07:32:29 и 07:32:36 UTC). Профиль этого аккаунта имеет роль `driver`, approved=true; прежняя версия функции разрешала `create_order` только role=passenger. Это и было причиной сообщения «Не удалось отправить заказ».
+- `pricing-service` развернут version 9, verify_jwt=true: разрешает пассажиру и проверенному водителю создавать заказ; фактическая вставка выполняется через `ladygo_create_order_from_quote` под пользовательским JWT, чтобы `auth.uid()` оставался доступен quote-validation trigger. RPC проверяет владение quote, срок/использование, совпадение координат, роль/approved driver и сериализует активные заказы по пользователю.
+- Диспетчеризация остаётся серверной через INSERT trigger; клиентский опрос напрямую запрещённого `ladygo_dispatch_next_driver` удалён.
+- Срок предложения в БД изменён с 25 на 15 секунд. Cron expiration использует `expires_at <= now()`, trigger на истечение вызывает передачу следующему доступному водителю. Дополнительно водительский клиент по окончании таймера вызывает owner-checked `ladygo_expire_my_offer` (fallback, если приложение активно), cron остаётся страховкой при закрытом приложении.
+- В клиенте добавлены звуковое локальное уведомление/Alert при новом offer, кнопки «Принять»/«Отклонить» и секундный countdown. Push на закрытом приложении пока не подтверждён: live push-token counts ранее были 0.
+- Миграции live: `ladygo_offer_timeout_15_seconds`, `ladygo_driver_offer_expiry_rpc`, `ladygo_create_order_authenticated_rpc`. Код и миграции записаны в branch `fix/order-submit-diagnostics-2026-11-24`.
+- Не создавался тестовый production order; поэтому фактический offer→timeout→next-driver и sound на физическом устройстве остаются ожидающими реального device E2E. Актуальная APK-сборка запущена.
