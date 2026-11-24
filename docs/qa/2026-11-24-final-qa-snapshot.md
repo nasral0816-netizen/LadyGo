@@ -82,7 +82,7 @@ All probes used SET LOCAL ROLE authenticated and simulated request.jwt.claim.sub
 - RLS включён на 23 из 23 обычных таблиц схемы `public`. Это не заменяет A↛B тест двумя независимыми подписанными JWT.
 
 ### SECURITY DEFINER / Auth
-- Live catalog содержит 38 функций `SECURITY DEFINER`, а не 14. У всех зафиксирован function-level `search_path` (33 с явным путём, 3 с пустым путём); у пустого пути тела используют schema-qualified обращения, что не даёт подменять объекты через пользовательский search_path.
+- Live catalog содержит 38 функций `SECURITY DEFINER`, а не 14. У всех зафиксирован function-level `search_path` (35 с явным путём, 3 с пустым путём); у пустого пути тела используют schema-qualified обращения, что не даёт подменять объекты через пользовательский search_path.
 - 16 функций имеют EXECUTE для `authenticated`, ни одна — для `anon`; `ladygo_dispatch_next_driver(uuid)` доступна только `service_role`. Это каталог/grant audit, не runtime-тест под независимыми JWT.
 - Security Advisor на текущем снимке сообщает 16 предупреждений об authenticated SECURITY DEFINER. Это предупреждение об exposed RPC; каждый RPC всё равно требует проверки авторизации и негативных сценариев.
 - Security Advisor сообщает `Leaked Password Protection Disabled`. Владелец должен включить защиту в Supabase Auth после решения по тарифу/доступности.
@@ -106,3 +106,10 @@ All probes used SET LOCAL ROLE authenticated and simulated request.jwt.claim.sub
 - Storage policy catalog shows a second, legacy permissive SELECT policy `ladygo driver media read own or active passenger` that allows an assigned passenger to read any object under the driver's folder. A narrower policy `ladygo driver media read owner admin assigned passenger` also exists and restricts assigned-passenger reads to the exact `avatar_url` / `vehicle_photo_url` paths during an active trip.
 - Because permissive RLS policies combine with OR, the broader legacy policy weakens the narrower rule. A review migration was committed: `20261124114000_ladygo_remove_broad_driver_media_select_policy.sql`.
 - Migration is **not applied to live Supabase** because a current backup/restore artifact is not confirmed. Keep existing production policy until owner confirms backup and review the migration before applying.
+
+
+## Текущая Android сборка после исправления same-account chat labels (24.11.2026 11:45 UTC)
+
+- Run #561, commit `98b10a4e75f465dd48d260a9f059a2de8004b838`, содержит клиентское исправление чат-меток по активному режиму (Passenger/Driver), review-only storage policy migration и CI workflow с Expo Doctor.
+- На момент обновления: `expo-doctor`, npm install, Expo prebuild, Gradle repository setup и QA signing setup завершены успешно; `assembleRelease` ещё выполняется. apksigner и upload artifact ожидают завершения Gradle.
+- Последующие коммиты документации после 98b10a не меняют мобильный код/конфигурацию сборки. Никакой APK для run #561 пока не выдаётся.
