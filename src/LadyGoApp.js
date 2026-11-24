@@ -584,12 +584,13 @@ export default function LadyGoApp() {
     return () => {
       alive = false;
       watch?.remove?.();
+      // Stopping/restarting the GPS watcher (navigation, React remount, permission
+      // refresh) must NOT silently take the driver offline. Only the explicit
+      // "Завершить смену" action writes is_online=false. Presence expires server-side
+      // when heartbeats stop, so a closed app cannot remain dispatchable indefinitely.
       Location.hasStartedLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK)
         .then(started => started ? Location.stopLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK) : null)
         .catch(() => {});
-      supabase.rpc('ladygo_driver_heartbeat', {
-        p_is_online: false, p_latitude: null, p_longitude: null, p_heading: null
-      }).catch(() => {});
     };
   }, [profile?.role, session?.user?.id, driverOnline]);
 
@@ -1149,6 +1150,8 @@ export default function LadyGoApp() {
           p_is_online: false, p_latitude: null, p_longitude: null, p_heading: null
         });
         if (error) throw error;
+        const trackingStarted = await Location.hasStartedLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK).catch(() => false);
+        if (trackingStarted) await Location.stopLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK).catch(() => {});
         setDriverOnline(false);
         Alert.alert('Вы не на линии', 'Новые заказы больше не будут поступать.');
       } else {
@@ -1165,8 +1168,16 @@ export default function LadyGoApp() {
           p_heading: position.coords.heading
         });
         if (error) throw error;
-        setDriverOnline(true);
-        Alert.alert('Вы на линии', 'LadyGo ищет заказы рядом с вами.');
+        // Confirm the persisted state instead of trusting the local button state.
+        const { data: confirmedPresence, error: presenceError } = await supabase
+          .from('driver_presence').select('is_online,updated_at')
+          .eq('driver_id', session.user.id).maybeSingle();
+        if (presenceError) throw presenceError;
+        const confirmed = Boolean(confirmedPresence?.is_online &&
+          Date.now() - new Date(confirmedPresence.updated_at).getTime() < 90000);
+        setDriverOnline(confirmed);
+        if (!confirmed) throw new Error('Сервер не подтвердил выход на линию. Проверь GPS и попробуй ещё раз.');
+        Alert.alert('Вы на линии', 'Статус подтверждён сервером. LadyGo ищет заказы рядом с вами.');
         await loadDriverOrders();
       }
     } catch (e) {
