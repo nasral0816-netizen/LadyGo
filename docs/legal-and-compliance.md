@@ -86,3 +86,16 @@ CI runs #440/#441 собрали APK 6.9.1 (versionCode 52), но проверк
 ## Последняя техническая сверка (24.11.2026)
 
 QA APK run #453 debug-signed and apksigner v2 verified, but install/login on a device are unverified. Live DB has 0 online drivers, 0 push tokens and one active order left untouched; trip E2E and push delivery are not proven. Security Advisor reports 14 authenticated SECURITY DEFINER warnings and Leaked Password Protection Disabled. The Supabase organization is on Free tier; Supabase docs state leaked-password protection requires Pro or above. CSV export is absent. Backup inventory and restore drill are not accessible through the connected tools and remain an owner/operator confirmation item. This checklist is not legal approval.
+
+
+## Проверка релизных блокеров (24.11.2026)
+
+На момент последней технической сверки:
+- Privacy policy и юридические документы оператора не получили независимое утверждение; этот checklist не является опубликованной privacy policy или legal opinion.
+- Основание обработки точной и фоновой геолокации, сроки хранения GPS/trip_tracks, трансграничная передача, роли оператора/обработчиков и тексты согласий должны быть утверждены для фактических стран работы.
+- Верификация водительских документов, разрешения/лицензирование перевозчика, страхование ответственности и договорная модель водителя не подтверждены документами владельца.
+- Google Play Data Safety и Background Location declaration не заполнены/не прошли review в рамках доступной проверки.
+- Leaked Password Protection отключён в Supabase Auth; включение зависит от тарифа и владельца проекта.
+- Backup artifact и успешное восстановление в отдельной среде не подтверждены.
+
+До получения подписанного legal/privacy review и подтверждения перечисленных документов релиз и публикация в Google Play запрещены. Не трактовать техническое одобрение анкеты в приложении как юридический допуск к перевозкам.
