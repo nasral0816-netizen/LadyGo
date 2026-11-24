@@ -30,3 +30,8 @@ Push зависит от регистрации Expo token, Supabase Vault webho
 ## Текущий статус приёмки (24.11.2026)
 
 Серверный pricing/order flow развёрнут, но реальный заказ с отдельной пассажирской Android-сессии и полный цикл до отзыва ещё не проверены. В live базе есть один активный заказ, который нельзя использовать для QA. Push delivery не подтверждена: user push tokens сейчас отсутствуют.
+
+
+## Самая свежая проверка (24.11.2026 11:57 UTC)
+
+Live DB snapshot: 0 online drivers with heartbeat fresher than 90 seconds, 0 GPS points fresher than 90 seconds, 0 passenger push tokens, 0 driver push tokens; one existing accepted order remains untouched. Не используйте его для проверки. Новый тест возможен только после отдельного входа водителя и появления свежего heartbeat/GPS.
