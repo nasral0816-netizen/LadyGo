@@ -1,5 +1,6 @@
 name: Android APK Build
 # Native map renderer: MapLibre
+# Rebuild marker: package the latest branch state, including the 2026-11-24 QA documentation updates.
 
 on:
   workflow_dispatch:
