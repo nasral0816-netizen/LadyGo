@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Platform, SafeAreaView, ScrollView,
-  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image
+  ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Modal, Platform, SafeAreaView, ScrollView,
+  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image, Vibration
 } from 'react-native';
 import { YandexMapView, Marker, Polyline, geocodeAddress, findDrivingRoutes } from 'expo-yandex-mapkit';
 import * as Location from 'expo-location';
@@ -381,6 +381,8 @@ export default function LadyGoApp() {
   const [activeOrder, setActiveOrder] = useState(null);
   const [phone, setPhone] = useState('');
   const [driverOrders, setDriverOrders] = useState([]);
+  const [incomingOffer, setIncomingOffer] = useState(null);
+  const [offerActionBusy, setOfferActionBusy] = useState(false);
   const [offerClock, setOfferClock] = useState(Date.now());
   const notifiedOfferIds = useRef(new Set());
   const expiredOfferIds = useRef(new Set());
@@ -751,11 +753,18 @@ export default function LadyGoApp() {
       try {
         if (Platform.OS === 'android') {
           await Notifications.setNotificationChannelAsync('driver-orders', {
-            name: 'Заказы LadyGo',
-            importance: Notifications.AndroidImportance.MAX,
-            vibrationPattern: [0, 250, 150, 250],
+            name: 'Новые заказы водителю',
+            description: 'Срочные предложения поездок с таймером ответа 30 секунд',
+            importance: Notifications.AndroidNotificationChannelImportance.MAX,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+            vibrationPattern: [0, 500, 250, 500, 250, 500],
+            enableVibrate: true,
             sound: 'default'
           });
+          await Notifications.setNotificationCategoryAsync('driver_order_offer', [
+            { identifier: 'ACCEPT_ORDER', buttonTitle: 'Принять', options: { opensAppToForeground: true, isAuthenticationRequired: false } },
+            { identifier: 'DECLINE_ORDER', buttonTitle: 'Отказать', options: { opensAppToForeground: true, isDestructive: true, isAuthenticationRequired: false } }
+          ]);
         }
 
         let notificationPermission = await Notifications.getPermissionsAsync();
@@ -1271,38 +1280,7 @@ export default function LadyGoApp() {
       if (offersResult.error) throw offersResult.error;
       if (mineResult.error) throw mineResult.error;
       const offers = offersResult.data || [];
-      for (const offer of offers) {
-        if (!notifiedOfferIds.current.has(offer.id)) {
-          notifiedOfferIds.current.add(offer.id);
-          const secondsLeft = Math.max(0, Math.ceil((new Date(offer.expires_at).getTime() - Date.now()) / 1000));
-          try {
-            await Notifications.scheduleNotificationAsync({
-              content: {
-                title: '🚕 Новый заказ LadyGo',
-                body: 'Прими или отклони заказ. Осталось ' + secondsLeft + ' сек.',
-                sound: 'default',
-                priority: Notifications.AndroidNotificationPriority.MAX,
-                data: { orderId: offer.order_id }
-              },
-              trigger: null
-            });
-          } catch (notificationError) {
-            console.warn('LadyGo offer alert sound unavailable:', notificationError?.message);
-          }
-          Alert.alert('🚕 Новый заказ', 'У тебя есть 60 секунд, чтобы принять заказ или отказаться. Если не ответить, предложение перейдёт следующему водителю.', [
-            { text: 'Отклонить', style: 'destructive', onPress: async () => {
-              const { error } = await supabase.rpc('ladygo_decline_order', { p_order_id: offer.order_id });
-              if (error) Alert.alert('Не удалось отклонить заказ', translateError(error));
-              await loadDriverOrders();
-            }},
-            { text: 'Принять', onPress: async () => {
-              const { error } = await supabase.rpc('ladygo_accept_order', { p_order_id: offer.order_id });
-              if (error) Alert.alert('Не удалось принять заказ', translateError(error));
-              await loadDriverOrders();
-            }}
-          ]);
-        }
-      }
+
       const ids = offers.map(o => o.order_id);
       let offered = [];
       if (ids.length) {
@@ -1315,6 +1293,10 @@ export default function LadyGoApp() {
       }
       const assigned = mineResult.data || [];
       setDriverOrders([...offered, ...assigned.filter(o => !offered.some(x => x.id === o.id))]);
+      setIncomingOffer(current => {
+        if (current && offered.some(item => item.id === current.id)) return offered.find(item => item.id === current.id) || current;
+        return offered[0] || null;
+      });
       const presenceFresh = presenceResult.data?.updated_at &&
         Date.now() - new Date(presenceResult.data.updated_at).getTime() < 90000;
       setDriverOnline(Boolean(presenceResult.data?.is_online && presenceFresh));
@@ -1388,33 +1370,38 @@ export default function LadyGoApp() {
   };
 
   const acceptDriverOrder = async order => {
-    if (!order?.id || !order?.offer_id || busy) return;
+    if (!order?.id || !order?.offer_id || busy || offerActionBusy) return;
     const price = Number(order.estimated_price_rub || order.price_rub || driverPrices[order.id]);
     if (!Number.isFinite(price) || price <= 0) {
       Alert.alert('Цена не рассчитана', 'Заказ нельзя принять: отсутствует подтверждённая стоимость.');
       return;
     }
     setBusy(true);
+    setOfferActionBusy(true);
     try {
       const { error } = await supabase.rpc('ladygo_accept_order', {
         p_order_id: order.id
       });
       if (error) throw error;
+      setIncomingOffer(null);
       await loadDriverOrders();
       Alert.alert('Заказ назначен вам', 'Пассажир увидит ваши данные и статус поездки.');
     } catch (e) {
       Alert.alert('Не удалось принять заказ', translateError(e));
       await loadDriverOrders();
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setOfferActionBusy(false); }
   };
 
   const declineDriverOrder = async order => {
-    if (!order?.id) return;
+    if (!order?.id || offerActionBusy) return;
+    setOfferActionBusy(true);
     try {
       const { error } = await supabase.rpc('ladygo_decline_order', { p_order_id: order.id });
       if (error) throw error;
+      setIncomingOffer(null);
       await loadDriverOrders();
     } catch (e) { Alert.alert('Не удалось отклонить заказ', translateError(e)); }
+    finally { setOfferActionBusy(false); }
   };
 
   const cancelDriverTrip = async (order, reason) => {
