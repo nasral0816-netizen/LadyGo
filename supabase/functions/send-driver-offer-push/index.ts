@@ -166,7 +166,7 @@ Deno.serve(async (req: Request) => {
     const messages = tokens.map((token: { expo_push_token: string }) => ({
       to: token.expo_push_token,
       title: "Новый заказ LadyGo",
-      body: `Подача: ${order.pickup_address || "Адрес не указан"} · До: ${order.destination_address || "не указан"} · ${Math.round(Number(order.estimated_price_rub || order.price_rub || 0))} ₽ · ${secondsRemaining} сек. на ответ`, 
+      body: `Новый заказ. Откройте LadyGo и ответьте за ${secondsRemaining} сек.`,
       sound: "default",
       priority: "high",
       channelId: "driver-order-offers",
