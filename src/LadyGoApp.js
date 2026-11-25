@@ -767,10 +767,14 @@ export default function LadyGoApp() {
             enableVibrate: true,
             sound: 'default'
           });
-          await Notifications.setNotificationCategoryAsync('driver_order_offer', [
-            { identifier: 'ACCEPT_ORDER', buttonTitle: 'Принять', options: { opensAppToForeground: true, isAuthenticationRequired: false } },
-            { identifier: 'DECLINE_ORDER', buttonTitle: 'Отказать', options: { opensAppToForeground: true, isDestructive: true, isAuthenticationRequired: false } }
-          ]);
+          try {
+            await Notifications.setNotificationCategoryAsync('driver_order_offer', [
+              { identifier: 'ACCEPT_ORDER', buttonTitle: 'Принять', options: { opensAppToForeground: true, isAuthenticationRequired: false } },
+              { identifier: 'DECLINE_ORDER', buttonTitle: 'Отказать', options: { opensAppToForeground: true, isDestructive: true, isAuthenticationRequired: false } }
+            ]);
+          } catch (categoryError) {
+            console.warn('LadyGo driver notification actions unavailable:', categoryError?.message);
+          }
         }
 
         let notificationPermission = await Notifications.getPermissionsAsync();
