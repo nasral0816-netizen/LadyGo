@@ -215,14 +215,27 @@ const translateError = error => {
   return 'Не удалось выполнить действие. Попробуй ещё раз. Если ошибка повторится, сообщи в поддержку.';
 };
 
-async function findAddresses(q) {
+function distanceBetweenPointsKm(a, b) {
+  if (!a || !b) return Number.POSITIVE_INFINITY;
+  const toRad = value => value * Math.PI / 180;
+  const lat1 = Number(a.latitude), lon1 = Number(a.longitude);
+  const lat2 = Number(b.latitude), lon2 = Number(b.longitude);
+  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return Number.POSITIVE_INFINITY;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const h = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+async function findAddresses(q, referencePoint) {
   const clean = String(q || '').replace(/\s+/g, ' ').trim();
   if (clean.length < 2) return [];
   const results = await withTimeout(geocodeAddress(clean, {
-    // No fixed-city bias: address search must work across the Russian Federation.
+    // Яндекс сначала ищет адреса рядом с точкой подачи, а не по всей стране без приоритета.
+    ...(referencePoint ? { userPosition: referencePoint } : {}),
     resultPageSize: 12
   }), 12000, 'Яндекс Карты не ответили на поиск адреса за 12 секунд. Попробуй ещё раз.');
-  return (results || []).filter(item => item.point &&
+  const mapped = (results || []).filter(item => item.point &&
     Number.isFinite(Number(item.point.latitude)) &&
     Number.isFinite(Number(item.point.longitude))
   ).map((item, index) => ({
@@ -230,8 +243,17 @@ async function findAddresses(q) {
     label: item.formattedAddress || item.name || clean,
     detail: item.description || 'Яндекс Карты',
     latitude: Number(item.point.latitude),
-    longitude: Number(item.point.longitude)
+    longitude: Number(item.point.longitude),
+    distanceKm: distanceBetweenPointsKm(referencePoint, item.point)
   }));
+
+  if (!referencePoint) return mapped;
+  mapped.sort((a, b) => a.distanceKm - b.distanceKm);
+
+  // Если найдено совпадение в районе подачи, не засоряем список одноимёнными
+  // улицами из далёких городов. Для междугороднего адреса оставляем общий поиск.
+  const nearby = mapped.filter(item => item.distanceKm <= 60);
+  return (nearby.length ? nearby : mapped).slice(0, 12);
 }
 
 function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, allowPickDestination = true }) {
@@ -932,12 +954,12 @@ export default function LadyGoApp() {
     let alive = true;
     const timer = setTimeout(async () => {
       setSearching(true);
-      try { const result = await findAddresses(query); if (alive) setSuggestions(result); }
+      try { const result = await findAddresses(query, pickup); if (alive) setSuggestions(result); }
       catch (_) { if (alive) setSuggestions([]); }
       finally { if (alive) setSearching(false); }
     }, 400);
     return () => { alive = false; clearTimeout(timer); };
-  }, [query]);
+  }, [query, pickup?.latitude, pickup?.longitude]);
 
   const loadAdminOrders = useCallback(async () => {
     if (profile?.role !== 'admin' || !supabase) return;
@@ -2028,7 +2050,7 @@ export default function LadyGoApp() {
           {quoteLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text>}
         </View>
         <Text style={st.sectionTitle}>Предпочтительный способ оплаты</Text>
-        <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>Р</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
+        <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>💵</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <Text style={st.muted}>Онлайн-оплата в приложении пока не подключена. Выбор способа — только предпочтение, списания не происходит.</Text>
         <Text style={st.muted}>Для связи используется номер, сохранённый в профиле.</Text>
         <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !quote?.price_token || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !quote?.price_token || busy}>
