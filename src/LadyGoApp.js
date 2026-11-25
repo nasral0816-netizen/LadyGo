@@ -12,8 +12,10 @@ import * as TaskManager from 'expo-task-manager';
 import { supabase } from './supabase';
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
+  handleNotification: async notification => ({
+    // Driver offers use the in-app full modal while the app is open.
+    // Background offers are still presented by Android as high-priority notifications.
+    shouldShowBanner: !notification?.request?.content?.data?.orderId,
     shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false
@@ -755,7 +757,7 @@ export default function LadyGoApp() {
           await Notifications.setNotificationChannelAsync('driver-orders', {
             name: 'Новые заказы водителю',
             description: 'Срочные предложения поездок с таймером ответа 30 секунд',
-            importance: Notifications.AndroidNotificationChannelImportance.MAX,
+            importance: Notifications.AndroidImportance.MAX,
             lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
             vibrationPattern: [0, 500, 250, 500, 250, 500],
             enableVibrate: true,
