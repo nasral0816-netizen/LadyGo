@@ -5,7 +5,6 @@ const json = (body:unknown,status=200)=>new Response(JSON.stringify(body),{statu
 const FREE = ["luggage_help","text_only","quiet_ride","wheelchair"];
 const PAID:Record<string,number>={child_seat:45,pet:35,bulky_luggage:35};
 const n=(v:unknown)=>Number.isFinite(Number(v))?Number(v):0;
-const inside=(p:any)=>n(p?.latitude)>=43.88&&n(p?.latitude)<=44.10&&n(p?.longitude)>=42.60&&n(p?.longitude)<=42.82;
 
 // Try independent OSRM-compatible routing services in order. A failed provider
 // must never produce an estimated/fabricated quote.
@@ -168,7 +167,9 @@ Deno.serve(async req=>{
   const routeCoords=points.map((p:any)=>`${n(p.longitude)},${n(p.latitude)}`).join(";");
   const route=await getDrivingRoute(routeCoords);
   const routeKm=route.distance/1000,routeMin=route.duration/60,start=points[0],end=points[points.length-1];
-  const outside=isNationalDefault?false:!(inside(start)&&inside(end));
+  // Avoid city-specific coordinate polygons. Until a proper city-boundary dataset
+  // is configured, apply the intercity rate band to long routes (>35 km).
+  const outside=routeKm>35;
   const perKm=outside?n(t.out_per_km_rub):n(t.city_per_km_rub),perMin=outside?n(t.out_per_min_rub):n(t.city_per_min_rub);
   const billableKm=Math.max(0,routeKm-n(t.included_km)),billableMin=Math.max(0,routeMin-n(t.included_min));
   const routeCost=n(t.min_price_rub)+billableKm*perKm+billableMin*perMin;
