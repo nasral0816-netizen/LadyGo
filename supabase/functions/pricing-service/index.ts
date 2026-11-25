@@ -78,7 +78,7 @@ Deno.serve(async req=>{
  if(authErr||!who.user)return json({error:"Сессия недействительна."},401);
  const db=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
  try{
-  const body=await req.json(),city=String(body.city_id||"kislovodsk"),tariffId=String(body.tariff_id||"economy"),action=String(body.action||"quote");
+  const body=await req.json(),requestedCity=String(body.city_id||"russia_default"),tariffId=String(body.tariff_id||"economy"),action=String(body.action||"quote");
   if(action==="create_order"){
     const quoteId=String(body.price_token??"");
     const pickup={latitude:Number(body.pickup_lat),longitude:Number(body.pickup_lng)};
@@ -149,14 +149,26 @@ Deno.serve(async req=>{
     return json({order});
   }
   if(!["economy","comfort","comfort_plus"].includes(tariffId))return json({error:"Неизвестный тариф."},400);
-  const {data:t,error:te}=await db.from("city_tariff_configs").select("*").eq("city_id",city).eq("tariff_id",tariffId).eq("active",true).single();
-  if(te||!t)return json({error:"Тариф недоступен в этом городе."},404);
+  // Prefer a city-specific tariff when supplied; otherwise use the nationwide
+  // baseline. This lets every Russian region accept quotes before local tariffs
+  // are individually configured, without silently borrowing another city's rates.
+  let pricingCity=requestedCity;
+  let {data:t,error:te}=await db.from("city_tariff_configs").select("*").eq("city_id",pricingCity).eq("tariff_id",tariffId).eq("active",true).maybeSingle();
+  if(te)throw te;
+  if(!t && pricingCity!=="russia_default"){
+    pricingCity="russia_default";
+    const fallback=await db.from("city_tariff_configs").select("*").eq("city_id",pricingCity).eq("tariff_id",tariffId).eq("active",true).maybeSingle();
+    if(fallback.error)throw fallback.error;
+    t=fallback.data;
+  }
+  if(!t)return json({error:"Тариф пока не настроен для этого региона."},404);
+  const isNationalDefault=pricingCity==="russia_default";
   const points=Array.isArray(body.points)?body.points:[];
   if(points.length<2||!points.every((p:any)=>Number.isFinite(Number(p.latitude))&&Number.isFinite(Number(p.longitude))))return json({error:"Сначала построй маршрут на карте."},400);
   const routeCoords=points.map((p:any)=>`${n(p.longitude)},${n(p.latitude)}`).join(";");
   const route=await getDrivingRoute(routeCoords);
   const routeKm=route.distance/1000,routeMin=route.duration/60,start=points[0],end=points[points.length-1];
-  const outside=!(inside(start)&&inside(end));
+  const outside=isNationalDefault?false:!(inside(start)&&inside(end));
   const perKm=outside?n(t.out_per_km_rub):n(t.city_per_km_rub),perMin=outside?n(t.out_per_min_rub):n(t.city_per_min_rub);
   const billableKm=Math.max(0,routeKm-n(t.included_km)),billableMin=Math.max(0,routeMin-n(t.included_min));
   const routeCost=n(t.min_price_rub)+billableKm*perKm+billableMin*perMin;
@@ -181,8 +193,8 @@ Deno.serve(async req=>{
   const waitCost=Math.max(0,waitMinutes-n(t.free_wait_min))*n(t.wait_per_min_rub);
   const tolls=0,discount=0;
   const total=Math.round(Math.max(n(t.min_price_rub)*0.7,baseFareRub+routeCost+optionsCost+tolls+waitCost-discount));
-  const breakdown={tariff:t.name,city_id:city,route_km:+routeKm.toFixed(2),route_min:Math.round(routeMin),route_estimated:route.estimated===true,included_km:n(t.included_km),included_min:n(t.included_min),billable_km:+billableKm.toFixed(2),billable_min:+billableMin.toFixed(2),min_price:n(t.min_price_rub),base_fare:baseFareRub,route_cost:+routeCost.toFixed(2),pickup_km:+pickupKm.toFixed(2),pickup_min:Math.round(pickupMin),pickup_cost:+pickupCost.toFixed(2),surge_multiplier:surge,surge_reason:surgeReason,pickup_surcharge_removed:true,options:opts,options_cost:optionsCost,tolls,discount,free_wait_min:n(t.free_wait_min),wait_minutes:waitMinutes,wait_cost:waitCost,total,currency:"RUB"};
-  const {data:q,error:qe}=await db.from("price_quotes").insert({passenger_id:waitOrder?.passenger_id||who.user.id,city_id:city,tariff_id:tariffId,route_km:routeKm,route_min:routeMin,amount_rub:total,pickup_lat:n(start.latitude),pickup_lng:n(start.longitude),destination_lat:n(end.latitude),destination_lng:n(end.longitude),breakdown,expires_at:new Date(Date.now()+240000).toISOString()}).select("id,amount_rub,expires_at,breakdown").single();
+  const breakdown={tariff:t.name,city_id:pricingCity,pricing_scope:isNationalDefault?"russia_national_default":"city_specific",route_km:+routeKm.toFixed(2),route_min:Math.round(routeMin),route_estimated:route.estimated===true,included_km:n(t.included_km),included_min:n(t.included_min),billable_km:+billableKm.toFixed(2),billable_min:+billableMin.toFixed(2),min_price:n(t.min_price_rub),base_fare:baseFareRub,route_cost:+routeCost.toFixed(2),pickup_km:+pickupKm.toFixed(2),pickup_min:Math.round(pickupMin),pickup_cost:+pickupCost.toFixed(2),surge_multiplier:surge,surge_reason:surgeReason,pickup_surcharge_removed:true,options:opts,options_cost:optionsCost,tolls,discount,free_wait_min:n(t.free_wait_min),wait_minutes:waitMinutes,wait_cost:waitCost,total,currency:"RUB"};
+  const {data:q,error:qe}=await db.from("price_quotes").insert({passenger_id:waitOrder?.passenger_id||who.user.id,city_id:pricingCity,tariff_id:tariffId,route_km:routeKm,route_min:routeMin,amount_rub:total,pickup_lat:n(start.latitude),pickup_lng:n(start.longitude),destination_lat:n(end.latitude),destination_lng:n(end.longitude),breakdown,expires_at:new Date(Date.now()+240000).toISOString()}).select("id,amount_rub,expires_at,breakdown").single();
   if(qe)throw qe;
   if(waitOrder){
     const {error:updateError}=await db.from("orders").update({price_rub:total,estimated_price_rub:total,price_quote_id:q.id,pricing_breakdown:breakdown}).eq("id",waitOrder.id).eq("driver_id",who.user.id);
