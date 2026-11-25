@@ -808,7 +808,7 @@ export default function LadyGoApp() {
       }
     })();
     return () => { alive = false; };
-  }, [profileReady, profileReady, notificationsReady, profile?.role, session?.user?.id]);
+  }, [profileReady, profile?.role, session?.user?.id]);
 
   useEffect(() => {
     if (!profileReady || !notificationsReady || !profile?.role || !session?.user?.id || !supabase || !Device.isDevice) return;
@@ -860,7 +860,7 @@ export default function LadyGoApp() {
       alive = false;
       removeSubscriptionSafely(responseSubscription);
     };
-  }, [profile?.role, session?.user?.id, loadDriverOrders, loadOrders]);
+  }, [profileReady, notificationsReady, profile?.role, session?.user?.id, loadDriverOrders, loadOrders]);
 
   useEffect(() => { if (session?.user) { loadOrders(); loadDemoOrders(); } }, [session, loadOrders, loadDemoOrders]);
 
