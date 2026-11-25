@@ -58,3 +58,44 @@
 - [ ] Проверены сценарии детей, жалоб, аварий, отмен и возвратов.
 - [ ] Утверждены резервное копирование и восстановление.
 - [ ] Платёжный контур отдельно утверждён, если будет включён.
+
+
+## 11. Технический статус и ограничения на 24.11.2026
+
+- Supabase активен; текущая live конфигурация использует pricing-service v7 и send-driver-offer-push v5. Секреты остаются в Supabase Vault/Edge environment и не включаются в клиент.
+- Включённые RLS-политики и SECURITY DEFINER RPC прошли статическую проверку конфигурации; это не заменяет негативные тесты с двумя независимыми JWT и проверку Storage/Realtime на устройствах.
+- В БД на момент сверки нет онлайн-водителей и push-токенов. Реальная доставка push и полный цикл поездки не подтверждены.
+- В БД есть один активный заказ, который нельзя использовать для QA или изменять. Для тестов создать отдельные синтетические аккаунты и новые тестовые заказы после согласования оператора.
+- APK CI runs #404/#405 на последней проверке ещё выполняли Gradle release build; установка на Android не подтверждена.
+- 14 SECURITY DEFINER предупреждений рассмотрены индивидуально; подробности и оставшиеся риски описаны в docs/security-definer-audit-ru.md.
+- Оператор обязан отдельно утвердить юрисдикцию, основание обработки геолокации, сроки хранения, договорную модель перевозчика, страхование, Google Play disclosures и порядок реагирования на инциденты. Этот документ не является legal sign-off.
+
+
+## 12. Уточнение сборки APK (24.11.2026)
+
+CI runs #440/#441 собрали APK 6.9.1 (versionCode 52), но проверка бинарного файла показала отсутствие APK Signing Block и сертификата. Такой файл нельзя устанавливать как обычный APK и нельзя публиковать. Для QA допускается debug signing с явной пометкой тестовой сборки; для Google Play и обновления production-приложения владелец обязан предоставить защищённый release keystore/credentials. Не включать ключи подписи в Git или APK.
+
+
+## Статус приёмки и технические ограничения (24.11.2026)
+
+Этот документ остаётся checklist, не юридическим заключением. Юридический допуск перевозчика, страхование, договоры водителей, privacy policy, GDPR/152-ФЗ applicability, Google Play Data safety и Background Location declaration не подписаны независимым ответственным.
+
+Технически: Security Advisor показывает Leaked Password Protection Disabled; владелец должен включить настройку Supabase Auth и проверить signup/reset. Состояние резервного копирования/PITR и restore drill не подтверждено доступными метаданными проекта; до релиза владелец должен проверить план бэкапов и провести восстановление на отдельном проекте/ветке. Реальный push/trip E2E и установка APK на устройстве не подтверждены.
+
+
+## Последняя техническая сверка (24.11.2026)
+
+QA APK run #453 debug-signed and apksigner v2 verified, but install/login on a device are unverified. Live DB has 0 online drivers, 0 push tokens and one active order left untouched; trip E2E and push delivery are not proven. Security Advisor reports 14 authenticated SECURITY DEFINER warnings and Leaked Password Protection Disabled. The Supabase organization is on Free tier; Supabase docs state leaked-password protection requires Pro or above. CSV export is absent. Backup inventory and restore drill are not accessible through the connected tools and remain an owner/operator confirmation item. This checklist is not legal approval.
+
+
+## Проверка релизных блокеров (24.11.2026)
+
+На момент последней технической сверки:
+- Privacy policy и юридические документы оператора не получили независимое утверждение; этот checklist не является опубликованной privacy policy или legal opinion.
+- Основание обработки точной и фоновой геолокации, сроки хранения GPS/trip_tracks, трансграничная передача, роли оператора/обработчиков и тексты согласий должны быть утверждены для фактических стран работы.
+- Верификация водительских документов, разрешения/лицензирование перевозчика, страхование ответственности и договорная модель водителя не подтверждены документами владельца.
+- Google Play Data Safety и Background Location declaration не заполнены/не прошли review в рамках доступной проверки.
+- Leaked Password Protection отключён в Supabase Auth; включение зависит от тарифа и владельца проекта.
+- Backup artifact и успешное восстановление в отдельной среде не подтверждены.
+
+До получения подписанного legal/privacy review и подтверждения перечисленных документов релиз и публикация в Google Play запрещены. Не трактовать техническое одобрение анкеты в приложении как юридический допуск к перевозкам.

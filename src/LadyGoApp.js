@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Platform, SafeAreaView, ScrollView,
-  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image
+  ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Modal, Platform, SafeAreaView, ScrollView,
+  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image, Vibration
 } from 'react-native';
 import { YandexMapView, Marker, Polyline, geocodeAddress, findDrivingRoutes } from 'expo-yandex-mapkit';
 import * as Location from 'expo-location';
@@ -12,8 +12,10 @@ import * as TaskManager from 'expo-task-manager';
 import { supabase } from './supabase';
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
+  handleNotification: async notification => ({
+    // Driver offers use the in-app full modal while the app is open.
+    // Background offers are still presented by Android as high-priority notifications.
+    shouldShowBanner: !notification?.request?.content?.data?.orderId,
     shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false
@@ -135,8 +137,59 @@ const TARIFFS = [
   { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '♡' },
   { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '⌂' }
 ];
-const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Ищем водителя', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
+const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Ищем водителя', accepted: 'Водитель принял заказ', arrived: 'Водитель на месте', in_progress: 'Поездка началась', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
+
+function removeSubscriptionSafely(subscription) {
+  if (typeof subscription?.remove === 'function') {
+    subscription.remove();
+  } else if (typeof subscription?.unsubscribe === 'function') {
+    subscription.unsubscribe();
+  }
+}
+
+function removeRealtimeChannelSafely(client, channel) {
+  if (typeof client?.removeChannel === 'function') {
+    Promise.resolve(client.removeChannel(channel)).catch(error =>
+      console.warn('LadyGo realtime cleanup failed:', error?.message)
+    );
+  } else {
+    removeSubscriptionSafely(channel);
+  }
+}
+
+async function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function extractBackendError(error) {
+  // Supabase FunctionsHttpError stores the actual HTTP Response in context.
+  // Read a clone so the SDK response remains untouched.
+  const response = error?.context;
+  if (response && typeof response.clone === 'function') {
+    try {
+      const payload = await response.clone().json();
+      const detail = payload?.error || payload?.message || payload?.msg;
+      if (detail) return String(detail);
+    } catch (_) {
+      try {
+        const rawBody = await response.clone().text();
+        if (rawBody) return rawBody.slice(0, 500);
+      } catch (_) {}
+    }
+  }
+  return String(error?.message || error || '').trim();
+}
 
 const translateError = error => {
   const raw = String(error?.message || error || '').trim();
@@ -147,23 +200,42 @@ const translateError = error => {
   if (/user already registered|already been registered/.test(message)) return 'Этот адрес электронной почты уже зарегистрирован. Войди в аккаунт.';
   if (/password.*(at least|minimum)|weak password/.test(message)) return 'Пароль слишком простой или короткий. Придумай другой пароль.';
   if (/email rate limit exceeded|rate limit/.test(message)) return 'Слишком много запросов. Подожди немного и попробуй снова.';
-  if (/network request failed|failed to fetch|fetch failed|networkerror|timeout|timed out/.test(message)) return 'Не удалось подключиться к серверу. Проверь интернет и попробуй ещё раз.';
+  if (/network request failed|failed to fetch|fetch failed|networkerror|socket timeout|connection refused|econnreset|enotfound/.test(message)) return 'Не удалось установить соединение с сервером. Проверь подключение и попробуй ещё раз.';
+  if (/timeout|timed out|aborterror/.test(message)) return 'Сервер не ответил вовремя. Попробуй ещё раз через минуту.';
+  if (/500|502|503|504|internal server error|service unavailable|bad gateway/.test(message)) return 'Сервис временно недоступен. Попробуй ещё раз позже.';
   if (/duplicate key|unique constraint|orders_one_active_per_passenger_idx/.test(message)) return 'У тебя уже есть активный заказ. Открой раздел «Мои поездки».';
-  if (/permission denied|not allowed|unauthorized|forbidden|jwt/.test(message)) return 'Недостаточно прав для этого действия. Перезайди в аккаунт и попробуй снова.';
-  if (/function .* not found|could not find the function|schema cache/.test(message)) return 'Функция временно недоступна. Обнови приложение или попробуй позже.';
+  if (/этот аккаунт не может создавать поездки/.test(message)) return 'Для заказа поездки используй пассажирский режим.';
+  if (/permission denied|not allowed|unauthorized|forbidden|jwt/.test(message)) return 'Сервер отклонил действие из-за прав доступа. Проверь роль аккаунта.';
+  if (/pricing service is not configured|service is not configured/.test(message)) return 'Сервер заказов ещё не настроен. Администратору нужно настроить серверные ключи Supabase и развернуть pricing-service.';
+  if (/unable to process pricing request|relation .* does not exist|column .* does not exist|function .* does not exist/.test(message)) return 'Сервер не смог сохранить заказ: вероятно, не применены необходимые миграции LadyGo или не настроена функция pricing-service. Это не ошибка интернета.';
+  if (/price quote expired|quote.*expired/.test(message)) return 'Срок расчёта цены истёк. Обнови маршрут и попробуй заказать ещё раз.';
+  if (/function .* not found|could not find the function|schema cache/.test(message)) return 'Серверная функция заказов не найдена. Нужно развернуть pricing-service в Supabase.';
   if (/row-level security|violates row-level security/.test(message)) return 'Действие не разрешено для этого аккаунта.';
   if (/маршрут не найден/.test(message)) return 'Не удалось построить маршрут. Проверь выбранные адреса.';
-  return 'Не удалось выполнить действие. Проверь подключение к интернету и попробуй ещё раз.';
+  return 'Не удалось выполнить действие. Попробуй ещё раз. Если ошибка повторится, сообщи в поддержку.';
 };
 
-async function findAddresses(q) {
+function distanceBetweenPointsKm(a, b) {
+  if (!a || !b) return Number.POSITIVE_INFINITY;
+  const toRad = value => value * Math.PI / 180;
+  const lat1 = Number(a.latitude), lon1 = Number(a.longitude);
+  const lat2 = Number(b.latitude), lon2 = Number(b.longitude);
+  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return Number.POSITIVE_INFINITY;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const h = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+async function findAddresses(q, referencePoint) {
   const clean = String(q || '').replace(/\s+/g, ' ').trim();
   if (clean.length < 2) return [];
-  const results = await geocodeAddress(clean, {
-    userPosition: { latitude: 43.9052, longitude: 42.7168 },
+  const results = await withTimeout(geocodeAddress(clean, {
+    // Яндекс сначала ищет адреса рядом с точкой подачи, а не по всей стране без приоритета.
+    ...(referencePoint ? { userPosition: referencePoint } : {}),
     resultPageSize: 12
-  });
-  return (results || []).filter(item => item.point &&
+  }), 12000, 'Яндекс Карты не ответили на поиск адреса за 12 секунд. Попробуй ещё раз.');
+  const mapped = (results || []).filter(item => item.point &&
     Number.isFinite(Number(item.point.latitude)) &&
     Number.isFinite(Number(item.point.longitude))
   ).map((item, index) => ({
@@ -171,8 +243,17 @@ async function findAddresses(q) {
     label: item.formattedAddress || item.name || clean,
     detail: item.description || 'Яндекс Карты',
     latitude: Number(item.point.latitude),
-    longitude: Number(item.point.longitude)
+    longitude: Number(item.point.longitude),
+    distanceKm: distanceBetweenPointsKm(referencePoint, item.point)
   }));
+
+  if (!referencePoint) return mapped;
+  mapped.sort((a, b) => a.distanceKm - b.distanceKm);
+
+  // Если найдено совпадение в районе подачи, не засоряем список одноимёнными
+  // улицами из далёких городов. Для междугороднего адреса оставляем общий поиск.
+  const nearby = mapped.filter(item => item.distanceKm <= 60);
+  return (nearby.length ? nearby : mapped).slice(0, 12);
 }
 
 function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, allowPickDestination = true }) {
@@ -180,7 +261,7 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
   const [zoom, setZoom] = useState(17);
   const [is3D, setIs3D] = useState(true);
   const [cameraPosition, setCameraPosition] = useState({
-    latitude: 43.9052, longitude: 42.7168, zoom: 13, tilt: 0
+    latitude: 55.751244, longitude: 37.618423, zoom: 5, tilt: 0
   });
 
   useEffect(() => {
@@ -288,10 +369,16 @@ function Field({ label, value, onChangeText, placeholder, onFocus, icon, autoCap
 export default function LadyGoApp() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [profileReady, setProfileReady] = useState(false);
+  const [notificationsReady, setNotificationsReady] = useState(false);
+  const permissionSetupUsers = useRef(new Set());
+  const handledNotificationActions = useRef(new Set());
   const [boot, setBoot] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [register, setRegister] = useState(false);
+  const [authPhone, setAuthPhone] = useState('');
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [tab, setTab] = useState('ride');
@@ -309,13 +396,22 @@ export default function LadyGoApp() {
   const [tariff, setTariff] = useState('economy');
   const [payment, setPayment] = useState('cash');
   const [quote, setQuote] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState('');
+  const [quoteRetry, setQuoteRetry] = useState(0);
   const [orders, setOrders] = useState([]);
   const [presentationOrders, setPresentationOrders] = useState([]);
   const [demoOrders, setDemoOrders] = useState([]);
   const [adminDemoOrders, setAdminDemoOrders] = useState([]);
   const [activeOrder, setActiveOrder] = useState(null);
+  const previousPassengerOrderStatus = useRef(null);
   const [phone, setPhone] = useState('');
   const [driverOrders, setDriverOrders] = useState([]);
+  const [incomingOffer, setIncomingOffer] = useState(null);
+  const [offerActionBusy, setOfferActionBusy] = useState(false);
+  const [offerClock, setOfferClock] = useState(Date.now());
+  const notifiedOfferIds = useRef(new Set());
+  const expiredOfferIds = useRef(new Set());
   const [driverPrices, setDriverPrices] = useState({});
   const [driverSection, setDriverSection] = useState('overview');
   const [driverLoading, setDriverLoading] = useState(false);
@@ -369,6 +465,7 @@ export default function LadyGoApp() {
     const { data } = await supabase.from('profiles').select('*').eq('id', u.id).maybeSingle();
     setProfile(data || { id: u.id, email: u.email, role: 'passenger' });
     setPhone(data?.phone || u.user_metadata?.phone || '');
+    setProfileReady(true);
   }, []);
 
   const loadDemoOrders = useCallback(async () => {
@@ -440,18 +537,80 @@ export default function LadyGoApp() {
   }, [session?.user?.id]);
 
   useEffect(() => {
+    if (!supabase) return;
     let alive = true;
+    const handleAuthUrl = async url => {
+      try {
+        const codeMatch = String(url).match(/[?&]code=([^&#]+)/);
+        const code = codeMatch ? decodeURIComponent(codeMatch[1]) : null;
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+        }
+      } catch (error) {
+        console.warn('LadyGo auth callback failed:', error?.message);
+        Alert.alert('Не удалось подтвердить действие', 'Открой ссылку из письма ещё раз или запроси новую.');
+      }
+    };
+    Linking.getInitialURL().then(url => { if (url && alive) handleAuthUrl(url); }).catch(() => {});
+    const urlSubscription = Linking.addEventListener('url', event => handleAuthUrl(event.url));
     (async () => {
-      if (!supabase) { setBoot(false); return; }
-      const { data } = await supabase.auth.getSession();
-      if (alive && data.session) { setSession(data.session); await loadProfile(data.session.user); }
-      if (alive) setBoot(false);
+      try {
+        if (!supabase) return;
+        // Startup must not depend indefinitely on a reachable backend.
+        // A cached session is restored locally; profile refresh happens in the background.
+        const sessionResult = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise(resolve => setTimeout(() => resolve({ data: { session: null }, error: new Error('Session restore timed out') }), 5000))
+        ]);
+        if (!alive) return;
+        const restoredSession = sessionResult?.data?.session || null;
+        if (restoredSession) {
+          setSession(restoredSession);
+          setProfileReady(false);
+          setNotificationsReady(false);
+          setProfile({
+            id: restoredSession.user.id,
+            email: restoredSession.user.email,
+            role: 'passenger'
+          });
+          loadProfile(restoredSession.user).catch(error =>
+            console.warn('LadyGo profile restore failed:', error?.message)
+          );
+        }
+        if (sessionResult?.error) {
+          console.warn('LadyGo session restore warning:', sessionResult.error.message);
+        }
+      } catch (error) {
+        console.warn('LadyGo startup restore failed:', error?.message);
+      } finally {
+        if (alive) setBoot(false);
+      }
     })();
-    const { data: listener } = supabase?.auth.onAuthStateChange(async (_event, next) => {
+    const { data: listener } = supabase?.auth.onAuthStateChange(async (event, next) => {
+      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
       setSession(next);
-      if (next?.user) await loadProfile(next.user); else { setProfile(null); setOrders([]); setActiveOrder(null); }
+      if (next?.user) {
+        setProfileReady(false);
+        setNotificationsReady(false);
+        setProfile({ id: next.user.id, email: next.user.email, role: 'passenger' });
+        loadProfile(next.user).catch(error =>
+          console.warn('LadyGo profile refresh failed:', error?.message)
+        );
+      } else {
+        setProfileReady(false);
+        setNotificationsReady(false);
+        permissionSetupUsers.current.clear();
+        setProfile(null);
+        setOrders([]);
+        setActiveOrder(null);
+      }
     }) || { data: { subscription: null } };
-    return () => { alive = false; listener?.subscription?.unsubscribe(); };
+    return () => {
+      alive = false;
+      removeSubscriptionSafely(listener?.subscription);
+      removeSubscriptionSafely(urlSubscription);
+    };
   }, [loadProfile]);
 
   useEffect(() => {
@@ -478,35 +637,45 @@ export default function LadyGoApp() {
       ]);
       return true;
     });
-    return () => subscription.remove();
+    return () => removeSubscriptionSafely(subscription);
   }, [searchField, tab]);
 
   useEffect(() => {
-    if (!session?.user?.id || profile?.role !== 'passenger' || !supabase) return;
+    // Keep passenger order status in sync when the same account switches to Driver mode.
+    if (!session?.user?.id || !supabase) return;
+    let alive = true;
+    const refreshPassengerOrders = () => { if (alive) loadOrders(); };
+    refreshPassengerOrders();
     const channel = supabase.channel('ladygo-passenger-orders-' + session.user.id)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders',
-        filter: 'passenger_id=eq.' + session.user.id }, () => loadOrders())
+        filter: 'passenger_id=eq.' + session.user.id }, refreshPassengerOrders)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [session?.user?.id, profile?.role, loadOrders]);
+    const refresh = setInterval(refreshPassengerOrders, 5000);
+    return () => {
+      alive = false;
+      clearInterval(refresh);
+      removeRealtimeChannelSafely(supabase, channel);
+    };
+  }, [session?.user?.id, loadOrders]);
+
+  // Matching is server-side (orders INSERT trigger + offer-expiry cron).
+  // The client must never call the restricted dispatch primitive directly.
 
   useEffect(() => {
-    if (!activeOrder?.id || activeOrder.status !== 'new' || !supabase) return;
-    let running = false;
-    const dispatch = async () => {
-      if (running) return;
-      running = true;
-      try {
-        await supabase.rpc('ladygo_dispatch_next_driver', { p_order_id: activeOrder.id });
-        await loadOrders();
-      } catch (_) {
-        // Server owns matching; next poll retries safely.
-      } finally { running = false; }
-    };
-    dispatch();
-    const timer = setInterval(dispatch, 12000);
-    return () => clearInterval(timer);
-  }, [activeOrder?.id, activeOrder?.status, loadOrders]);
+    const previous = previousPassengerOrderStatus.current;
+    if (
+      activeOrder?.id &&
+      previous?.id === activeOrder.id &&
+      previous.status === 'new' &&
+      ['accepted', 'arrived', 'in_progress'].includes(activeOrder.status)
+    ) {
+      // Когда водитель принимает заказ, сразу открываем понятный экран состояния поездки.
+      setTab('orders');
+    }
+    previousPassengerOrderStatus.current = activeOrder
+      ? { id: activeOrder.id, status: activeOrder.status }
+      : null;
+  }, [activeOrder?.id, activeOrder?.status]);
 
   useEffect(() => {
     if (!activeOrder?.driver_id || !['accepted','arrived','in_progress'].includes(activeOrder.status) || !supabase) return;
@@ -518,13 +687,14 @@ export default function LadyGoApp() {
           latitude: Number(row.latitude), longitude: Number(row.longitude), heading: row.heading
         });
       }).subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { removeRealtimeChannelSafely(supabase, channel); };
   }, [activeOrder?.driver_id, activeOrder?.status]);
 
   useEffect(() => {
     if (profile?.role !== 'driver' || !session?.user?.id || !driverOnline || !supabase) return;
     let alive = true;
     let watch = null;
+    let heartbeatTimer = null;
     (async () => {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (permission.status !== 'granted') {
@@ -570,16 +740,36 @@ export default function LadyGoApp() {
           if (error) console.warn('LadyGo GPS heartbeat failed:', error.message);
         });
       }
+      // Location callbacks can be sparse while the car is stationary. Keep the
+      // 90-second server presence lease alive while the foreground app is open.
+      heartbeatTimer = setInterval(async () => {
+        if (!alive) return;
+        try {
+          const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          if (!alive) return;
+          const { error } = await supabase.rpc('ladygo_driver_heartbeat', {
+            p_is_online: true,
+            p_latitude: current.coords.latitude,
+            p_longitude: current.coords.longitude,
+            p_heading: current.coords.heading
+          });
+          if (error) console.warn('LadyGo periodic heartbeat failed:', error.message);
+        } catch (heartbeatError) {
+          console.warn('LadyGo periodic GPS heartbeat failed:', heartbeatError?.message);
+        }
+      }, 30000);
     })().catch(error => console.warn('LadyGo GPS watcher failed:', error?.message));
     return () => {
       alive = false;
-      watch?.remove?.();
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      removeSubscriptionSafely(watch);
+      // Stopping/restarting the GPS watcher (navigation, React remount, permission
+      // refresh) must NOT silently take the driver offline. Only the explicit
+      // "Завершить смену" action writes is_online=false. Presence expires server-side
+      // when heartbeats stop, so a closed app cannot remain dispatchable indefinitely.
       Location.hasStartedLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK)
         .then(started => started ? Location.stopLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK) : null)
         .catch(() => {});
-      supabase.rpc('ladygo_driver_heartbeat', {
-        p_is_online: false, p_latitude: null, p_longitude: null, p_heading: null
-      }).catch(() => {});
     };
   }, [profile?.role, session?.user?.id, driverOnline]);
 
@@ -593,11 +783,93 @@ export default function LadyGoApp() {
         filter: 'driver_id=eq.' + session.user.id }, () => loadDriverOrders())
       .subscribe();
     const refresh = setInterval(loadDriverOrders, 15000);
-    return () => { clearInterval(refresh); supabase.removeChannel(channel); };
+    return () => { clearInterval(refresh); removeRealtimeChannelSafely(supabase, channel); };
   }, [profile?.role, session?.user?.id, loadDriverOrders]);
 
+  // Запрашиваем базовые разрешения после загрузки профиля и входа в аккаунт.
+  // Системные окна Android показываются по одному; уже выданные разрешения не спрашиваются повторно.
   useEffect(() => {
-    if (!profile?.role || !session?.user?.id || !supabase || !Device.isDevice) return;
+    if (!profileReady || !profile?.role || !session?.user?.id || !Device.isDevice) return;
+    const userId = session.user.id;
+    if (permissionSetupUsers.current.has(userId)) return;
+    permissionSetupUsers.current.add(userId);
+    let alive = true;
+    (async () => {
+      try {
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync('driver-order-offers', {
+            name: 'Новые заказы водителю',
+            description: 'Срочные предложения поездок с таймером ответа 30 секунд',
+            importance: Notifications.AndroidImportance.MAX,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+            vibrationPattern: [0, 500, 250, 500, 250, 500],
+            enableVibrate: true,
+            sound: 'default'
+          });
+          try {
+            await Notifications.setNotificationCategoryAsync('driver_order_offer', [
+              { identifier: 'ACCEPT_ORDER', buttonTitle: 'Принять', options: { opensAppToForeground: true, isAuthenticationRequired: false } },
+              { identifier: 'DECLINE_ORDER', buttonTitle: 'Отказать', options: { opensAppToForeground: true, isDestructive: true, isAuthenticationRequired: false } }
+            ]);
+          } catch (categoryError) {
+            console.warn('LadyGo driver notification actions unavailable:', categoryError?.message);
+          }
+        }
+
+        let notificationPermission = await Notifications.getPermissionsAsync();
+        if (notificationPermission.status !== 'granted' && notificationPermission.canAskAgain !== false) {
+          notificationPermission = await Notifications.requestPermissionsAsync();
+        }
+        if (!alive) return;
+        setNotificationsReady(true);
+
+        let foregroundLocation = await Location.getForegroundPermissionsAsync();
+        if (foregroundLocation.status !== 'granted' && foregroundLocation.canAskAgain !== false) {
+          foregroundLocation = await Location.requestForegroundPermissionsAsync();
+        }
+        if (!alive) return;
+
+        // Фоновая геолокация нужна только водителю для работы на линии и обновления координат.
+        if (profile.role === 'driver' && foregroundLocation.status === 'granted') {
+          let backgroundLocation = await Location.getBackgroundPermissionsAsync();
+          if (backgroundLocation.status !== 'granted' && backgroundLocation.canAskAgain !== false) {
+            await new Promise(resolve => Alert.alert(
+              'Разрешить геолокацию в фоне?',
+              'Водителю LadyGo нужно получать заказы и передавать местоположение, даже когда приложение свёрнуто. Разрешение используется при работе на линии.',
+              [
+                { text: 'Позже', style: 'cancel', onPress: resolve },
+                { text: 'Продолжить', onPress: resolve }
+              ],
+              { cancelable: true, onDismiss: resolve }
+            ));
+            if (alive) await Location.requestBackgroundPermissionsAsync();
+          }
+        }
+
+        if (!alive) return;
+        const missing = [];
+        if (notificationPermission.status !== 'granted') missing.push('уведомления');
+        if (foregroundLocation.status !== 'granted') missing.push('геолокация при использовании приложения');
+        if (profile.role === 'driver') {
+          const backgroundLocation = await Location.getBackgroundPermissionsAsync();
+          if (backgroundLocation.status !== 'granted') missing.push('фоновая геолокация');
+        }
+        if (missing.length) {
+          Alert.alert(
+            'Не все разрешения включены',
+            'Для корректной работы LadyGo разреши: ' + missing.join(', ') + '. Их можно включить в настройках телефона.',
+            [{ text: 'Понятно' }, { text: 'Открыть настройки', onPress: () => Linking.openSettings() }]
+          );
+        }
+      } catch (error) {
+        console.warn('LadyGo permission onboarding failed:', error?.message);
+      }
+    })();
+    return () => { alive = false; };
+  }, [profileReady, profile?.role, session?.user?.id]);
+
+  useEffect(() => {
+    if (!profileReady || !notificationsReady || !profile?.role || !session?.user?.id || !supabase || !Device.isDevice) return;
     let alive = true;
     (async () => {
       try {
@@ -616,8 +888,7 @@ export default function LadyGoApp() {
             })
           ]);
         }
-        let permission = await Notifications.getPermissionsAsync();
-        if (permission.status !== 'granted') permission = await Notifications.requestPermissionsAsync();
+        const permission = await Notifications.getPermissionsAsync();
         if (!alive || permission.status !== 'granted') return;
         const tokenResult = await Notifications.getExpoPushTokenAsync({
           projectId: '95ac82ec-010d-4770-9aba-9f52878e1b3b'
@@ -632,8 +903,27 @@ export default function LadyGoApp() {
         console.warn('LadyGo push registration unavailable:', error?.message);
       }
     })();
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+    const handleNotificationResponse = async response => {
+      const responseKey = String(response?.notification?.request?.identifier || '') + ':' + String(response?.actionIdentifier || '');
+      if (handledNotificationActions.current.has(responseKey)) return;
+      handledNotificationActions.current.add(responseKey);
       const data = response?.notification?.request?.content?.data || {};
+      const action = response?.actionIdentifier;
+      if (profile.role === 'driver' && data.orderId && ['ACCEPT_ORDER', 'DECLINE_ORDER'].includes(action)) {
+        try {
+          const rpc = action === 'ACCEPT_ORDER' ? 'ladygo_accept_order' : 'ladygo_decline_order';
+          const { error } = await supabase.rpc(rpc, { p_order_id: data.orderId });
+          if (error) throw error;
+          setIncomingOffer(null);
+          setTab('driver');
+          await loadDriverOrders();
+          if (action === 'ACCEPT_ORDER') Alert.alert('Заказ принят', 'Поездка назначена вам.');
+        } catch (error) {
+          Alert.alert('Не удалось обработать заказ', translateError(error));
+          await loadDriverOrders();
+        }
+        return;
+      }
       if (profile.role === 'driver') {
         setTab('driver');
         loadDriverOrders();
@@ -642,12 +932,26 @@ export default function LadyGoApp() {
         loadOrders();
       }
       if (data.orderId) setTab(profile.role === 'driver' ? 'driver' : 'orders');
+    };
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(handleNotificationResponse);
+    // A notification action can cold-start the app; recover that response after auth/profile restore.
+    Notifications.getLastNotificationResponseAsync().then(response => {
+      if (response) handleNotificationResponse(response);
+      return Notifications.clearLastNotificationResponseAsync();
+    }).catch(error => console.warn('LadyGo last notification response unavailable:', error?.message));
+    const receivedSubscription = Notifications.addNotificationReceivedListener(notification => {
+      const data = notification?.request?.content?.data || {};
+      if (profile.role === 'driver' && data.orderId) {
+        setTab('driver');
+        loadDriverOrders();
+      }
     });
     return () => {
       alive = false;
-      responseSubscription.remove();
+      removeSubscriptionSafely(responseSubscription);
+      removeSubscriptionSafely(receivedSubscription);
     };
-  }, [profile?.role, session?.user?.id, loadDriverOrders, loadOrders]);
+  }, [profileReady, notificationsReady, profile?.role, session?.user?.id, loadDriverOrders, loadOrders]);
 
   useEffect(() => { if (session?.user) { loadOrders(); loadDemoOrders(); } }, [session, loadOrders, loadDemoOrders]);
 
@@ -667,12 +971,12 @@ export default function LadyGoApp() {
     let alive = true;
     const timer = setTimeout(async () => {
       setSearching(true);
-      try { const result = await findAddresses(query); if (alive) setSuggestions(result); }
+      try { const result = await findAddresses(query, pickup); if (alive) setSuggestions(result); }
       catch (_) { if (alive) setSuggestions([]); }
       finally { if (alive) setSearching(false); }
     }, 400);
     return () => { alive = false; clearTimeout(timer); };
-  }, [query]);
+  }, [query, pickup?.latitude, pickup?.longitude]);
 
   const loadAdminOrders = useCallback(async () => {
     if (profile?.role !== 'admin' || !supabase) return;
@@ -747,7 +1051,7 @@ export default function LadyGoApp() {
         if (isAdmin) loadAdminOrders();
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { removeRealtimeChannelSafely(supabase, channel); };
   }, [session?.user?.id, profile?.role, loadDemoOrders, loadAdminOrders]);
 
   const loadAdminApplications = useCallback(async () => {
@@ -1037,6 +1341,25 @@ export default function LadyGoApp() {
     } catch (e) { Alert.alert('Не удалось сохранить автомобиль', translateError(e)); }
     finally { setVehicleSaving(false); }
   };
+  useEffect(() => {
+    const timer = setInterval(() => setOfferClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!incomingOffer) return;
+    if (Platform.OS === 'android') Vibration.vibrate([0, 650, 300, 650, 300, 650], true);
+    else Vibration.vibrate();
+    return () => Vibration.cancel();
+  }, [incomingOffer?.offer_id]);
+
+  useEffect(() => {
+    if (!incomingOffer?.offer_expires_at) return;
+    if (new Date(incomingOffer.offer_expires_at).getTime() <= offerClock) {
+      setIncomingOffer(null);
+    }
+  }, [incomingOffer?.offer_expires_at, offerClock]);
+
   const loadDriverOrders = useCallback(async () => {
     if (!session?.user?.id || profile?.role !== 'driver' || !supabase) return;
     setDriverLoading(true);
@@ -1053,6 +1376,7 @@ export default function LadyGoApp() {
       if (offersResult.error) throw offersResult.error;
       if (mineResult.error) throw mineResult.error;
       const offers = offersResult.data || [];
+
       const ids = offers.map(o => o.order_id);
       let offered = [];
       if (ids.length) {
@@ -1064,7 +1388,12 @@ export default function LadyGoApp() {
         });
       }
       const assigned = mineResult.data || [];
+      if (offered.length) { setSearchField(''); setTab('driver'); }
       setDriverOrders([...offered, ...assigned.filter(o => !offered.some(x => x.id === o.id))]);
+      setIncomingOffer(current => {
+        if (current && offered.some(item => item.id === current.id)) return offered.find(item => item.id === current.id) || current;
+        return offered[0] || null;
+      });
       const presenceFresh = presenceResult.data?.updated_at &&
         Date.now() - new Date(presenceResult.data.updated_at).getTime() < 90000;
       setDriverOnline(Boolean(presenceResult.data?.is_online && presenceFresh));
@@ -1078,6 +1407,21 @@ export default function LadyGoApp() {
     } finally { setDriverLoading(false); }
   }, [session?.user?.id, profile?.role]);
 
+  useEffect(() => {
+    if (profile?.role !== 'driver' || !session?.user?.id || !supabase) return;
+    for (const order of driverOrders) {
+      if (!order.offer_id || !order.offer_expires_at || expiredOfferIds.current.has(order.offer_id)) continue;
+      if (new Date(order.offer_expires_at).getTime() <= offerClock) {
+        expiredOfferIds.current.add(order.offer_id);
+        supabase.rpc('ladygo_expire_my_offer', { p_order_id: order.id })
+          .then(({ error }) => {
+            if (error) console.warn('LadyGo offer timeout processing failed:', error.message);
+            loadDriverOrders();
+          });
+      }
+    }
+  }, [driverOrders, offerClock, profile?.role, session?.user?.id, loadDriverOrders]);
+
   const toggleDriverShift = async () => {
     if (!session?.user?.id || driverPresenceLoading) return;
     setDriverPresenceLoading(true);
@@ -1087,6 +1431,8 @@ export default function LadyGoApp() {
           p_is_online: false, p_latitude: null, p_longitude: null, p_heading: null
         });
         if (error) throw error;
+        const trackingStarted = await Location.hasStartedLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK).catch(() => false);
+        if (trackingStarted) await Location.stopLocationUpdatesAsync(LADYGO_DRIVER_LOCATION_TASK).catch(() => {});
         setDriverOnline(false);
         Alert.alert('Вы не на линии', 'Новые заказы больше не будут поступать.');
       } else {
@@ -1103,8 +1449,16 @@ export default function LadyGoApp() {
           p_heading: position.coords.heading
         });
         if (error) throw error;
-        setDriverOnline(true);
-        Alert.alert('Вы на линии', 'LadyGo ищет заказы рядом с вами.');
+        // Confirm the persisted state instead of trusting the local button state.
+        const { data: confirmedPresence, error: presenceError } = await supabase
+          .from('driver_presence').select('is_online,updated_at')
+          .eq('driver_id', session.user.id).maybeSingle();
+        if (presenceError) throw presenceError;
+        const confirmed = Boolean(confirmedPresence?.is_online &&
+          Date.now() - new Date(confirmedPresence.updated_at).getTime() < 90000);
+        setDriverOnline(confirmed);
+        if (!confirmed) throw new Error('Сервер не подтвердил выход на линию. Проверь GPS и попробуй ещё раз.');
+        Alert.alert('Вы на линии', 'Статус подтверждён сервером. LadyGo ищет заказы рядом с вами.');
         await loadDriverOrders();
       }
     } catch (e) {
@@ -1113,33 +1467,63 @@ export default function LadyGoApp() {
   };
 
   const acceptDriverOrder = async order => {
-    if (!order?.id || !order?.offer_id || busy) return;
+    if (!order?.id || !order?.offer_id || busy || offerActionBusy) return;
     const price = Number(order.estimated_price_rub || order.price_rub || driverPrices[order.id]);
     if (!Number.isFinite(price) || price <= 0) {
       Alert.alert('Цена не рассчитана', 'Заказ нельзя принять: отсутствует подтверждённая стоимость.');
       return;
     }
     setBusy(true);
+    setOfferActionBusy(true);
     try {
       const { error } = await supabase.rpc('ladygo_accept_order', {
         p_order_id: order.id
       });
       if (error) throw error;
+      setIncomingOffer(null);
       await loadDriverOrders();
       Alert.alert('Заказ назначен вам', 'Пассажир увидит ваши данные и статус поездки.');
     } catch (e) {
       Alert.alert('Не удалось принять заказ', translateError(e));
       await loadDriverOrders();
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setOfferActionBusy(false); }
   };
 
   const declineDriverOrder = async order => {
-    if (!order?.id) return;
+    if (!order?.id || offerActionBusy) return;
+    setOfferActionBusy(true);
     try {
       const { error } = await supabase.rpc('ladygo_decline_order', { p_order_id: order.id });
       if (error) throw error;
+      setIncomingOffer(null);
       await loadDriverOrders();
     } catch (e) { Alert.alert('Не удалось отклонить заказ', translateError(e)); }
+    finally { setOfferActionBusy(false); }
+  };
+
+  const cancelDriverTrip = async (order, reason) => {
+    if (!order?.id || !['accepted','arrived'].includes(order.status) || !supabase) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc('ladygo_cancel_active_order', {
+        p_order_id: order.id,
+        p_reason: reason
+      });
+      if (error) throw error;
+      await Promise.all([loadDriverOrders(), loadOrders()]);
+      Alert.alert('Поездка отменена', 'Пассажир увидит отмену и причину.');
+    } catch (e) {
+      Alert.alert('Не удалось отменить поездку', translateError(e));
+    } finally { setBusy(false); }
+  };
+
+  const requestDriverTripCancellation = order => {
+    if (!order?.id || !['accepted','arrived'].includes(order.status)) return;
+    Alert.alert('Отменить поездку?', 'Выбери причину отмены.', [
+      { text: 'Не могу приехать', style: 'destructive', onPress: () => cancelDriverTrip(order, 'Водитель не может приехать') },
+      { text: 'Проблема с автомобилем', onPress: () => cancelDriverTrip(order, 'Проблема с автомобилем') },
+      { text: 'Назад', style: 'cancel' }
+    ]);
   };
 
   const updateDriverStatus = async (order, status) => {
@@ -1176,37 +1560,78 @@ export default function LadyGoApp() {
   const signIn = async () => {
     const identifier = email.trim();
     const phoneDigits = identifier.replace(/\D/g, '');
-    const isEmail = identifier.includes('@');
-    if (!identifier || password.length < 6) return Alert.alert('Проверь данные', 'Введи номер телефона и пароль не короче 6 символов.');
-    if (register && (isEmail || phoneDigits.length < 10 || phoneDigits.length > 15)) {
-      return Alert.alert('Проверь номер', 'Укажи номер телефона в международном формате, например +79991234567.');
-    }
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+    if (!identifier || password.length < 6) return Alert.alert('Проверь данные', 'Введи email или номер телефона и пароль не короче 6 символов.');
+    if (register && !isEmail) return Alert.alert('Нужен действующий email', 'Для регистрации укажи свой настоящий email: на него придёт ссылка подтверждения. Вход по номеру останется доступен для существующих аккаунтов.');
     if (!register && !isEmail && (phoneDigits.length < 10 || phoneDigits.length > 15)) {
       return Alert.alert('Проверь номер', 'Укажи номер телефона в международном формате.');
     }
-    // Для двух существующих аккаунтов телефон служит новым логином:
-    // авторизация идёт в прежний Supabase Auth аккаунт, поэтому пароль и ID сохраняются.
-    // Остальные телефонные аккаунты используют технический email; SMS-кода здесь нет.
     const legacyPhoneLogins = {
       '79911124353': 'nasral08.16@gmail.com',
       '79911116922': 'ladygoadmin@gmail.com',
     };
-    const authEmail = isEmail && !register
-      ? identifier.toLowerCase()
-      : (!register && legacyPhoneLogins[phoneDigits]
-        ? legacyPhoneLogins[phoneDigits]
-        : 'phone-' + phoneDigits + '@auth.ladygo.app');
+    const authEmail = isEmail ? identifier.toLowerCase()
+      : (legacyPhoneLogins[phoneDigits] || 'phone-' + phoneDigits + '@auth.ladygo.app');
     setBusy(true);
     try {
-      const result = register
-        ? await supabase.auth.signUp({ email: authEmail, password, options: { data: { phone: phoneDigits } } })
-        : await supabase.auth.signInWithPassword({ email: authEmail, password });
+      const request = register
+        ? supabase.auth.signUp({
+            email: authEmail,
+            password,
+            options: {
+              data: { phone: authPhone.replace(/\D/g, '') || null },
+              emailRedirectTo: 'ladygo://auth/callback'
+            }
+          })
+        : supabase.auth.signInWithPassword({ email: authEmail, password });
+      const result = await withTimeout(request, 20000, 'Сервер авторизации не ответил за 20 секунд. Проверь интернет и попробуй ещё раз.');
       if (result.error) throw result.error;
-      // public.handle_new_user() creates the passenger profile transactionally.
-      // Do not upsert profiles from the client: profiles has no client INSERT/UPDATE policy.
-      if (register && !result.data.session) Alert.alert('Требуется настройка', 'В Supabase включено подтверждение email. Для этого временного способа его нужно отключить; SMS-подтверждения пока нет.');
-    } catch (e) { Alert.alert('Не удалось войти', translateError(e)); }
-    finally { setBusy(false); }
+      if (register && !result.data.session) {
+        setRegister(false);
+        Alert.alert('Проверь почту', 'Аккаунт создан. Открой письмо от Supabase и подтверди email, затем войди с этим email и паролем. Если письмо не пришло, проверь папку «Спам».');
+      } else if (register) {
+        setRegister(false);
+        setAuthPhone('');
+      }
+    } catch (e) {
+      const detail = await extractBackendError(e);
+      Alert.alert(register ? 'Не удалось зарегистрироваться' : 'Не удалось войти', translateError(new Error(detail)));
+    } finally { setBusy(false); }
+  };
+
+  const sendPasswordReset = async () => {
+    const address = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+      return Alert.alert('Нужен email', 'Для восстановления введи email, указанный при регистрации. Для старых аккаунтов только с номером телефона восстановление по SMS пока не подключено.');
+    }
+    setBusy(true);
+    try {
+      const { error } = await withTimeout(
+        supabase.auth.resetPasswordForEmail(address, { redirectTo: 'ladygo://auth/callback' }),
+        20000,
+        'Сервер восстановления не ответил за 20 секунд.'
+      );
+      if (error) throw error;
+      Alert.alert('Письмо отправлено', 'Если аккаунт с таким email существует, ссылка для восстановления придёт на почту. Проверь также папку «Спам».');
+    } catch (e) {
+      const detail = await extractBackendError(e);
+      Alert.alert('Не удалось отправить ссылку', translateError(new Error(detail)));
+    } finally { setBusy(false); }
+  };
+
+  const saveRecoveredPassword = async () => {
+    if (password.length < 8) return Alert.alert('Слишком короткий пароль', 'Новый пароль должен содержать не менее 8 символов.');
+    setBusy(true);
+    try {
+      const { error } = await withTimeout(supabase.auth.updateUser({ password }), 20000, 'Сервер не ответил за 20 секунд.');
+      if (error) throw error;
+      setRecoveryMode(false);
+      setPassword('');
+      Alert.alert('Пароль изменён', 'Теперь можно пользоваться LadyGo с новым паролем.');
+    } catch (e) {
+      const detail = await extractBackendError(e);
+      Alert.alert('Не удалось изменить пароль', translateError(new Error(detail)));
+    } finally { setBusy(false); }
   };
 
   const locate = async ({ silent = false } = {}) => {
@@ -1238,7 +1663,8 @@ export default function LadyGoApp() {
     setDestination(point);
     setDestinationText('Выбранная точка');
     try {
-      const response = await fetch('https://photon.komoot.io/reverse?lat=' + point.latitude + '&lon=' + point.longitude + '&lang=ru');
+      const response = await withTimeout(fetch('https://photon.komoot.io/reverse?lat=' + point.latitude + '&lon=' + point.longitude + '&lang=ru'), 8000, 'Сервис адресов не ответил.');
+      if (!response.ok) throw new Error('Reverse geocoding HTTP ' + response.status);
       const data = await response.json();
       const feature = data?.features?.[0];
       const p = feature?.properties || {};
@@ -1262,7 +1688,7 @@ export default function LadyGoApp() {
     const build = async () => {
       if (!pickup || !destination) { setRoute([]); setRouteInfo(null); setQuote(null); return; }
       try {
-        const routes = await findDrivingRoutes([pickup, destination], { vehicleType: 'taxi' });
+        const routes = await withTimeout(findDrivingRoutes([pickup, destination], { vehicleType: 'taxi' }), 12000, 'Яндекс Карты не ответили на построение маршрута.');
         const r = routes?.[0];
         if (!r || !Array.isArray(r.points) || r.points.length < 2) throw new Error('Маршрут не найден');
         const points = r.points.map(p => ({ latitude: Number(p.latitude), longitude: Number(p.longitude) }));
@@ -1284,23 +1710,52 @@ export default function LadyGoApp() {
     let alive = true;
     const getQuote = async () => {
       setQuote(null);
-      if (!pickup || !destination || !routeInfo || !supabase) return;
+      setQuoteError('');
+      // Price calculation is server-side and only needs the two coordinates.
+      // Do not wait for Yandex MapKit to finish drawing the visual route: its
+      // routing request can be unavailable on networks without VPN.
+      if (!pickup || !destination || !supabase) {
+        setQuoteLoading(false);
+        return;
+      }
+      setQuoteLoading(true);
       try {
-        const { data, error } = await supabase.functions.invoke('pricing-service', {
-          body: { action: 'quote', city_id: 'kislovodsk', tariff_id: tariff, points: [pickup, destination], options: [] }
-        });
+        const { data, error } = await withTimeout(
+          supabase.functions.invoke('pricing-service', {
+            body: { action: 'quote', city_id: 'russia_default', tariff_id: tariff, points: [pickup, destination], options: [] }
+          }),
+          20000,
+          'Сервер цены не ответил за 20 секунд. Проверь интернет и нажми «Пересчитать стоимость».'
+        );
         if (error) throw error;
-        if (alive && data?.price_token) setQuote(data); else if (alive) setQuote(null);
-      } catch (_) { if (alive) setQuote(null); }
+        const payload = data?.data && typeof data.data === 'object' ? data.data : data;
+        const token = payload?.price_token || payload?.quote?.price_token;
+        const amount = Number(payload?.amount_rub ?? payload?.quote?.amount_rub);
+        if (payload?.error) throw new Error(String(payload.error));
+        if (!token || !Number.isFinite(amount) || amount <= 0) {
+          throw new Error('Сервер ответил без действительной цены. Попробуй пересчитать.');
+        }
+        if (alive) {
+          setQuote({ ...payload, price_token: token, amount_rub: amount });
+          setQuoteError('');
+        }
+      } catch (requestError) {
+        if (alive) {
+          setQuote(null);
+          setQuoteError(String(requestError?.message || 'Не удалось получить ответ сервера.'));
+        }
+      } finally {
+        if (alive) setQuoteLoading(false);
+      }
     };
     getQuote();
     return () => { alive = false; };
-  }, [pickup, destination, routeInfo, tariff]);
+  }, [pickup, destination, tariff, quoteRetry]);
 
   const createOrder = async () => {
     if (!session?.user?.id || !supabase) return;
-    if (!pickup || !destination || !routeInfo) {
-      return Alert.alert('Укажи маршрут', 'Выбери оба адреса и дождись построения маршрута.');
+    if (!pickup || !destination) {
+      return Alert.alert('Укажи маршрут', 'Выбери оба адреса.');
     }
     if (activeOrder && ['new','accepted','arrived','in_progress'].includes(activeOrder.status)) {
       setTab('orders');
@@ -1322,7 +1777,11 @@ export default function LadyGoApp() {
           idempotency_key: orderIdempotencyKey.current,
           pickup_address: pickupText,
           destination_address: destinationText,
-          payment_method: payment
+          payment_method: payment,
+          pickup_lat: Number(pickup.latitude),
+          pickup_lng: Number(pickup.longitude),
+          destination_lat: Number(destination.latitude),
+          destination_lng: Number(destination.longitude)
         }
       });
       if (error) throw error;
@@ -1334,13 +1793,19 @@ export default function LadyGoApp() {
       await loadOrders();
       Alert.alert('Заказ отправлен', 'LadyGo ищет ближайшего свободного водителя. Когда водитель примет заказ, его имя, автомобиль и геопозиция появятся здесь.');
     } catch (error) {
-      const message = String(error?.message || '');
-      if (/orders_one_active_per_passenger|duplicate key|unique constraint/i.test(message)) {
+      const backendMessage = await extractBackendError(error);
+      console.error('LadyGo order submission failed:', {
+        message: backendMessage,
+        status: error?.context?.status,
+        name: error?.name
+      });
+      const message = backendMessage || String(error?.message || '');
+      if (/orders_one_active_per_passenger|duplicate key|unique constraint|active order already exists/i.test(message)) {
         await loadOrders();
         setTab('orders');
         Alert.alert('У тебя уже есть активный заказ', 'Открой «Мои поездки», чтобы посмотреть его статус.');
       } else {
-        Alert.alert('Не удалось отправить заказ', translateError(error));
+        Alert.alert('Не удалось отправить заказ', translateError({ ...error, message: backendMessage || error?.message }));
       }
     } finally { setBusy(false); }
   };
@@ -1378,6 +1843,9 @@ export default function LadyGoApp() {
       }
     }
     await supabase.auth.signOut();
+    permissionSetupUsers.current.clear();
+    setProfileReady(false);
+    setNotificationsReady(false);
     setTab('ride');
   };
   const cancelOrder = async order => {
@@ -1386,7 +1854,12 @@ export default function LadyGoApp() {
       { text: 'Назад', style: 'cancel' },
       { text: 'Отменить поездку', style: 'destructive', onPress: async () => {
         try {
-          const { error } = await supabase.rpc('ladygo_cancel_my_order', { p_order_id: order.id });
+          const { error } = order.status === 'new'
+            ? await supabase.rpc('ladygo_cancel_my_order', {
+                p_order_id: order.id,
+                p_reason: 'Отмена по запросу пассажира'
+              })
+            : await supabase.rpc('ladygo_cancel_active_order', { p_order_id: order.id, p_reason: 'Отмена по запросу пассажира' });
           if (error) throw error;
           await loadOrders();
         } catch (e) { Alert.alert('Не удалось отменить поездку', translateError(e)); }
@@ -1394,7 +1867,7 @@ export default function LadyGoApp() {
     ]);
   };
 
-  const chatOrder = profile?.role === 'driver'
+  const chatOrder = tab === 'driver'
     ? driverOrders.find(order => ['accepted','arrived','in_progress'].includes(order.status)) || null
     : (activeOrder && ['accepted','arrived','in_progress'].includes(activeOrder.status) ? activeOrder : null);
 
@@ -1404,7 +1877,7 @@ export default function LadyGoApp() {
       setTripContact(null);
       return;
     }
-    const rpcName = profile?.role === 'driver'
+    const rpcName = tab === 'driver'
       ? 'ladygo_get_assigned_passenger_contact'
       : 'ladygo_get_assigned_driver_contact';
     supabase.rpc(rpcName, { p_order_id: chatOrder.id }).then(({ data, error }) => {
@@ -1417,7 +1890,7 @@ export default function LadyGoApp() {
       setTripContact(Array.isArray(data) ? (data[0] || null) : (data || null));
     });
     return () => { alive = false; };
-  }, [chatOrder?.id, profile?.role, session?.user?.id]);
+  }, [chatOrder?.id, tab, session?.user?.id]);
 
   const loadTripMessages = useCallback(async () => {
     if (!chatOrder?.id || !session?.user?.id || !supabase) {
@@ -1468,17 +1941,17 @@ export default function LadyGoApp() {
         filter: 'order_id=eq.' + chatOrder.id
       }, () => loadTripMessages())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { removeRealtimeChannelSafely(supabase, channel); };
   }, [chatOrder?.id, session?.user?.id, loadTripMessages]);
 
   const renderTripChat = order => {
     if (!order?.id || order.id !== chatOrder?.id) return null;
     return <View style={st.chatCard}>
       {tripContact?.phone ? <View style={{ gap: 6, padding: 12, borderRadius: 12, backgroundColor: P.pale }}>
-        <Text style={st.heading}>{tripContact.full_name || (profile?.role === 'driver' ? 'Пассажир' : 'Водитель')}</Text>
+        <Text style={st.heading}>{tripContact.full_name || (tab === 'driver' ? 'Пассажир' : 'Водитель')}</Text>
         <Text style={st.muted}>{tripContact.phone}</Text>
         <TouchableOpacity onPress={() => Linking.openURL('tel:' + String(tripContact.phone).replace(/[^+0-9]/g,''))} style={st.primaryBtn}>
-          <Text style={st.primaryText}>{profile?.role === 'driver' ? 'Позвонить пассажиру' : 'Позвонить водителю'}</Text>
+          <Text style={st.primaryText}>{tab === 'driver' ? 'Позвонить пассажиру' : 'Позвонить водителю'}</Text>
         </TouchableOpacity>
       </View> : null}
       <View>
@@ -1491,7 +1964,7 @@ export default function LadyGoApp() {
           : chatMessages.map(item => {
             const mine = item.sender_id === session?.user?.id;
             return <View key={item.id} style={[st.chatBubble, mine ? st.chatMine : st.chatOther]}>
-              <Text style={st.chatSender}>{mine ? 'Вы' : profile?.role === 'driver' ? 'Пассажир' : 'Водитель'}</Text>
+              <Text style={st.chatSender}>{mine ? 'Вы' : tab === 'driver' ? 'Пассажир' : 'Водитель'}</Text>
               <Text style={st.chatMessage}>{item.message}</Text>
               <Text style={st.chatTime}>{new Date(item.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</Text>
             </View>;
@@ -1519,12 +1992,23 @@ export default function LadyGoApp() {
   const previewFare = quote?.amount_rub ?? null;
 
   if (boot) return <View style={st.loading}><ActivityIndicator size="large" color={P.pink}/><Text style={st.muted}>Загружаем LadyGo…</Text></View>;
+  if (recoveryMode) return <SafeAreaView style={st.auth}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
+    <View style={st.authLogo}><Text style={st.logo}>LadyGo</Text><Text style={st.tagline}>Новый пароль</Text></View>
+    <View style={st.authCard}><Text style={st.heading}>Восстановление доступа</Text>
+      <Text style={st.muted}>Придумай новый пароль длиной не менее 8 символов.</Text>
+      <TextInput style={st.authInput} value={password} onChangeText={setPassword} placeholder="Новый пароль" secureTextEntry textContentType="newPassword"/>
+      <TouchableOpacity style={st.primaryBtn} onPress={saveRecoveredPassword} disabled={busy}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Сохранить пароль</Text>}</TouchableOpacity>
+    </View>
+  </SafeAreaView>;
+
   if (!session) return <SafeAreaView style={st.auth}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
     <View style={st.authLogo}><Text style={st.logo}>LadyGo</Text><Text style={st.tagline}>Поездки с заботой</Text></View>
     <View style={st.authCard}><Text style={st.heading}>{register ? 'Создать аккаунт' : 'С возвращением'}</Text>
-      <TextInput style={st.authInput} value={email} onChangeText={(value) => setEmail(value.includes("@") ? value : formatRussianPhone(value))} placeholder={register ? "+7-(999)-999-99-99" : "Номер телефона или email"} autoCapitalize="none" keyboardType={register || !email.includes("@") ? "phone-pad" : "email-address"} textContentType="telephoneNumber"/>
-      <TextInput style={st.authInput} value={password} onChangeText={setPassword} placeholder="Пароль" secureTextEntry/>
+      <TextInput style={st.authInput} value={email} onChangeText={setEmail} placeholder={register ? 'Ваш действующий email' : 'Номер телефона или email'} autoCapitalize="none" autoCorrect={false} keyboardType={register || email.includes('@') ? 'email-address' : 'phone-pad'} textContentType="username"/>
+      {register && <TextInput style={st.authInput} value={authPhone} onChangeText={setAuthPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad" textContentType="telephoneNumber"/>}
+      <TextInput style={st.authInput} value={password} onChangeText={setPassword} placeholder="Пароль" secureTextEntry textContentType={register ? 'newPassword' : 'password'}/>
       <TouchableOpacity style={st.primaryBtn} onPress={signIn} disabled={busy}>{busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>{register ? 'Зарегистрироваться' : 'Войти'}</Text>}</TouchableOpacity>
+      {!register && <TouchableOpacity onPress={sendPasswordReset} disabled={busy}><Text style={st.switchText}>Забыли пароль? Восстановить по email</Text></TouchableOpacity>}
       <TouchableOpacity onPress={() => setRegister(!register)}><Text style={st.switchText}>{register ? 'Уже есть аккаунт? Войти' : 'Создать новый аккаунт'}</Text></TouchableOpacity>
     </View>
     <Text style={st.footnote}>Создано независимым автором @acyma</Text>
@@ -1538,7 +2022,7 @@ export default function LadyGoApp() {
     {searching && <ActivityIndicator color={P.pink} style={{ marginTop: 20 }}/>}
     <ScrollView keyboardShouldPersistTaps="handled">
       {suggestions.map(item => <TouchableOpacity key={item.id} style={st.suggestion} onPress={() => chooseSuggestion(item)}>
-        <View style={st.suggestionIcon}><Text>⌖</Text></View><View style={{ flex: 1 }}><Text style={st.suggestionTitle}>{item.label}</Text><Text style={st.suggestionSub}>{item.detail || 'Кисловодск'}</Text></View>
+        <View style={st.suggestionIcon}><Text>⌖</Text></View><View style={{ flex: 1 }}><Text style={st.suggestionTitle}>{item.label}</Text><Text style={st.suggestionSub}>{item.detail || 'Россия'}</Text></View>
       </TouchableOpacity>)}
       {!searching && query.length > 1 && suggestions.length === 0 && <Text style={st.empty}>Не получилось найти адрес. Проверь написание или попробуй указать улицу и номер дома.</Text>}
     </ScrollView>
@@ -1569,12 +2053,24 @@ export default function LadyGoApp() {
         <View style={st.tariffs}>{TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[st.tariff, tariff === t.id && st.tariffSelected]}>
           <Text style={st.tariffIcon}>{t.icon}</Text><Text style={st.tariffName}>{t.name}</Text>{(previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
         </TouchableOpacity>)}</View>
-        <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>{(previewFare) ? 'Предварительная стоимость' : 'Стоимость поездки'}</Text><Text style={st.priceHint}>{previewFare ? 'Серверная оценка по прямой дистанции; это не финальный счёт' : routeInfo ? 'Серверный тариф пока недоступен — заказ не будет создан' : 'Укажи оба адреса для расчёта'}</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
+        <View style={st.priceCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={st.priceTitle}>Стоимость поездки</Text>
+            <Text style={st.priceHint}>
+              {previewFare ? (quote?.route_estimated ? 'Предварительная оценка по координатам: дорожный маршрут недоступен.' : 'Маршрут рассчитан по дорожным данным Яндекс/OSRM. Цена действует ограниченное время.') : quoteLoading ? 'Получаем стоимость поездки…' : quoteError ? 'Не удалось получить цену.' : routeInfo ? 'Ожидается подтверждение тарифа сервером.' : 'Укажи оба адреса для расчёта'}
+            </Text>
+            {!!quoteError && <Text style={{ color: P.pinkDark, fontSize: 12, marginTop: 6 }}>{quoteError}</Text>}
+            {pickup && destination && !previewFare && !quoteLoading && <TouchableOpacity onPress={() => setQuoteRetry(value => value + 1)} style={{ alignSelf: 'flex-start', marginTop: 8, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 10, backgroundColor: P.pale }}>
+              <Text style={{ color: P.pinkDark, fontWeight: '700' }}>↻ Пересчитать стоимость</Text>
+            </TouchableOpacity>}
+          </View>
+          {quoteLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text>}
+        </View>
         <Text style={st.sectionTitle}>Предпочтительный способ оплаты</Text>
-        <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>Р</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
+        <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>💵</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <Text style={st.muted}>Онлайн-оплата в приложении пока не подключена. Выбор способа — только предпочтение, списания не происходит.</Text>
         <Text style={st.muted}>Для связи используется номер, сохранённый в профиле.</Text>
-        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || !quote?.price_token || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || !quote?.price_token || busy}>
+        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !quote?.price_token || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !quote?.price_token || busy}>
           {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={st.phoneOrderBtn} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com?subject=Поддержка%20LadyGo')}>
@@ -1595,6 +2091,16 @@ export default function LadyGoApp() {
         <View style={st.rowBetween}>
           <Text style={st.orderPrice}>{fmt(activeOrder.price_rub||activeOrder.estimated_price_rub||0)}</Text>
           {activeOrder.status==='new' ? <Text style={{color:P.pinkDark,fontWeight:'800'}}>Ищем водителя…</Text> : null}
+          {activeOrder.status==='accepted' && <View style={{marginTop:10,padding:13,borderRadius:13,backgroundColor:'#EAF7F0',gap:4}}>
+            <Text style={{color:'#176B49',fontWeight:'900',fontSize:15}}>✓ Заказ принят водителем!</Text>
+            <Text style={{color:'#315B49',fontSize:13}}>Ниже появятся имя водителя, автомобиль и кнопка звонка. Здесь можно следить за поездкой.</Text>
+          </View>}
+          {activeOrder.status==='arrived' && <View style={{marginTop:10,padding:13,borderRadius:13,backgroundColor:'#EAF7F0'}}>
+            <Text style={{color:'#176B49',fontWeight:'900'}}>✓ Водитель уже на месте</Text>
+          </View>}
+          {activeOrder.status==='in_progress' && <View style={{marginTop:10,padding:13,borderRadius:13,backgroundColor:'#EAF7F0'}}>
+            <Text style={{color:'#176B49',fontWeight:'900'}}>✓ Вы едете к месту назначения</Text>
+          </View>}
         </View>
         {['new','accepted','arrived','in_progress'].includes(activeOrder.status) && <TouchableOpacity onPress={()=>cancelOrder(activeOrder)}><Text style={st.cancelText}>Отменить поездку</Text></TouchableOpacity>}
       </View>}
@@ -1890,7 +2396,7 @@ export default function LadyGoApp() {
           <Text style={st.orderAddress}>● {order.destination_address}</Text>
           <View style={st.rowBetween}>
             <Text style={st.orderPrice}>{fmt(order.price_rub||order.estimated_price_rub||0)}</Text>
-            <Text style={st.muted}>{order.offer_expires_at?'Предложение до '+new Date(order.offer_expires_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'ID '+String(order.id).slice(0,8)}</Text>
+            <Text style={st.muted}>{order.offer_expires_at?'Осталось '+Math.max(0,Math.ceil((new Date(order.offer_expires_at).getTime()-offerClock)/1000))+' сек.':'ID '+String(order.id).slice(0,8)}</Text>
           </View>
           {order.offer_id && <View style={{flexDirection:'row',gap:8,marginTop:10}}>
             <TouchableOpacity onPress={()=>acceptDriverOrder(order)} disabled={busy} style={{flex:1,backgroundColor:P.pink,borderRadius:12,padding:13,alignItems:'center'}}>
@@ -1903,6 +2409,7 @@ export default function LadyGoApp() {
           {order.status==='accepted' && <TouchableOpacity onPress={()=>updateDriverStatus(order,'arrived')} style={st.primaryBtn}><Text style={st.primaryText}>Я на месте</Text></TouchableOpacity>}
           {order.status==='arrived' && <TouchableOpacity onPress={()=>updateDriverStatus(order,'in_progress')} style={st.primaryBtn}><Text style={st.primaryText}>Начать поездку</Text></TouchableOpacity>}
           {order.status==='in_progress' && <TouchableOpacity onPress={()=>updateDriverStatus(order,'completed')} style={st.primaryBtn}><Text style={st.primaryText}>Завершить поездку</Text></TouchableOpacity>}
+          {['accepted','arrived'].includes(order.status) && <TouchableOpacity disabled={busy} onPress={()=>requestDriverTripCancellation(order)} style={{borderWidth:1,borderColor:P.pinkDark,borderRadius:12,padding:12,alignItems:'center',marginTop:8}}><Text style={{color:P.pinkDark,fontWeight:'800'}}>Отменить поездку с причиной</Text></TouchableOpacity>}
           {renderTripChat(order)}
         </View>)}
         <View style={st.vehicleEditorCard}>
@@ -1997,6 +2504,36 @@ export default function LadyGoApp() {
     <View style={st.bottomNav}>
       {([['ride','⌖','Заказать'],['orders','◷','Поездки'],['profile','○','Профиль']]).map(([id,icon,label]) => <TouchableOpacity key={id} style={st.navItem} onPress={() => setTab(id)}><Text style={[st.navIcon, tab === id && st.navActive]}>{icon}</Text><Text style={[st.navLabel, tab === id && st.navActive]}>{label}</Text></TouchableOpacity>)}
     </View>
+    <Modal visible={Boolean(incomingOffer)} transparent animationType="fade" statusBarTranslucent onRequestClose={() => {}}>
+      <View style={{flex:1,backgroundColor:'rgba(18,12,16,0.72)',justifyContent:'center',padding:18}}>
+        <View style={{backgroundColor:'#FFFFFF',borderRadius:26,padding:22,gap:15,elevation:20}}>
+          <View style={{alignItems:'center',gap:5}}>
+            <Text style={{fontSize:12,fontWeight:'900',letterSpacing:1.5,color:P.pinkDark}}>LADYGO · НОВЫЙ ЗАКАЗ</Text>
+            <Text style={{fontSize:54,fontWeight:'900',color:offerClock+0 >= new Date(incomingOffer?.offer_expires_at||0).getTime()-10000 ? '#C23F5B' : P.ink,fontVariant:['tabular-nums']}}>
+              {String(Math.max(0,Math.ceil((new Date(incomingOffer?.offer_expires_at||0).getTime()-offerClock)/1000))).padStart(2,'0')} сек
+            </Text>
+            <Text style={{fontSize:12,color:P.muted}}>Ответьте в течение 30 секунд</Text>
+          </View>
+          <View style={{height:1,backgroundColor:P.line}}/>
+          <View style={{gap:6}}>
+            <Text style={{fontSize:10,fontWeight:'900',color:P.muted,letterSpacing:1}}>ОТКУДА</Text>
+            <Text style={{fontSize:16,fontWeight:'800',color:P.ink}}>{incomingOffer?.pickup_address||'Адрес подачи не указан'}</Text>
+            <Text style={{fontSize:10,fontWeight:'900',color:P.muted,letterSpacing:1,marginTop:5}}>КУДА</Text>
+            <Text style={{fontSize:16,fontWeight:'800',color:P.ink}}>{incomingOffer?.destination_address||'Адрес назначения не указан'}</Text>
+          </View>
+          <View style={{backgroundColor:'#FFF3F7',borderRadius:15,padding:14,alignItems:'center'}}>
+            <Text style={{fontSize:11,color:P.muted,fontWeight:'700'}}>Стоимость поездки</Text>
+            <Text style={{fontSize:28,color:P.pinkDark,fontWeight:'900'}}>{fmt(incomingOffer?.estimated_price_rub||incomingOffer?.price_rub||0)}</Text>
+          </View>
+          <TouchableOpacity disabled={offerActionBusy || !incomingOffer} onPress={() => acceptDriverOrder(incomingOffer)} style={{backgroundColor:P.pink,borderRadius:15,padding:17,alignItems:'center',opacity:offerActionBusy?0.6:1}}>
+            {offerActionBusy ? <ActivityIndicator color="#FFFFFF"/> : <Text style={{fontSize:16,fontWeight:'900',color:'#FFFFFF'}}>ПРИНЯТЬ ЗАКАЗ</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity disabled={offerActionBusy || !incomingOffer} onPress={() => declineDriverOrder(incomingOffer)} style={{borderWidth:1,borderColor:P.line,borderRadius:15,padding:15,alignItems:'center'}}>
+            <Text style={{fontSize:14,fontWeight:'800',color:P.ink}}>Отказать</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   </SafeAreaView>;
 }
 

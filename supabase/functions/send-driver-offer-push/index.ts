@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -123,14 +123,14 @@ Deno.serve(async (req: Request) => {
     const [{ data: currentOffer, error: offerError }, { data: order, error: orderError }] =
       await Promise.all([
         supabase.from("order_offers")
-          .select("id, order_id, driver_id, status, push_sent_at")
+          .select("id, order_id, driver_id, status, push_sent_at, expires_at")
           .eq("id", offer.id)
           .eq("order_id", offer.order_id)
           .eq("driver_id", offer.driver_id)
           .eq("status", "pending")
           .maybeSingle(),
         supabase.from("orders")
-          .select("id, pickup_address, destination_address, status, driver_id")
+          .select("id, pickup_address, destination_address, status, driver_id, estimated_price_rub, price_rub")
           .eq("id", offer.order_id)
           .eq("status", "new")
           .is("driver_id", null)
@@ -139,6 +139,10 @@ Deno.serve(async (req: Request) => {
     if (offerError) throw offerError;
     if (orderError) throw orderError;
     if (!currentOffer || !order) return json({ skipped: true, reason: "Offer is no longer active" });
+    const secondsRemaining = Math.floor((new Date(currentOffer.expires_at).getTime() - Date.now()) / 1000);
+    if (!Number.isFinite(secondsRemaining) || secondsRemaining <= 0) {
+      return json({ skipped: true, reason: "Offer has expired" });
+    }
 
     const { data: tokens, error: tokenError } = await supabase
       .from("driver_push_tokens")
@@ -162,12 +166,13 @@ Deno.serve(async (req: Request) => {
     const messages = tokens.map((token: { expo_push_token: string }) => ({
       to: token.expo_push_token,
       title: "Новый заказ LadyGo",
-      body: `Подача: ${order.pickup_address || "Адрес не указан"}`,
+      body: `Новый заказ. Откройте LadyGo и ответьте за ${secondsRemaining} сек.`,
       sound: "default",
       priority: "high",
-      channelId: "driver-orders",
-      ttl: 25,
-      data: { orderId: offer.order_id, offerId: offer.id },
+      channelId: "driver-order-offers",
+      ttl: Math.max(1, Math.min(30, secondsRemaining)),
+      categoryIdentifier: "driver_order_offer",
+      data: { orderId: offer.order_id, offerId: offer.id, expiresAt: currentOffer.expires_at }, 
     }));
     const delivery = await sendExpoPush(messages);
     if (!delivery.ok) {

@@ -70,3 +70,73 @@ Supabase Auth/Postgres/Storage/Realtime/Edge/Vault/pg_net, Expo Push, Yandex Map
 
 ## Не проверено на физическом Android
 Фоновый GPS, push при свёрнутом приложении, энергосбережение, dialer, multi-device Realtime и полный цикл на двух аккаунтах. Не объявлять эти сценарии протестированными.
+
+
+## Live acceptance update — 24.11.2026 (имеет приоритет над исторической матрицей выше)
+
+- Backend Supabase активен. pricing-service v7 (JWT on), send-driver-offer-push v5 (Vault webhook auth) активны.
+- Текущая цена и create_order используют city_tariff_configs и price_quotes; tariff_rates/dispatch-loop architecture не включать без отдельной миграции.
+- Dispatch triggers/RPC, cron expiration/scheduled-order jobs и GPS-before-online миграция применены; cron активен раз в минуту.
+- Лимит 15 обычных администраторов защищён advisory transaction lock в миграции 20261124180000_ladygo_admin_cap_serialization.
+- RLS enabled на ключевых таблицах; policy definitions просмотрены, но runtime negative tests под двумя JWT ещё не выполнены.
+- Security Advisor: 14 SECURITY DEFINER warnings (authenticated execution) и leaked-password protection disabled. Индивидуальный разбор — docs/security-definer-audit-ru.md.
+- 0 online drivers, 0 driver tokens, 0 user tokens, 1 active order (не трогать). Реальный поездочный цикл и push delivery не проверены.
+- Runs #404/#405 отменены последующими коммитами; актуальный run #417 выполняет build для head SHA 147e61845aa4f3c4a769b59f3c6de784b72c2fe8. APK artifact ещё не получен, install/login не проверены.
+- Платежи, SMS OTP/password recovery, CSV export, admin audit, offline/outbox, backup restore и юридический sign-off остаются непроверенными/незавершёнными.
+
+
+## Quote route binding — live update 24.11.2026
+
+- pricing-service v7 ACTIVE, verify_jwt=true.
+- Миграция 20261124190000_ladygo_quote_route_binding применена: price_quotes хранит координаты pickup/destination, DB trigger сверяет их с заказом; старые quote без координат не принимаются для нового заказа.
+- Edge Function create_order дополнительно проверяет совпадение координат quote с запросом.
+- Статически подтверждён deploy и наличие колонок; authenticated device order request не выполнялся.
+
+
+
+## Live release gate update — 24.11.2026 11:39 UTC (перекрывает исторические статусы выше)
+
+| Модуль | Статус сейчас | Доказательство / следующий шаг |
+|---|---|---|
+| Пассажирские поездки | Частично | Код читает собственные orders без проверки profile.role; Realtime + polling 5s добавлены для same-account Driver mode. Проверить на APK и двух независимых сессиях. |
+| Driver offers | Частично | UI показывает 60-секундный countdown; live DB триггеры dispatch/offer есть. Нет online driver и push tokens, поэтому device offer не подтверждён. |
+| Atomic accept | Реализовано по SQL | RPC блокирует строку заказа FOR UPDATE, проверяет собственный неистёкший pending offer, назначает driver_id и отменяет остальные offers. Двойной accept двух независимых клиентов не тестировался. |
+| Dispatch | Частично | Trigger chain, cron, 60s offer TTL, service_role-only dispatch RPC подтверждены каталогом. Нет доступного онлайн-водителя с GPS для реального dispatch. |
+| RLS | Частично | 23/23 public tables с RLS; A↛B на независимых JWT не проверен. |
+| SECURITY DEFINER | Частично | 38 функций; 16 authenticated EXECUTE, 0 anon EXECUTE; Advisor сообщает 16 предупреждений. Нужны JWT runtime probes по каждой exposed RPC. |
+| Администраторы | Частично | В БД 1 super-admin, 0 ordinary admin; advisory lock и запрет self-removal видны в функции. Race 15→16 не проверялся. |
+| CSV | Отсутствует | Не реализован; отложен до утверждения полей, прав доступа и privacy review. |
+| Auth leaked-password | Блокер | Отключён; Supabase organization plan = Free. Требуется владелец/тарифное решение. |
+| Backup/restore | Не подтверждено | Backup artifact и restore drill не доступны в подключённой проверке. |
+| Android build | В процессе | Run #561; expo-doctor, npm install, Expo prebuild и QA signing setup прошли; Gradle assembleRelease ещё выполняется. apksigner и artifact pending. |
+| Android device | Не проверено | Нет доступного adb/emulator и физического QA в текущей среде. |
+| Legal | Блокер | Checklist есть; независимый legal/privacy sign-off, перевозочные документы, страхование и Google Play Data Safety не подтверждены. |
+
+**Вердикт: НЕ ГОТОВО К РЕЛИЗУ.** Ни реальная поездка, ни push, ни установка текущего APK на Android не заявляются как проверенные.
+
+
+### Address book / support detail
+- Live `saved_places` table exists, but no client code references it; home/work/favourites/recent address UI persistence is not wired.
+- Support currently has one `support_tickets.admin_reply` field only. No attachment table/columns or threaded support messages table was found; attachments and conversation history are absent.
+
+
+
+## Latest verified gate — 24.11.2026 12:11 UTC
+
+| Проверка | Результат | Доказательство |
+|---|---|---|
+| APK #563 | Успешно | [GitHub Actions #563](https://github.com/nasral0816-netizen/LadyGo/actions/runs/45389004792), все шаги success |
+| APK signature | QA/debug signed | apksigner v2 true, 1 signer, RSA-2048; не release keystore |
+| APK artifact | Доступен | Artifact ID 14917274196, LadyGo-Android-APK; APK SHA-256 указан в final QA snapshot |
+| Package/version | Конфигурация подтверждена | com.ladygo.app, 6.9.1 (versionCode 52) в app.json того же коммита |
+| Две роли в БД | Есть аккаунты | 4 passenger profiles, 2 driver profiles; 2 driver applications approved |
+| Реальный online driver | Блокер | 0 approved online drivers; 0 with fresh GPS in last 2 minutes |
+| Push registration | Блокер | 0 driver push tokens, 0 passenger push tokens |
+| E2E trip | Не выполнен | 1 существующий active order сохранён без изменений; тестовый заказ не создавался, т.к. нет online driver |
+| CSV export | Отсутствует | Не добавлять PII export без определения полей/прав/audit/privacy |
+| Backup/restore | Не подтверждено | Project metadata не содержит доказательства backup artifact/restore drill |
+| Release key | Не предоставлен | CI APK подписан ephemeral Android Debug QA key |
+| Device install | Не проверено | Нет adb/эмулятора в среде; два отдельных устройства/сессии не предоставлены |
+| PR #11 | Open, Draft | Не мержить до реальной поездки |
+
+**Вердикт после #563: QA APK готов для установки и тестирования; LadyGo НЕ ГОТОВО К РЕЛИЗУ.** Release blockers: driver online+GPS, push tokens/delivery, complete trip E2E, device QA, CSV decision/implementation, backup restore proof, owner release keystore, legal sign-off.

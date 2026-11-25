@@ -1,64 +1,75 @@
 # LadyGo — технический аудит и план безопасного завершения
+Дата live-сверки: 24.11.2026. Репозиторий: nasral0816-netizen/LadyGo, ветка fix/order-submit-diagnostics-2026-11-24, draft PR #11.
 
-Проверка исходников GitHub и workflow на 24.11.2026. Это аудит репозитория, а не подтверждение удалённого Supabase: прямой доступ к live DB в этом сеансе отсутствует.
+## Подтверждено на live Supabase
 
-## Подтверждено по исходникам
+- Проект активен: ACTIVE_HEALTHY, регион eu-west-2.
+- pricing-service v7 активна, verify_jwt=true; send-driver-offer-push v5 активна, verify_jwt=false с Vault-backed webhook validation.
+- Действующая модель тарифов — city_tariff_configs; неактивная/нулевая tariff_rates не используется.
+- Создание заказа реализовано в pricing-service v7: JWT/роль пассажира, принадлежащий пассажиру действующий price_quotes, expiry/consumed checks, адреса/координаты; quote хранит pickup/destination и Edge Function + DB trigger сверяют маршрут заказа с рассчитанным маршрутом.
+- Диспетчеризация — SQL triggers + RPC + Realtime + клиентский fallback polling. Отдельной dispatch-loop нет и не требуется текущей схеме.
+- Cron ladygo-expire-stale-offers и ladygo-dispatch-scheduled-orders активны каждую минуту.
+- Миграция GPS-before-online применена: driver_locations сохраняется до переключения driver_presence.
+- Миграция сериализации лимита 15 обычных администраторов применена.
+- RLS включён на ключевых таблицах orders, order_offers, profiles, driver_locations, driver_presence, trip_tracks, ratings, driver applications, push tokens и support.
+- В БД 2 одобренных водителя, 0 онлайн, 0 driver push tokens, 0 user push tokens, 0 обычных администраторов, 1 главный администратор и 1 активный заказ. Активный заказ не трогать.
 
-- Expo SDK 55, React Native 0.83.10, Supabase JS v2.
-- Auth/session listener и локальное хранение сессии.
-- Passenger, driver и admin UI; формы профиля и водительской анкеты.
-- Driver media upload; в PR добавлена миграция private Storage bucket.
-- Поддержка: создание/просмотр обращений и ответы администратора.
-- Orders/history, маршруты/карты, избранные адреса, чат поездки, рейтинги и уведомления.
-- SQL для заказов, ролей, online presence, order offers, статусов, GPS и realtime уже присутствовал в базовой истории проекта.
-- Ветка PR добавляет push token lifecycle, ограничение чтения заказов, guard для цены и статические проверки.
-- Ветка содержит server-side quote/create-order заготовку; до live DB и E2E это не считается подтверждённой рабочей тарификацией.
-- Android APK workflow собирает release через Gradle.
+## Изменения PR #11
 
-## Границы текущей реализации
+- Диагностика ошибок создания заказа и передача координат pickup/destination.
+- create_order в pricing-service v7 с использованием текущей price_quotes и city_tariff_configs.
+- Совместимость с существующей order_offers и расширенным driver-contact RPC.
+- Защита триггерной диспетчеризации от некорректного контекста вызова.
+- Проверенные водительские анкеты, атомарное принятие, статусы, GPS tracking и contact lease.
+- Push token lifecycle и серверная Edge Function отправки.
+- GPS-before-online migration.
+- Сериализация лимита администраторов advisory transaction lock.
+- Обновлены README, операционные документы, dispatch setup, admin guide, legal checklist и requirements registry; добавлен SECURITY DEFINER audit.
 
-По последнему уточнению владельца диспетчеризация должна оставаться частью приложения. Ветка содержит SQL для подбора проверенного водителя, offer/accept, статусов, GPS и контактов, а также защищённый dispatch-loop и scheduler. Это ещё не live-verified: нужна Supabase deploy и multi-device E2E. Реальные платежи по-прежнему не включаются.
+## SECURITY DEFINER / RLS
 
-## Изменения PR #10
+Supabase Security Advisor сообщает 14 предупреждений по SECURITY DEFINER RPC, доступным authenticated, и отдельное предупреждение Leaked Password Protection Disabled. Для 14 функций проверены закреплённый search_path, grants authenticated/anon, auth.uid и ограничения по владельцу/роли/участию. anon EXECUTE запрещён. Подробная таблица: docs/security-definer-audit-ru.md.
 
-1. Push-token registration/deletion через authenticated RPC и foreground notification handler.
-2. Private driver media bucket migration с ограничением доступа.
-3. Ограничение видимости заказов водителем и запрет водителю переопределять цену при accept.
-4. Серверные проверки approved driver application, атомарное принятие offer, state machine статусов, GPS trip track и contact lease; требуют live DB review и multi-device E2E.
-5. Защищённая Edge Function dispatch-loop и pg_cron/pg_net/Vault scheduler включены в PR; deployment и cron execution ещё не подтверждены.
-6. Server quote/create-order migration и Edge Function подготовлены как часть защищённого сохранения заявки; live deployment не выполнялся, тарификация не подтверждена дорожным маршрутом.
-7. Документы: правовой чек-лист, интеграции/эксплуатация, матрица приёмки.
+RLS/policy definitions просмотрены SQL. Это не равно runtime negative tests под независимыми JWT. Их ещё нужно провести на staging для чужих заказов, офферов, профилей, контактов, GPS, push tokens и support.
 
-## Не проверено
+## Не подтверждено
 
-- Фактическая схема Supabase, миграции, RLS, Storage, Realtime, Vault и Edge deployment.
-- Реальная доставка push, SMS/OTP и password recovery.
-- Восстановление доступа по deep link.
-- Административный лимит 15 обычных администраторов и защита главного администратора на live DB.
-- Admin audit log/role audit и экспорт CSV.
-- Offline/outbox, backup restore, antivirus/moderation.
-- Multi-device E2E, физический Android, фоновые ограничения, battery optimization.
-- Реальные карты/геокодирование/road directions и корректность тарифов.
-- Юридическая готовность к коммерческой деятельности.
+- Runs #404/#405 отменены. Runs #440 и #441 завершились success для commit f57e274c24e96224063d2005948bc2b08336eeaf и artifact получен. APK version 6.9.1 / versionCode 52 (com.ladygo.app), размер 252,968,198 bytes, SHA-256 96040f0e927bda6f582e2b324f441215b0e90650ba692c65798cab3693f0aba6. Однако APK unsigned: APK Signing Block отсутствует, сертификата нет. Он не устанавливаем; исправляется workflow QA debug signing. Production signing key нужен от владельца.
+- APK установка, первый запуск, login и runtime permissions на Android.
+- Реальный passenger order с авторизованной сессией.
+- Online heartbeat с устройства, push token registration и реальная Expo push delivery.
+- Полный trip lifecycle: offer → accept → arrived → in_progress → completed, GPS samples, fare finalization, rating/history.
+- Пассажирская и водительская отмены, двойное принятие, network loss/reconnect.
+- Полная регрессия ролей, CSV export, support, admin audit, password recovery, offline/outbox, backup restore.
+- Юридический/privacy sign-off, лицензии перевозчика, страхование и Google Play Data Safety/Background Location.
 
-## Важные риски
+## Риски и безопасные ограничения
 
-- Не использовать production персональные данные для тестов.
-- .env удалён из текущего дерева ветки, но его прежнее содержимое могло остаться в Git history. Если там были реальные ключи, их необходимо отозвать/перевыпустить.
-- Не публиковать service_role key; не ослаблять RLS.
-- Не применять миграции без backup, schema diff и staging проверки.
-- Не считать успешный Expo export доказательством корректной работы приложения.
-- Не считать APK build доказательством работоспособности на реальном устройстве.
+- Не менять существующий активный заказ и не использовать его как тестовый.
+- Не публиковать service_role, Vault secrets или приватные ключи; не класть их в APK.
+- Не отключать RLS и не отзывать массово EXECUTE у нужных RPC.
+- Не применять миграции повторно; live migration history содержит 20261124180000_ladygo_admin_cap_serialization.
+- Не считать deploy, SQL policy inspection или CI build доказательством real device E2E.
+- Не включать реальные платежи без провайдера, legal/security review и отдельной приёмки.
 
-## Следующие этапы
+## Следующие шаги
 
-1. Получить безопасный read-only schema snapshot Supabase и список migration history.
-2. Проверить каждую RLS/Storage policy и SECURITY DEFINER функцию.
-3. Довести auth recovery, phone OTP и профили.
-4. Проверить onboarding водителя и повторную подачу.
-5. Проверить admin RBAC, super-admin protection, лимит 15, audit log и CSV.
-6. Проверить поддержку, вложения, ответы и уведомления.
-7. Проверить push, offline/reconnect и резервное восстановление.
-8. Провести E2E на синтетических аккаунтах и двух Android устройствах.
-9. Завершить и проверить real dispatch/trip coordination на staging и двух синтетических аккаунтах; реальные платежи не включать без провайдера и отдельной приёмки.
-10. Получить независимый legal/privacy/security sign-off до любого пилота.
+1. Обновить workflow: подписывать QA APK debug key, проверить apksigner verify; production keystore получить от владельца.
+2. Установить APK и проверить запуск/login на Android; если устройство недоступно — явно оставить это непроверенным.
+3. Получить два отдельных Android устройства/эмулятора и две тестовые сессии.
+4. Проверить push token, online heartbeat, заказ, offer, accept, статусы, GPS, completion, rating и DB state на каждом шаге.
+5. Пройти негативные RLS/RBAC тесты и полный регрессионный чек-лист.
+6. Получить независимый legal/privacy/security sign-off до пилота.
+
+
+## Live update после QA build #453 (24.11.2026)
+
+- QA artifact #453 downloaded and hashed: 6.9.1 / versionCode 52 / com.ladygo.app / 252,968,198 bytes / SHA-256 e6994a3b6a1794491245d558c9bf048d4ec3dd0c9156892492ca45b649cac790. CI apksigner v2 verification passed; debug cert only. Build run: https://github.com/nasral0816-netizen/LadyGo/actions/runs/45342314598. Artifact: https://github.com/nasral0816-netizen/LadyGo/actions/runs/45342314598/artifacts/14896897554.
+- Correction: CI env values for Supabase are blank, but src/supabase.js has public project URL and publishable-key fallback. This build is configured to point to Supabase; the publishable key is not a service-role secret.
+- No adb/device/emulator available; install/launch/login are unverified.
+- Live DB: 2 approved drivers, 0 online, 1 fresh location, 0 driver tokens, 0 passenger tokens, 1 active order (untouched). No end-to-end trip or push delivery evidence.
+- RLS probes with simulated authenticated claims: passengers A and B each saw one own profile and zero rows in the other ten tested tables; driver saw own profile, 2 associated orders, 1 own driver application, and zero unrelated offers/location/presence/tracks/tokens/support. Not a signed-JWT device test.
+- 14 exposed SECURITY DEFINER warnings remain. See detailed function-by-function probes in docs/security-definer-audit-ru.md.
+- Admin probes: self-removal and removal of another super-admin rejected; ordinary-admin role-management/list-admins calls rejected. Role simulation was transactionally rolled back. 15/16 concurrent cap test remains unperformed because there are not 15 synthetic admin accounts and no safe concurrent staging harness.
+- CSV export is absent. Leaked Password Protection is disabled; Supabase organization is Free tier, while this feature requires Pro or above. Backup availability/restore drill could not be inspected via available connector; no destructive database changes were made.
+- PR #11 remains Draft because trip, push and device acceptance gates are open.
