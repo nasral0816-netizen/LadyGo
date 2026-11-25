@@ -345,6 +345,8 @@ function Field({ label, value, onChangeText, placeholder, onFocus, icon, autoCap
 export default function LadyGoApp() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [profileReady, setProfileReady] = useState(false);
+  const permissionSetupUsers = useRef(new Set());
   const [boot, setBoot] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -434,6 +436,7 @@ export default function LadyGoApp() {
     const { data } = await supabase.from('profiles').select('*').eq('id', u.id).maybeSingle();
     setProfile(data || { id: u.id, email: u.email, role: 'passenger' });
     setPhone(data?.phone || u.user_metadata?.phone || '');
+    setProfileReady(true);
   }, []);
 
   const loadDemoOrders = useCallback(async () => {
@@ -535,6 +538,7 @@ export default function LadyGoApp() {
         const restoredSession = sessionResult?.data?.session || null;
         if (restoredSession) {
           setSession(restoredSession);
+          setProfileReady(false);
           setProfile({
             id: restoredSession.user.id,
             email: restoredSession.user.email,
@@ -557,11 +561,14 @@ export default function LadyGoApp() {
       if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
       setSession(next);
       if (next?.user) {
+        setProfileReady(false);
         setProfile({ id: next.user.id, email: next.user.email, role: 'passenger' });
         loadProfile(next.user).catch(error =>
           console.warn('LadyGo profile refresh failed:', error?.message)
         );
       } else {
+        setProfileReady(false);
+        permissionSetupUsers.current.clear();
         setProfile(null);
         setOrders([]);
         setActiveOrder(null);
@@ -731,8 +738,78 @@ export default function LadyGoApp() {
     return () => { clearInterval(refresh); removeRealtimeChannelSafely(supabase, channel); };
   }, [profile?.role, session?.user?.id, loadDriverOrders]);
 
+  // Запрашиваем базовые разрешения после загрузки профиля и входа в аккаунт.
+  // Системные окна Android показываются по одному; уже выданные разрешения не спрашиваются повторно.
   useEffect(() => {
-    if (!profile?.role || !session?.user?.id || !supabase || !Device.isDevice) return;
+    if (!profileReady || !profile?.role || !session?.user?.id || !Device.isDevice) return;
+    let alive = true;
+    (async () => {
+      try {
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync('driver-orders', {
+            name: 'Заказы LadyGo',
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 150, 250],
+            sound: 'default'
+          });
+        }
+
+        let notificationPermission = await Notifications.getPermissionsAsync();
+        if (notificationPermission.status !== 'granted' && notificationPermission.canAskAgain !== false) {
+          notificationPermission = await Notifications.requestPermissionsAsync();
+        }
+        if (!alive) return;
+
+        let foregroundLocation = await Location.getForegroundPermissionsAsync();
+        if (foregroundLocation.status !== 'granted' && foregroundLocation.canAskAgain !== false) {
+          foregroundLocation = await Location.requestForegroundPermissionsAsync();
+        }
+        if (!alive) return;
+
+        // Фоновая геолокация нужна только водителю для работы на линии и обновления координат.
+        if (profile.role === 'driver' && foregroundLocation.status === 'granted') {
+          let backgroundLocation = await Location.getBackgroundPermissionsAsync();
+          if (backgroundLocation.status !== 'granted' && backgroundLocation.canAskAgain !== false) {
+            await new Promise(resolve => Alert.alert(
+              'Разрешить геолокацию в фоне?',
+              'Водителю LadyGo нужно получать заказы и передавать местоположение, даже когда приложение свёрнуто. Разрешение используется при работе на линии.',
+              [
+                { text: 'Позже', style: 'cancel', onPress: resolve },
+                { text: 'Продолжить', onPress: resolve }
+              ],
+              { cancelable: true, onDismiss: resolve }
+            ));
+            if (alive) await Location.requestBackgroundPermissionsAsync();
+          }
+        }
+
+        if (!alive) return;
+        const missing = [];
+        if (notificationPermission.status !== 'granted') missing.push('уведомления');
+        if (foregroundLocation.status !== 'granted') missing.push('геолокация при использовании приложения');
+        if (profile.role === 'driver') {
+          const backgroundLocation = await Location.getBackgroundPermissionsAsync();
+          if (backgroundLocation.status !== 'granted') missing.push('фоновая геолокация');
+        }
+        if (missing.length) {
+          Alert.alert(
+            'Не все разрешения включены',
+            'Для корректной работы LadyGo разреши: ' + missing.join(', ') + '. Их можно включить в настройках телефона.',
+            [{ text: 'Понятно' }, { text: 'Открыть настройки', onPress: () => Linking.openSettings() }]
+          );
+        }
+      } catch (error) {
+        console.warn('LadyGo permission onboarding failed:', error?.message);
+      }
+    })();
+    return () => { alive = false; };
+  }, [profileReady, profile?.role, session?.user?.id]);
+
+  useEffect(() => {
+    if (!profileReady || !profile?.role || !session?.user?.id || !supabase || !Device.isDevice) return;
+    const userId = session.user.id;
+    if (permissionSetupUsers.current.has(userId)) return;
+    permissionSetupUsers.current.add(userId);
     let alive = true;
     (async () => {
       try {
@@ -751,8 +828,7 @@ export default function LadyGoApp() {
             })
           ]);
         }
-        let permission = await Notifications.getPermissionsAsync();
-        if (permission.status !== 'granted') permission = await Notifications.requestPermissionsAsync();
+        const permission = await Notifications.getPermissionsAsync();
         if (!alive || permission.status !== 'granted') return;
         const tokenResult = await Notifications.getExpoPushTokenAsync({
           projectId: '95ac82ec-010d-4770-9aba-9f52878e1b3b'
@@ -1681,6 +1757,8 @@ export default function LadyGoApp() {
       }
     }
     await supabase.auth.signOut();
+    permissionSetupUsers.current.clear();
+    setProfileReady(false);
     setTab('ride');
   };
   const cancelOrder = async order => {
