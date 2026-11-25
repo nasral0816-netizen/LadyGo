@@ -198,7 +198,9 @@ const translateError = error => {
   if (/user already registered|already been registered/.test(message)) return 'Этот адрес электронной почты уже зарегистрирован. Войди в аккаунт.';
   if (/password.*(at least|minimum)|weak password/.test(message)) return 'Пароль слишком простой или короткий. Придумай другой пароль.';
   if (/email rate limit exceeded|rate limit/.test(message)) return 'Слишком много запросов. Подожди немного и попробуй снова.';
-  if (/network request failed|failed to fetch|fetch failed|networkerror|timeout|timed out/.test(message)) return 'Не удалось подключиться к серверу. Проверь интернет и попробуй ещё раз.';
+  if (/network request failed|failed to fetch|fetch failed|networkerror|socket timeout|connection refused|econnreset|enotfound/.test(message)) return 'Не удалось установить соединение с сервером. Проверь подключение и попробуй ещё раз.';
+  if (/timeout|timed out|aborterror/.test(message)) return 'Сервер не ответил вовремя. Попробуй ещё раз через минуту.';
+  if (/500|502|503|504|internal server error|service unavailable|bad gateway/.test(message)) return 'Сервис временно недоступен. Попробуй ещё раз позже.';
   if (/duplicate key|unique constraint|orders_one_active_per_passenger_idx/.test(message)) return 'У тебя уже есть активный заказ. Открой раздел «Мои поездки».';
   if (/этот аккаунт не может создавать поездки/.test(message)) return 'Для заказа поездки используй пассажирский режим.';
   if (/permission denied|not allowed|unauthorized|forbidden|jwt/.test(message)) return 'Сервер отклонил действие из-за прав доступа. Проверь роль аккаунта.';
@@ -208,7 +210,7 @@ const translateError = error => {
   if (/function .* not found|could not find the function|schema cache/.test(message)) return 'Серверная функция заказов не найдена. Нужно развернуть pricing-service в Supabase.';
   if (/row-level security|violates row-level security/.test(message)) return 'Действие не разрешено для этого аккаунта.';
   if (/маршрут не найден/.test(message)) return 'Не удалось построить маршрут. Проверь выбранные адреса.';
-  return 'Не удалось выполнить действие. Проверь подключение к интернету и попробуй ещё раз.';
+  return 'Не удалось выполнить действие. Попробуй ещё раз. Если ошибка повторится, сообщи в поддержку.';
 };
 
 async function findAddresses(q) {
