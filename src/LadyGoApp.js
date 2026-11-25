@@ -339,6 +339,16 @@ function Field({ label, value, onChangeText, placeholder, onFocus, icon, autoCap
   </View>;
 }
 
+function NetworkHint() {
+  return (
+    <View style={{ marginHorizontal: 14, marginTop: 8, marginBottom: 6, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 11, backgroundColor: '#FFF0F5', borderWidth: 1, borderColor: '#F5D6E2' }}>
+      <Text style={{ color: '#8F315A', fontSize: 11, lineHeight: 16, textAlign: 'center' }}>
+        Если приложение, карта или сервисы не загружаются, проверьте интернет. Если вы находитесь в сети с ограничениями, попробуйте включить VPN и повторить попытку.
+      </Text>
+    </View>
+  );
+}
+
 export default function LadyGoApp() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -1823,8 +1833,8 @@ export default function LadyGoApp() {
   // Never display a locally invented fare: the passenger sees only the signed server quote.
   const previewFare = quote?.amount_rub ?? null;
 
-  if (boot) return <View style={st.loading}><ActivityIndicator size="large" color={P.pink}/><Text style={st.muted}>Загружаем LadyGo…</Text></View>;
-  if (recoveryMode) return <SafeAreaView style={st.auth}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
+  if (boot) return <View style={st.loading}><ActivityIndicator size="large" color={P.pink}/><Text style={st.muted}>Загружаем LadyGo…</Text><NetworkHint /></View>;
+  if (recoveryMode) return <SafeAreaView style={st.auth}><StatusBar barStyle="dark-content" backgroundColor={P.white}/><NetworkHint /><NetworkHint />
     <View style={st.authLogo}><Text style={st.logo}>LadyGo</Text><Text style={st.tagline}>Новый пароль</Text></View>
     <View style={st.authCard}><Text style={st.heading}>Восстановление доступа</Text>
       <Text style={st.muted}>Придумай новый пароль длиной не менее 8 символов.</Text>
@@ -1851,6 +1861,7 @@ export default function LadyGoApp() {
       <TextInput autoFocus value={query} onChangeText={setQuery} placeholder={searchField === 'pickup' ? 'Откуда поедем?' : 'Куда поедем?'} style={st.searchInput}/>
       <TouchableOpacity onPress={() => setQuery('')}><Text style={st.clear}>×</Text></TouchableOpacity>
     </View>
+    <NetworkHint />
     {searching && <ActivityIndicator color={P.pink} style={{ marginTop: 20 }}/>}
     <ScrollView keyboardShouldPersistTaps="handled">
       {suggestions.map(item => <TouchableOpacity key={item.id} style={st.suggestion} onPress={() => chooseSuggestion(item)}>
@@ -1871,6 +1882,7 @@ export default function LadyGoApp() {
       </TouchableOpacity>}
       <TouchableOpacity style={st.avatar} onPress={() => setTab('profile')}><Text style={st.avatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></TouchableOpacity>
     </View>
+    <NetworkHint />
     {tab === 'ride' && <View style={{ flex: 1 }}>
       <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination}/>
       <ScrollView style={st.sheet} contentContainerStyle={st.sheetContent} keyboardShouldPersistTaps="handled">
