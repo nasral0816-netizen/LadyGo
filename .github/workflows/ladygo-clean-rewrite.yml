@@ -6,6 +6,7 @@ on:
       - main
       - ladygo-clean-rewrite
       - tech/stabilize-android-dispatch-2026-11-23
+      - fix/order-submit-diagnostics-2026-11-24
   pull_request:
     branches:
       - main
