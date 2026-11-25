@@ -545,6 +545,7 @@ export default function LadyGoApp() {
         if (restoredSession) {
           setSession(restoredSession);
           setProfileReady(false);
+          setNotificationsReady(false);
           setProfile({
             id: restoredSession.user.id,
             email: restoredSession.user.email,
@@ -568,12 +569,14 @@ export default function LadyGoApp() {
       setSession(next);
       if (next?.user) {
         setProfileReady(false);
+        setNotificationsReady(false);
         setProfile({ id: next.user.id, email: next.user.email, role: 'passenger' });
         loadProfile(next.user).catch(error =>
           console.warn('LadyGo profile refresh failed:', error?.message)
         );
       } else {
         setProfileReady(false);
+        setNotificationsReady(false);
         permissionSetupUsers.current.clear();
         setProfile(null);
         setOrders([]);
@@ -1799,6 +1802,7 @@ export default function LadyGoApp() {
     await supabase.auth.signOut();
     permissionSetupUsers.current.clear();
     setProfileReady(false);
+    setNotificationsReady(false);
     setTab('ride');
   };
   const cancelOrder = async order => {
