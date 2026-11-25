@@ -11,6 +11,7 @@ on:
       - main
       - tech/stabilize-android-dispatch-2026-11-23
       - fix/order-submit-diagnostics-2026-11-24
+      - feat/vpn-connectivity-hints-2026-11-25
     paths:
       - '**'
       - '!README.md'
