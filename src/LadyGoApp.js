@@ -1342,6 +1342,7 @@ export default function LadyGoApp() {
         });
       }
       const assigned = mineResult.data || [];
+      if (offered.length) { setSearchField(''); setTab('driver'); }
       setDriverOrders([...offered, ...assigned.filter(o => !offered.some(x => x.id === o.id))]);
       setIncomingOffer(current => {
         if (current && offered.some(item => item.id === current.id)) return offered.find(item => item.id === current.id) || current;
