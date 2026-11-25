@@ -58,7 +58,7 @@ pass('Push token cleanup is restricted to the authenticated account', /where use
 
 pass('Passenger creates orders only through the server pricing function', app.includes("functions.invoke('pricing-service'") && !app.includes(".from('orders').insert(payload)"));
 pass('Passenger fare preview displays only the signed server quote', app.includes('const previewFare = quote?.amount_rub ?? null') && !app.includes('55 + (Number(routeInfo.km'));
-pass('Pricing quote is HMAC-signed and short-lived', pricingFunction.includes('HMAC') && pricingFunction.includes('LADYGO_PRICING_SECRET') && pricingFunction.includes('+90'));
+pass('Pricing quote is opaque, passenger-bound, route-bound, single-use and short-lived', pricingFunction.includes('price_quotes') && pricingFunction.includes('consumed_at') && pricingFunction.includes('expires_at') && pricingFunction.includes('routeMatchesQuote') && pricingFunction.includes('.eq("passenger_id",who.user.id)'));
 pass('Price quote is bound to passenger and single-use', pricingMigration.includes('ladygo_price_quotes') && pricingMigration.includes('token_hash') && pricingMigration.includes('consumed_at is null'));
 pass('Order creation is idempotent and service-role-only', pricingMigration.includes('ladygo_order_requests') && pricingMigration.includes('pg_advisory_xact_lock') && pricingMigration.includes('to service_role'));
 pass('Final fare is calculated server-side from GPS track and trip time', pricingMigration.includes('actual_distance_km') && pricingMigration.includes('actual_duration_min') && pricingMigration.includes('trip_tracks') && pricingMigration.includes('final_price_rub'));
