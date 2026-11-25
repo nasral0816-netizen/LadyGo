@@ -200,7 +200,8 @@ const translateError = error => {
   if (/email rate limit exceeded|rate limit/.test(message)) return 'Слишком много запросов. Подожди немного и попробуй снова.';
   if (/network request failed|failed to fetch|fetch failed|networkerror|timeout|timed out/.test(message)) return 'Не удалось подключиться к серверу. Проверь интернет и попробуй ещё раз.';
   if (/duplicate key|unique constraint|orders_one_active_per_passenger_idx/.test(message)) return 'У тебя уже есть активный заказ. Открой раздел «Мои поездки».';
-  if (/permission denied|not allowed|unauthorized|forbidden|jwt/.test(message)) return 'Недостаточно прав для этого действия. Перезайди в аккаунт и попробуй снова.';
+  if (/этот аккаунт не может создавать поездки/.test(message)) return 'Для заказа поездки используй пассажирский режим.';
+  if (/permission denied|not allowed|unauthorized|forbidden|jwt/.test(message)) return 'Сервер отклонил действие из-за прав доступа. Проверь роль аккаунта.';
   if (/pricing service is not configured|service is not configured/.test(message)) return 'Сервер заказов ещё не настроен. Администратору нужно настроить серверные ключи Supabase и развернуть pricing-service.';
   if (/unable to process pricing request|relation .* does not exist|column .* does not exist|function .* does not exist/.test(message)) return 'Сервер не смог сохранить заказ: вероятно, не применены необходимые миграции LadyGo или не настроена функция pricing-service. Это не ошибка интернета.';
   if (/price quote expired|quote.*expired/.test(message)) return 'Срок расчёта цены истёк. Обнови маршрут и попробуй заказать ещё раз.';
