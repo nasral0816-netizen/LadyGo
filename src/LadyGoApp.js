@@ -854,8 +854,24 @@ export default function LadyGoApp() {
         console.warn('LadyGo push registration unavailable:', error?.message);
       }
     })();
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(async response => {
       const data = response?.notification?.request?.content?.data || {};
+      const action = response?.actionIdentifier;
+      if (profile.role === 'driver' && data.orderId && ['ACCEPT_ORDER', 'DECLINE_ORDER'].includes(action)) {
+        try {
+          const rpc = action === 'ACCEPT_ORDER' ? 'ladygo_accept_order' : 'ladygo_decline_order';
+          const { error } = await supabase.rpc(rpc, { p_order_id: data.orderId });
+          if (error) throw error;
+          setIncomingOffer(null);
+          setTab('driver');
+          await loadDriverOrders();
+          if (action === 'ACCEPT_ORDER') Alert.alert('Заказ принят', 'Поездка назначена вам.');
+        } catch (error) {
+          Alert.alert('Не удалось обработать заказ', translateError(error));
+          await loadDriverOrders();
+        }
+        return;
+      }
       if (profile.role === 'driver') {
         setTab('driver');
         loadDriverOrders();
@@ -865,9 +881,17 @@ export default function LadyGoApp() {
       }
       if (data.orderId) setTab(profile.role === 'driver' ? 'driver' : 'orders');
     });
+    const receivedSubscription = Notifications.addNotificationReceivedListener(notification => {
+      const data = notification?.request?.content?.data || {};
+      if (profile.role === 'driver' && data.orderId) {
+        setTab('driver');
+        loadDriverOrders();
+      }
+    });
     return () => {
       alive = false;
       removeSubscriptionSafely(responseSubscription);
+      removeSubscriptionSafely(receivedSubscription);
     };
   }, [profileReady, notificationsReady, profile?.role, session?.user?.id, loadDriverOrders, loadOrders]);
 
@@ -1263,6 +1287,20 @@ export default function LadyGoApp() {
     const timer = setInterval(() => setOfferClock(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!incomingOffer) return;
+    if (Platform.OS === 'android') Vibration.vibrate([0, 650, 300, 650, 300, 650], true);
+    else Vibration.vibrate();
+    return () => Vibration.cancel();
+  }, [incomingOffer?.offer_id]);
+
+  useEffect(() => {
+    if (!incomingOffer?.offer_expires_at) return;
+    if (new Date(incomingOffer.offer_expires_at).getTime() <= offerClock) {
+      setIncomingOffer(null);
+    }
+  }, [incomingOffer?.offer_expires_at, offerClock]);
 
   const loadDriverOrders = useCallback(async () => {
     if (!session?.user?.id || profile?.role !== 'driver' || !supabase) return;
@@ -2396,6 +2434,36 @@ export default function LadyGoApp() {
     <View style={st.bottomNav}>
       {([['ride','⌖','Заказать'],['orders','◷','Поездки'],['profile','○','Профиль']]).map(([id,icon,label]) => <TouchableOpacity key={id} style={st.navItem} onPress={() => setTab(id)}><Text style={[st.navIcon, tab === id && st.navActive]}>{icon}</Text><Text style={[st.navLabel, tab === id && st.navActive]}>{label}</Text></TouchableOpacity>)}
     </View>
+    <Modal visible={Boolean(incomingOffer)} transparent animationType="fade" statusBarTranslucent onRequestClose={() => {}}>
+      <View style={{flex:1,backgroundColor:'rgba(18,12,16,0.72)',justifyContent:'center',padding:18}}>
+        <View style={{backgroundColor:'#FFFFFF',borderRadius:26,padding:22,gap:15,elevation:20}}>
+          <View style={{alignItems:'center',gap:5}}>
+            <Text style={{fontSize:12,fontWeight:'900',letterSpacing:1.5,color:P.pinkDark}}>LADYGO · НОВЫЙ ЗАКАЗ</Text>
+            <Text style={{fontSize:54,fontWeight:'900',color:offerClock+0 >= new Date(incomingOffer?.offer_expires_at||0).getTime()-10000 ? '#C23F5B' : P.ink,fontVariant:['tabular-nums']}}>
+              {String(Math.max(0,Math.ceil((new Date(incomingOffer?.offer_expires_at||0).getTime()-offerClock)/1000))).padStart(2,'0')} сек
+            </Text>
+            <Text style={{fontSize:12,color:P.muted}}>Ответьте в течение 30 секунд</Text>
+          </View>
+          <View style={{height:1,backgroundColor:P.line}}/>
+          <View style={{gap:6}}>
+            <Text style={{fontSize:10,fontWeight:'900',color:P.muted,letterSpacing:1}}>ОТКУДА</Text>
+            <Text style={{fontSize:16,fontWeight:'800',color:P.ink}}>{incomingOffer?.pickup_address||'Адрес подачи не указан'}</Text>
+            <Text style={{fontSize:10,fontWeight:'900',color:P.muted,letterSpacing:1,marginTop:5}}>КУДА</Text>
+            <Text style={{fontSize:16,fontWeight:'800',color:P.ink}}>{incomingOffer?.destination_address||'Адрес назначения не указан'}</Text>
+          </View>
+          <View style={{backgroundColor:'#FFF3F7',borderRadius:15,padding:14,alignItems:'center'}}>
+            <Text style={{fontSize:11,color:P.muted,fontWeight:'700'}}>Стоимость поездки</Text>
+            <Text style={{fontSize:28,color:P.pinkDark,fontWeight:'900'}}>{fmt(incomingOffer?.estimated_price_rub||incomingOffer?.price_rub||0)}</Text>
+          </View>
+          <TouchableOpacity disabled={offerActionBusy || !incomingOffer} onPress={() => acceptDriverOrder(incomingOffer)} style={{backgroundColor:P.pink,borderRadius:15,padding:17,alignItems:'center',opacity:offerActionBusy?0.6:1}}>
+            {offerActionBusy ? <ActivityIndicator color="#FFFFFF"/> : <Text style={{fontSize:16,fontWeight:'900',color:'#FFFFFF'}}>ПРИНЯТЬ ЗАКАЗ</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity disabled={offerActionBusy || !incomingOffer} onPress={() => declineDriverOrder(incomingOffer)} style={{borderWidth:1,borderColor:P.line,borderRadius:15,padding:15,alignItems:'center'}}>
+            <Text style={{fontSize:14,fontWeight:'800',color:P.ink}}>Отказать</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   </SafeAreaView>;
 }
 
