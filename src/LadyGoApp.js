@@ -350,6 +350,7 @@ export default function LadyGoApp() {
   const [profileReady, setProfileReady] = useState(false);
   const [notificationsReady, setNotificationsReady] = useState(false);
   const permissionSetupUsers = useRef(new Set());
+  const handledNotificationActions = useRef(new Set());
   const [boot, setBoot] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -856,7 +857,10 @@ export default function LadyGoApp() {
         console.warn('LadyGo push registration unavailable:', error?.message);
       }
     })();
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(async response => {
+    const handleNotificationResponse = async response => {
+      const responseKey = String(response?.notification?.request?.identifier || '') + ':' + String(response?.actionIdentifier || '');
+      if (handledNotificationActions.current.has(responseKey)) return;
+      handledNotificationActions.current.add(responseKey);
       const data = response?.notification?.request?.content?.data || {};
       const action = response?.actionIdentifier;
       if (profile.role === 'driver' && data.orderId && ['ACCEPT_ORDER', 'DECLINE_ORDER'].includes(action)) {
@@ -882,7 +886,13 @@ export default function LadyGoApp() {
         loadOrders();
       }
       if (data.orderId) setTab(profile.role === 'driver' ? 'driver' : 'orders');
-    });
+    };
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(handleNotificationResponse);
+    // A notification action can cold-start the app; recover that response after auth/profile restore.
+    Notifications.getLastNotificationResponseAsync().then(response => {
+      if (response) handleNotificationResponse(response);
+      return Notifications.clearLastNotificationResponseAsync();
+    }).catch(error => console.warn('LadyGo last notification response unavailable:', error?.message));
     const receivedSubscription = Notifications.addNotificationReceivedListener(notification => {
       const data = notification?.request?.content?.data || {};
       if (profile.role === 'driver' && data.orderId) {
