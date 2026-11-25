@@ -79,7 +79,7 @@ Deno.serve(async req=>{
  try{
   const body=await req.json(),requestedCity=String(body.city_id||"russia_default"),tariffId=String(body.tariff_id||"economy"),action=String(body.action||"quote");
   if(action==="create_order"){
-    const quoteId=String(body.price_token??"");
+    let quoteId=String(body.price_token??"");
     const pickup={latitude:Number(body.pickup_lat),longitude:Number(body.pickup_lng)};
     const destination={latitude:Number(body.destination_lat),longitude:Number(body.destination_lng)};
     const pickupAddress=String(body.pickup_address??"").trim();
@@ -96,9 +96,49 @@ Deno.serve(async req=>{
     const {data:existing,error:existingError}=await userClient.from("orders").select("*").eq("passenger_id",who.user.id).in("status",["new","accepted","arrived","in_progress"]).maybeSingle();
     if(existingError)throw existingError;
     if(existing)return json({order:existing});
-    const {data:quote,error:quoteError}=await userClient.from("price_quotes").select("id,tariff_id,amount_rub,expires_at,consumed_at,pickup_lat,pickup_lng,destination_lat,destination_lng").eq("id",quoteId).eq("passenger_id",who.user.id).maybeSingle();
+    let {data:quote,error:quoteError}=await userClient.from("price_quotes")
+      .select("id,city_id,tariff_id,route_km,route_min,amount_rub,breakdown,expires_at,consumed_at,pickup_lat,pickup_lng,destination_lat,destination_lng")
+      .eq("id",quoteId).eq("passenger_id",who.user.id).maybeSingle();
     if(quoteError)throw quoteError;
-    if(!quote||quote.consumed_at||new Date(quote.expires_at).getTime()<=Date.now())return json({error:"Расчёт цены истёк. Построй маршрут заново."},409);
+    if(!quote)return json({error:"Расчёт цены не найден. Построй маршрут заново."},409);
+
+    // If the passenger cancelled the order created from this quote and taps
+    // Order again, issue a fresh 4-minute token for the exact same validated
+    // route/amount. This prevents a consumed quote from masquerading as a
+    // network failure. Only the quote owner can renew it, and only shortly
+    // after cancelling the corresponding order.
+    if(quote.consumed_at || new Date(quote.expires_at).getTime()<=Date.now()){
+      const {data:cancelledOrder,error:cancelledOrderError}=await db.from("orders")
+        .select("id,cancelled_at,status")
+        .eq("passenger_id",who.user.id)
+        .eq("price_quote_id",quoteId)
+        .eq("status","cancelled")
+        .order("cancelled_at",{ascending:false})
+        .limit(1)
+        .maybeSingle();
+      if(cancelledOrderError)throw cancelledOrderError;
+      const cancelledAt=cancelledOrder?.cancelled_at ? new Date(cancelledOrder.cancelled_at).getTime() : 0;
+      if(!cancelledOrder || !cancelledAt || Date.now()-cancelledAt>30*60*1000){
+        return json({error:"Price quote expired or already used. Recalculate the route and try again."},409);
+      }
+      const {data:renewedQuote,error:renewError}=await db.from("price_quotes").insert({
+        passenger_id:who.user.id,
+        city_id:quote.city_id,
+        tariff_id:quote.tariff_id,
+        route_km:quote.route_km,
+        route_min:quote.route_min,
+        amount_rub:quote.amount_rub,
+        pickup_lat:quote.pickup_lat,
+        pickup_lng:quote.pickup_lng,
+        destination_lat:quote.destination_lat,
+        destination_lng:quote.destination_lng,
+        breakdown:quote.breakdown,
+        expires_at:new Date(Date.now()+240000).toISOString()
+      }).select("id,city_id,tariff_id,route_km,route_min,amount_rub,breakdown,expires_at,consumed_at,pickup_lat,pickup_lng,destination_lat,destination_lng").single();
+      if(renewError)throw renewError;
+      quote=renewedQuote;
+      quoteId=renewedQuote.id;
+    }
     const routeMatchesQuote = quote.pickup_lat != null && quote.pickup_lng != null
       && quote.destination_lat != null && quote.destination_lng != null
       && Math.abs(Number(quote.pickup_lat)-pickup.latitude)<=0.00001
