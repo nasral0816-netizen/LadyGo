@@ -755,7 +755,7 @@ export default function LadyGoApp() {
     (async () => {
       try {
         if (Platform.OS === 'android') {
-          await Notifications.setNotificationChannelAsync('driver-orders', {
+          await Notifications.setNotificationChannelAsync('driver-order-offers', {
             name: 'Новые заказы водителю',
             description: 'Срочные предложения поездок с таймером ответа 30 секунд',
             importance: Notifications.AndroidImportance.MAX,
