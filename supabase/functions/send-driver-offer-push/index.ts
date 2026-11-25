@@ -169,7 +169,7 @@ Deno.serve(async (req: Request) => {
       body: `Подача: ${order.pickup_address || "Адрес не указан"} · До: ${order.destination_address || "не указан"} · ${Math.round(Number(order.estimated_price_rub || order.price_rub || 0))} ₽ · ${secondsRemaining} сек. на ответ`, 
       sound: "default",
       priority: "high",
-      channelId: "driver-orders",
+      channelId: "driver-order-offers",
       ttl: Math.max(1, Math.min(30, secondsRemaining)),
       categoryIdentifier: "driver_order_offer",
       data: { orderId: offer.order_id, offerId: offer.id, expiresAt: currentOffer.expires_at }, 
