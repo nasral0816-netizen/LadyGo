@@ -214,7 +214,7 @@ async function findAddresses(q) {
   const clean = String(q || '').replace(/\s+/g, ' ').trim();
   if (clean.length < 2) return [];
   const results = await withTimeout(geocodeAddress(clean, {
-    userPosition: { latitude: 43.9052, longitude: 42.7168 },
+    // No fixed-city bias: address search must work across the Russian Federation.
     resultPageSize: 12
   }), 12000, 'Яндекс Карты не ответили на поиск адреса за 12 секунд. Попробуй ещё раз.');
   return (results || []).filter(item => item.point &&
@@ -234,7 +234,7 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
   const [zoom, setZoom] = useState(17);
   const [is3D, setIs3D] = useState(true);
   const [cameraPosition, setCameraPosition] = useState({
-    latitude: 43.9052, longitude: 42.7168, zoom: 13, tilt: 0
+    latitude: 55.751244, longitude: 37.618423, zoom: 5, tilt: 0
   });
 
   useEffect(() => {
@@ -1557,7 +1557,7 @@ export default function LadyGoApp() {
       try {
         const { data, error } = await withTimeout(
           supabase.functions.invoke('pricing-service', {
-            body: { action: 'quote', city_id: 'kislovodsk', tariff_id: tariff, points: [pickup, destination], options: [] }
+            body: { action: 'quote', city_id: 'russia_default', tariff_id: tariff, points: [pickup, destination], options: [] }
           }),
           20000,
           'Сервер цены не ответил за 20 секунд. Проверь интернет и нажми «Пересчитать стоимость».'
@@ -1854,7 +1854,7 @@ export default function LadyGoApp() {
     {searching && <ActivityIndicator color={P.pink} style={{ marginTop: 20 }}/>}
     <ScrollView keyboardShouldPersistTaps="handled">
       {suggestions.map(item => <TouchableOpacity key={item.id} style={st.suggestion} onPress={() => chooseSuggestion(item)}>
-        <View style={st.suggestionIcon}><Text>⌖</Text></View><View style={{ flex: 1 }}><Text style={st.suggestionTitle}>{item.label}</Text><Text style={st.suggestionSub}>{item.detail || 'Кисловодск'}</Text></View>
+        <View style={st.suggestionIcon}><Text>⌖</Text></View><View style={{ flex: 1 }}><Text style={st.suggestionTitle}>{item.label}</Text><Text style={st.suggestionSub}>{item.detail || 'Россия'}</Text></View>
       </TouchableOpacity>)}
       {!searching && query.length > 1 && suggestions.length === 0 && <Text style={st.empty}>Не получилось найти адрес. Проверь написание или попробуй указать улицу и номер дома.</Text>}
     </ScrollView>
