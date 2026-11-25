@@ -759,7 +759,7 @@ export default function LadyGoApp() {
             name: 'Новые заказы водителю',
             description: 'Срочные предложения поездок с таймером ответа 30 секунд',
             importance: Notifications.AndroidImportance.MAX,
-            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
             vibrationPattern: [0, 500, 250, 500, 250, 500],
             enableVibrate: true,
             sound: 'default'
