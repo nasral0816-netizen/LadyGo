@@ -88,7 +88,7 @@ Deno.serve(async req=>{
     const validPoint=(p:any)=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude)&&p.latitude>=-90&&p.latitude<=90&&p.longitude>=-180&&p.longitude<=180;
     const {data:profile,error:profileError}=await db.from("profiles").select("role").eq("id",who.user.id).maybeSingle();
     if(profileError)throw profileError;
-    if(profile?.role!=="passenger" && profile?.role!=="driver")return json({error:"Этот аккаунт не может создавать поездки."},403);
+    if(profile?.role!=="passenger" && profile?.role!=="driver" && profile?.role!=="admin")return json({error:"Этот аккаунт не может создавать поездки."},403);
     if(profile?.role==="driver"){
       const {data:approved,error:approvalError}=await db.from("driver_applications").select("user_id").eq("user_id",who.user.id).eq("status","approved").maybeSingle();
       if(approvalError)throw approvalError;
