@@ -346,6 +346,7 @@ export default function LadyGoApp() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [profileReady, setProfileReady] = useState(false);
+  const [notificationsReady, setNotificationsReady] = useState(false);
   const permissionSetupUsers = useRef(new Set());
   const [boot, setBoot] = useState(true);
   const [email, setEmail] = useState('');
@@ -742,6 +743,9 @@ export default function LadyGoApp() {
   // Системные окна Android показываются по одному; уже выданные разрешения не спрашиваются повторно.
   useEffect(() => {
     if (!profileReady || !profile?.role || !session?.user?.id || !Device.isDevice) return;
+    const userId = session.user.id;
+    if (permissionSetupUsers.current.has(userId)) return;
+    permissionSetupUsers.current.add(userId);
     let alive = true;
     (async () => {
       try {
@@ -759,6 +763,7 @@ export default function LadyGoApp() {
           notificationPermission = await Notifications.requestPermissionsAsync();
         }
         if (!alive) return;
+        setNotificationsReady(true);
 
         let foregroundLocation = await Location.getForegroundPermissionsAsync();
         if (foregroundLocation.status !== 'granted' && foregroundLocation.canAskAgain !== false) {
@@ -803,13 +808,10 @@ export default function LadyGoApp() {
       }
     })();
     return () => { alive = false; };
-  }, [profileReady, profile?.role, session?.user?.id]);
+  }, [profileReady, profileReady, notificationsReady, profile?.role, session?.user?.id]);
 
   useEffect(() => {
-    if (!profileReady || !profile?.role || !session?.user?.id || !supabase || !Device.isDevice) return;
-    const userId = session.user.id;
-    if (permissionSetupUsers.current.has(userId)) return;
-    permissionSetupUsers.current.add(userId);
+    if (!profileReady || !notificationsReady || !profile?.role || !session?.user?.id || !supabase || !Device.isDevice) return;
     let alive = true;
     (async () => {
       try {
