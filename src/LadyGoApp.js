@@ -137,7 +137,7 @@ const TARIFFS = [
   { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '♡' },
   { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '⌂' }
 ];
-const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Ищем водителя', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
+const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Ищем водителя', accepted: 'Водитель принял заказ', arrived: 'Водитель на месте', in_progress: 'Поездка началась', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
 
 function removeSubscriptionSafely(subscription) {
@@ -404,6 +404,7 @@ export default function LadyGoApp() {
   const [demoOrders, setDemoOrders] = useState([]);
   const [adminDemoOrders, setAdminDemoOrders] = useState([]);
   const [activeOrder, setActiveOrder] = useState(null);
+  const previousPassengerOrderStatus = useRef(null);
   const [phone, setPhone] = useState('');
   const [driverOrders, setDriverOrders] = useState([]);
   const [incomingOffer, setIncomingOffer] = useState(null);
@@ -659,6 +660,22 @@ export default function LadyGoApp() {
 
   // Matching is server-side (orders INSERT trigger + offer-expiry cron).
   // The client must never call the restricted dispatch primitive directly.
+
+  useEffect(() => {
+    const previous = previousPassengerOrderStatus.current;
+    if (
+      activeOrder?.id &&
+      previous?.id === activeOrder.id &&
+      previous.status === 'new' &&
+      ['accepted', 'arrived', 'in_progress'].includes(activeOrder.status)
+    ) {
+      // Когда водитель принимает заказ, сразу открываем понятный экран состояния поездки.
+      setTab('orders');
+    }
+    previousPassengerOrderStatus.current = activeOrder
+      ? { id: activeOrder.id, status: activeOrder.status }
+      : null;
+  }, [activeOrder?.id, activeOrder?.status]);
 
   useEffect(() => {
     if (!activeOrder?.driver_id || !['accepted','arrived','in_progress'].includes(activeOrder.status) || !supabase) return;
@@ -2074,6 +2091,16 @@ export default function LadyGoApp() {
         <View style={st.rowBetween}>
           <Text style={st.orderPrice}>{fmt(activeOrder.price_rub||activeOrder.estimated_price_rub||0)}</Text>
           {activeOrder.status==='new' ? <Text style={{color:P.pinkDark,fontWeight:'800'}}>Ищем водителя…</Text> : null}
+          {activeOrder.status==='accepted' && <View style={{marginTop:10,padding:13,borderRadius:13,backgroundColor:'#EAF7F0',gap:4}}>
+            <Text style={{color:'#176B49',fontWeight:'900',fontSize:15}}>✓ Заказ принят водителем!</Text>
+            <Text style={{color:'#315B49',fontSize:13}}>Ниже появятся имя водителя, автомобиль и кнопка звонка. Здесь можно следить за поездкой.</Text>
+          </View>}
+          {activeOrder.status==='arrived' && <View style={{marginTop:10,padding:13,borderRadius:13,backgroundColor:'#EAF7F0'}}>
+            <Text style={{color:'#176B49',fontWeight:'900'}}>✓ Водитель уже на месте</Text>
+          </View>}
+          {activeOrder.status==='in_progress' && <View style={{marginTop:10,padding:13,borderRadius:13,backgroundColor:'#EAF7F0'}}>
+            <Text style={{color:'#176B49',fontWeight:'900'}}>✓ Вы едете к месту назначения</Text>
+          </View>}
         </View>
         {['new','accepted','arrived','in_progress'].includes(activeOrder.status) && <TouchableOpacity onPress={()=>cancelOrder(activeOrder)}><Text style={st.cancelText}>Отменить поездку</Text></TouchableOpacity>}
       </View>}
