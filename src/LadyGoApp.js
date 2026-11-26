@@ -1226,9 +1226,9 @@ export default function LadyGoApp() {
 
 
   const saveAdminTariff = async row => {
-    const numericFields = ['min_price_rub','city_per_km_rub','city_per_min_rub','out_per_km_rub','out_per_min_rub','night_multiplier','peak_multiplier','weekend_multiplier','surge_multiplier','child_surcharge_rub','delivery_surcharge_rub','commission_rate_pct'];
+    const numericFields = ['min_price_rub','city_per_km_rub','city_per_min_rub','out_per_km_rub','out_per_min_rub','night_multiplier','peak_multiplier','weekend_multiplier','surge_multiplier','surge_driver_threshold','child_surcharge_rub','delivery_surcharge_rub','commission_rate_pct'];
     const payload = Object.fromEntries(numericFields.map(field => [field, Number(row[field] ?? 0)]));
-    if (Object.values(payload).some(value => !Number.isFinite(value) || value < 0)) { Alert.alert('Проверь значения', 'Тарифные параметры должны быть неотрицательными числами.'); return; }
+    if (Object.values(payload).some(value => !Number.isFinite(value) || value < 0) || ['night_multiplier','peak_multiplier','weekend_multiplier','surge_multiplier'].some(field => payload[field] < 1) || payload.surge_driver_threshold % 1 !== 0) { Alert.alert('Проверь значения', 'Коэффициенты должны быть не меньше 1, остальные значения — неотрицательными числами.'); return; }
     try {
       const { error } = await supabase.from('city_tariff_configs').update({ ...payload, updated_by: session?.user?.id, updated_at: new Date().toISOString() }).eq('id', row.id);
       if (error) throw error;
@@ -2435,7 +2435,7 @@ export default function LadyGoApp() {
         {adminTariffs.map(row => <View key={row.id} style={st.adminApplicationCard}>
           <Text style={st.adminApplicantName}>{row.city_id} · {row.name}</Text>
           <View style={{flexDirection:'row',flexWrap:'wrap',gap:7}}>
-            {[["min_price_rub","Минимум"],["city_per_km_rub","Город ₽/км"],["city_per_min_rub","Город ₽/мин"],["out_per_km_rub","Межгород ₽/км"],["out_per_min_rub","Межгород ₽/мин"],["night_multiplier","Ночь ×"],["peak_multiplier","Час пик ×"],["weekend_multiplier","Выходные ×"],["surge_multiplier","Дефицит ×"],["child_surcharge_rub","Детский +₽"],["delivery_surcharge_rub","Доставка +₽"],["commission_rate_pct","Комиссия %"]].map(([field,label])=><View key={field} style={{width:'48%',gap:3}}><Text style={st.adminDetail}>{label}</Text><TextInput style={st.phoneInput} keyboardType="decimal-pad" value={String(row[field] ?? 0)} onChangeText={v=>updateAdminTariff(row.id,field,v.replace(',','.').replace(/[^0-9.]/g,''))}/></View>)}
+            {[["min_price_rub","Минимум"],["city_per_km_rub","Город ₽/км"],["city_per_min_rub","Город ₽/мин"],["out_per_km_rub","Межгород ₽/км"],["out_per_min_rub","Межгород ₽/мин"],["night_multiplier","Ночь ×"],["peak_multiplier","Час пик ×"],["weekend_multiplier","Выходные ×"],["surge_multiplier","Дефицит ×"],["surge_driver_threshold","Порог дефицита"],["child_surcharge_rub","Детский +₽"],["delivery_surcharge_rub","Доставка +₽"],["commission_rate_pct","Комиссия %"]].map(([field,label])=><View key={field} style={{width:'48%',gap:3}}><Text style={st.adminDetail}>{label}</Text><TextInput style={st.phoneInput} keyboardType="decimal-pad" value={String(row[field] ?? 0)} onChangeText={v=>updateAdminTariff(row.id,field,v.replace(',','.').replace(/[^0-9.]/g,''))}/></View>)}
           </View>
           <TouchableOpacity style={st.adminApprove} onPress={()=>saveAdminTariff(row)}><Text style={st.adminActionText}>Сохранить тариф</Text></TouchableOpacity>
         </View>)}
