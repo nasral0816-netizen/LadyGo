@@ -1182,6 +1182,18 @@ export default function LadyGoApp() {
     finally { setAdminTariffsLoading(false); }
   }, [profile?.role]);
 
+  useEffect(() => {
+    if (profile?.role !== 'admin' || tab !== 'admin' || !supabase) return;
+    loadAdminDrivers();
+    loadAdminTariffs();
+    const channel = supabase.channel('ladygo-admin-live-line')
+      .on('postgres_changes',{event:'*',schema:'public',table:'driver_presence'},loadAdminDrivers)
+      .on('postgres_changes',{event:'*',schema:'public',table:'driver_locations'},loadAdminDrivers)
+      .subscribe();
+    const refresh = setInterval(loadAdminDrivers, 15000);
+    return () => { clearInterval(refresh); removeRealtimeChannelSafely(supabase, channel); };
+  }, [profile?.role, tab, loadAdminDrivers, loadAdminTariffs]);
+
   const updateAdminTariff = (id, field, value) => setAdminTariffs(rows => rows.map(row => row.id === id ? { ...row, [field]: value } : row));
 
   const saveAdminTariff = async row => {
@@ -2150,7 +2162,7 @@ export default function LadyGoApp() {
         <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>⌖  Пассажир</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>🚘  Водитель</Text></TouchableOpacity>
       </View>}
-      {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}>
+      {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminTariffs(); loadAdminAccounts(); }}>
         <Text style={[st.adminTopButtonText, tab === 'admin' && st.adminTopButtonTextActive]}>⚙ Админ</Text>
       </TouchableOpacity>}
       <TouchableOpacity style={st.avatar} onPress={() => setTab('profile')}><Text style={st.avatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></TouchableOpacity>
