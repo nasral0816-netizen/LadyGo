@@ -2551,6 +2551,7 @@ export default function LadyGoApp() {
           <Text style={st.orderAddress}>● {o.destination_address||'Назначение не указано'}</Text>
           <View style={{backgroundColor:P.pale,borderRadius:12,padding:11,marginTop:8,gap:5}}>
             <Text style={st.adminDetail}>Водитель: {o.driver_id ? o.driver_full_name : 'Не назначен'}</Text>
+            {o.driver_id ? <Text style={st.adminDetail}>Телефон: {o.driver_phone || 'Не указан'}</Text> : null}
             {o.driver_id ? <Text style={st.adminDetail}>Автомобиль: {[o.driver_vehicle_color,o.driver_vehicle_make,o.driver_vehicle_model].filter(Boolean).join(' ')||'Данные не указаны'}</Text> : null}
             {o.driver_id ? <Text style={st.adminDetail}>Госномер: {o.driver_vehicle_plate||'Не указан'}</Text> : null}
           </View>
