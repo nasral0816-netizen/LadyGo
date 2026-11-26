@@ -1049,7 +1049,7 @@ export default function LadyGoApp() {
       if (driverIds.length) {
         const [profileResult, applicationResult] = await Promise.all([
           supabase.from('driver_profiles')
-            .select('driver_id,display_name,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year')
+            .select('driver_id,display_name,phone,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year')
             .in('driver_id', driverIds),
           supabase.from('driver_applications')
             .select('user_id,full_name,vehicle_make,vehicle_model,vehicle_plate,vehicle_color,vehicle_year,status')
@@ -1068,6 +1068,7 @@ export default function LadyGoApp() {
         return {
           ...order,
           driver_full_name: application.full_name || driver.display_name || 'Имя не указано',
+          driver_phone: driver.phone || '',
           driver_vehicle_make: driver.vehicle_make || application.vehicle_make || '',
           driver_vehicle_model: driver.vehicle_model || application.vehicle_model || '',
           driver_vehicle_plate: driver.vehicle_plate || application.vehicle_plate || '',
@@ -2336,7 +2337,7 @@ export default function LadyGoApp() {
           <Text style={st.adminApplicantName}>Заказы: {adminReport.orders?.total ?? 0}</Text>
           <Text style={st.adminDetail}>Выполнено: {adminReport.orders?.completed ?? 0} · Отменено: {adminReport.orders?.cancelled ?? 0} · В процессе: {adminReport.orders?.in_progress ?? 0}</Text>
           <Text style={st.adminApplicantName}>Выручка: {fmt(adminReport.revenue_rub)}</Text>
-          <Text style={st.adminDetail}>Средний чек: {fmt(adminReport.average_check_rub)} · Уникальных водителей: {adminReport.drivers_unique ?? 0}</Text>
+          <Text style={st.adminDetail}>Средний чек: {fmt(adminReport.average_check_rub)} · Комиссия: {fmt(adminReport.commission_rub)} · Уникальных водителей: {adminReport.drivers_unique ?? 0}</Text>
           <Text style={st.adminDetail}>На линии сейчас: {adminReport.drivers_on_line ?? 0} · Заморожено: {adminReport.drivers_frozen ?? 0}</Text>
           <Text style={st.sectionTitle}>По городам</Text>{(adminReport.by_city||[]).map((x,i)=><Text key={i} style={st.adminDetail}>{x.city}: {x.orders} заказов · {fmt(x.revenue_rub)}</Text>)}
           <Text style={st.sectionTitle}>По тарифам</Text>{(adminReport.by_tariff||[]).map((x,i)=><Text key={i} style={st.adminDetail}>{x.tariff}: {x.orders} заказов · {fmt(x.revenue_rub)}</Text>)}
@@ -2396,6 +2397,7 @@ export default function LadyGoApp() {
                 </View>
                 <Text style={st.orderAddress}>● {o.pickup_address||'Место подачи не указано'}</Text>
                 <Text style={st.orderAddress}>● {o.destination_address||'Назначение не указано'}</Text>
+                <Text style={st.adminDetail}>Водитель: {o.driver_full_name||'—'} · {o.driver_phone||'Телефон не указан'}</Text>
                 <View style={st.rowBetween}>
                   <Text style={st.orderPrice}>{o.price_rub?fmt(o.price_rub):o.estimated_price_rub?fmt(o.estimated_price_rub):'Цена не указана'}</Text>
                   <Text style={st.muted}>ID: {String(o.id).slice(0,8)}</Text>
