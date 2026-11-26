@@ -1,6 +1,8 @@
 -- LadyGo operations, driver freeze, live line, reporting and editable pricing.
 -- Additive migration: existing orders and profiles remain compatible.
 
+alter table public.driver_presence add column if not exists online_since timestamptz;
+
 alter table public.city_tariff_configs
   add column if not exists night_multiplier numeric(6,3) not null default 1.000,
   add column if not exists peak_multiplier numeric(6,3) not null default 1.000,
@@ -142,7 +144,7 @@ begin
       else 'offline'
     end::text,
     dl.latitude,dl.longitude,pr.updated_at,
-    case when pr.is_online then pr.updated_at else null end,
+    pr.online_since,
     f.expires_at,f.reason
   from public.profiles p
   join public.driver_applications a on a.user_id=p.id and a.status='approved'
@@ -197,9 +199,15 @@ begin
     on conflict(driver_id) do update set latitude=excluded.latitude,
       longitude=excluded.longitude,heading=excluded.heading,updated_at=now();
   end if;
-  insert into public.driver_presence(driver_id,is_online,updated_at)
-  values(auth.uid(),p_is_online,now())
-  on conflict(driver_id) do update set is_online=excluded.is_online,updated_at=now();
+  insert into public.driver_presence(driver_id,is_online,updated_at,online_since)
+  values(auth.uid(),p_is_online,now(),case when p_is_online then now() else null end)
+  on conflict(driver_id) do update set
+    online_since=case
+      when excluded.is_online and not public.driver_presence.is_online then now()
+      when not excluded.is_online then null
+      else public.driver_presence.online_since
+    end,
+    is_online=excluded.is_online,updated_at=now();
 end;
 $$;
 
@@ -310,10 +318,12 @@ begin
     'average_check_rub',coalesce(avg(coalesce(o.price_rub,o.estimated_price_rub,0)) filter(where o.status='completed'),0),
     'drivers_unique',count(distinct o.driver_id) filter(where o.driver_id is not null),
     'by_city',coalesce((select jsonb_agg(x) from (
-      select coalesce(nullif(o2.city_id,''),'не указан') city,
+      select coalesce(nullif(pq.city_id,''),'не указан') city,
         count(*) orders,
         coalesce(sum(coalesce(o2.price_rub,o2.estimated_price_rub,0)) filter(where o2.status='completed'),0) revenue_rub
-      from public.orders o2 where o2.created_at>=p_start and o2.created_at<p_end
+      from public.orders o2
+      left join public.price_quotes pq on pq.id=o2.price_quote_id
+      where o2.created_at>=p_start and o2.created_at<p_end
       group by 1 order by 1
     ) x),'[]'::jsonb),
     'by_tariff',coalesce((select jsonb_agg(x) from (
