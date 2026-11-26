@@ -1247,8 +1247,9 @@ export default function LadyGoApp() {
 
   const exportAdminReportPdf = async () => {
     if (!adminReport) return;
-    const cityRows = (adminReport.by_city || []).map(x => `<tr><td>${String(x.city)}</td><td>${Number(x.orders||0)}</td><td>${Number(x.revenue_rub||0).toLocaleString('ru-RU')} ₽</td></tr>`).join('');
-    const tariffRows = (adminReport.by_tariff || []).map(x => `<tr><td>${String(x.tariff)}</td><td>${Number(x.orders||0)}</td><td>${Number(x.revenue_rub||0).toLocaleString('ru-RU')} ₽</td></tr>`).join('');
+    const escapeHtml = value => String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    const cityRows = (adminReport.by_city || []).map(x => `<tr><td>${escapeHtml(x.city)}</td><td>${Number(x.orders||0)}</td><td>${Number(x.revenue_rub||0).toLocaleString('ru-RU')} ₽</td></tr>`).join('');
+    const tariffRows = (adminReport.by_tariff || []).map(x => `<tr><td>${escapeHtml(x.tariff)}</td><td>${Number(x.orders||0)}</td><td>${Number(x.revenue_rub||0).toLocaleString('ru-RU')} ₽</td></tr>`).join('');
     const money = value => Number(value||0).toLocaleString('ru-RU') + ' ₽';
     const html = `<!doctype html><html lang="ru"><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;padding:28px;color:#18352a}h1{color:#0d5138}table{width:100%;border-collapse:collapse;margin:12px 0 24px}td,th{border-bottom:1px solid #dce8df;padding:9px;text-align:left}th{background:#eff6f0}.metric{font-size:18px;font-weight:bold;margin:10px 0}</style><body><h1>LadyGo — отчёт</h1><p>Период: ${new Date(adminReport.period.start).toLocaleString('ru-RU')} — ${new Date(adminReport.period.end).toLocaleString('ru-RU')}</p><div class="metric">Выручка: ${money(adminReport.revenue_rub)}</div><p>Заказов: ${adminReport.orders?.total||0} · Выполнено: ${adminReport.orders?.completed||0} · Отменено: ${adminReport.orders?.cancelled||0} · В процессе: ${adminReport.orders?.in_progress||0}</p><p>Средний чек: ${money(adminReport.average_check_rub)} · Комиссия: ${money(adminReport.commission_rub)} · Уникальных водителей: ${adminReport.drivers_unique||0}</p><h2>По городам</h2><table><tr><th>Город</th><th>Заказы</th><th>Выручка</th></tr>${cityRows}</table><h2>По тарифам</h2><table><tr><th>Тариф</th><th>Заказы</th><th>Выручка</th></tr>${tariffRows}</table></body></html>`;
     try {
