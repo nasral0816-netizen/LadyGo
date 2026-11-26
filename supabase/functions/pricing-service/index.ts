@@ -210,16 +210,53 @@ Deno.serve(async req=>{
   const perKm=outside?n(t.out_per_km_rub):n(t.city_per_km_rub),perMin=outside?n(t.out_per_min_rub):n(t.city_per_min_rub);
   const billableKm=Math.max(0,routeKm-n(t.included_km)),billableMin=Math.max(0,routeMin-n(t.included_min));
   const routeCost=n(t.min_price_rub)+billableKm*perKm+billableMin*perMin;
-
-  // Passenger pricing never depends on the distance of an unassigned driver.
-  // A fixed 60 RUB base fare is added to the route quote; dynamic pickup/surge
-  // multipliers are intentionally excluded from passenger quotes.
   const baseFareRub=60;
   const pickupKm=0,pickupMin=0,pickupCost=0;
-  const surge=1;
-  const surgeReason="Без доплаты за подачу и повышенный спрос";
   const opts=Array.isArray(body.options)?body.options.filter((x:string)=>FREE.includes(x)||Object.hasOwn(PAID,x)):[];
   const optionsCost=opts.reduce((sum:number,x:string)=>sum+(PAID[x]||0),0);
+
+  // Moscow time is used consistently for KМВ tariff windows.
+  const localParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Moscow", hour: "2-digit", hourCycle: "h23", weekday: "short"
+  }).formatToParts(new Date());
+  const localHour = Number(localParts.find(x=>x.type==="hour")?.value ?? 12);
+  const localWeekday = localParts.find(x=>x.type==="weekday")?.value ?? "Mon";
+  const nightMultiplier = localHour >= 22 || localHour < 6 ? n(t.night_multiplier) || 1 : 1;
+  const peakMultiplier = (localHour >= 7 && localHour < 10) || (localHour >= 17 && localHour < 20) ? n(t.peak_multiplier) || 1 : 1;
+  const weekendMultiplier = localWeekday === "Sat" || localWeekday === "Sun" ? n(t.weekend_multiplier) || 1 : 1;
+
+  // Count fresh online drivers within 10 km of pickup. Frozen or occupied
+  // drivers are excluded so the scarcity coefficient reflects dispatch capacity.
+  const [presenceResult, locationsResult, frozenResult, activeOrdersResult] = await Promise.all([
+    db.from("driver_presence").select("driver_id").eq("is_online", true).gte("updated_at", new Date(Date.now()-90000).toISOString()),
+    db.from("driver_locations").select("driver_id,latitude,longitude,updated_at").gte("updated_at", new Date(Date.now()-90000).toISOString()),
+    db.from("driver_freezes").select("driver_id").is("lifted_at", null).gt("expires_at", new Date().toISOString()),
+    db.from("orders").select("driver_id").in("status", ["accepted","arrived","in_progress"]).not("driver_id","is",null)
+  ]);
+  if (presenceResult.error) throw presenceResult.error;
+  if (locationsResult.error) throw locationsResult.error;
+  if (frozenResult.error) throw frozenResult.error;
+  if (activeOrdersResult.error) throw activeOrdersResult.error;
+  const toRad = (v:number) => v*Math.PI/180;
+  const distanceKm = (a:any,b:any) => {
+    const dLat=toRad(Number(b.latitude)-Number(a.latitude)),dLon=toRad(Number(b.longitude)-Number(a.longitude));
+    const h=Math.sin(dLat/2)**2+Math.cos(toRad(Number(a.latitude)))*Math.cos(toRad(Number(b.latitude)))*Math.sin(dLon/2)**2;
+    return 6371*2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
+  };
+  const onlineIds = new Set((presenceResult.data||[]).map((x:any)=>x.driver_id));
+  const frozenIds = new Set((frozenResult.data||[]).map((x:any)=>x.driver_id));
+  const busyIds = new Set((activeOrdersResult.data||[]).map((x:any)=>x.driver_id));
+  const availableDrivers = (locationsResult.data||[]).filter((x:any)=>
+    onlineIds.has(x.driver_id) && !frozenIds.has(x.driver_id) && !busyIds.has(x.driver_id)
+    && distanceKm(start,x)<=10
+  ).length;
+  const surgeThreshold = Math.max(0, Math.floor(n(t.surge_driver_threshold)));
+  const surge = surgeThreshold > 0 && availableDrivers < surgeThreshold ? Math.max(1,n(t.surge_multiplier)) : 1;
+  const surgeReason = surge > 1 ? `Мало свободных водителей рядом: ${availableDrivers}` : "Достаточно свободных водителей";
+  const tariffSurcharge = tariffId === "comfort" ? n(t.child_surcharge_rub)
+    : tariffId === "comfort_plus" ? n(t.delivery_surcharge_rub) : 0;
+  const timeMultiplier = nightMultiplier * peakMultiplier * weekendMultiplier;
+  const demandMultiplier = surge;
   let waitMinutes=0;
   let waitOrder:any=null;
   if(action==="recalculate_wait"){
@@ -230,8 +267,9 @@ Deno.serve(async req=>{
   }
   const waitCost=Math.max(0,waitMinutes-n(t.free_wait_min))*n(t.wait_per_min_rub);
   const tolls=0,discount=0;
-  const total=Math.round(Math.max(n(t.min_price_rub)*0.7,baseFareRub+routeCost+optionsCost+tolls+waitCost-discount));
-  const breakdown={tariff:t.name,city_id:pricingCity,pricing_scope:isNationalDefault?"russia_national_default":"city_specific",route_km:+routeKm.toFixed(2),route_min:Math.round(routeMin),route_estimated:route.estimated===true,included_km:n(t.included_km),included_min:n(t.included_min),billable_km:+billableKm.toFixed(2),billable_min:+billableMin.toFixed(2),min_price:n(t.min_price_rub),base_fare:baseFareRub,route_cost:+routeCost.toFixed(2),pickup_km:+pickupKm.toFixed(2),pickup_min:Math.round(pickupMin),pickup_cost:+pickupCost.toFixed(2),surge_multiplier:surge,surge_reason:surgeReason,pickup_surcharge_removed:true,options:opts,options_cost:optionsCost,tolls,discount,free_wait_min:n(t.free_wait_min),wait_minutes:waitMinutes,wait_cost:waitCost,total,currency:"RUB"};
+  const subtotal=baseFareRub+routeCost+optionsCost+tariffSurcharge+tolls+waitCost-discount;
+  const total=Math.round(Math.max(n(t.min_price_rub)*0.7,subtotal*timeMultiplier*demandMultiplier));
+  const breakdown={tariff:t.name,city_id:pricingCity,pricing_scope:isNationalDefault?"russia_national_default":"city_specific",route_km:+routeKm.toFixed(2),route_min:Math.round(routeMin),route_estimated:route.estimated===true,included_km:n(t.included_km),included_min:n(t.included_min),billable_km:+billableKm.toFixed(2),billable_min:+billableMin.toFixed(2),min_price:n(t.min_price_rub),base_fare:baseFareRub,route_cost:+routeCost.toFixed(2),pickup_km:+pickupKm.toFixed(2),pickup_min:Math.round(pickupMin),pickup_cost:+pickupCost.toFixed(2),available_drivers_nearby:availableDrivers,surge_multiplier:surge,surge_reason:surgeReason,night_multiplier:nightMultiplier,peak_multiplier:peakMultiplier,weekend_multiplier:weekendMultiplier,time_multiplier:+timeMultiplier.toFixed(3),tariff_surcharge:+tariffSurcharge.toFixed(2),tariff_surcharge_reason:tariffId==="comfort"?"Детский тариф":tariffId==="comfort_plus"?"Доставка":"Без надбавки",options:opts,options_cost:optionsCost,tolls,discount,free_wait_min:n(t.free_wait_min),wait_minutes:waitMinutes,wait_cost:waitCost,subtotal:+subtotal.toFixed(2),total,currency:"RUB"};
   const {data:q,error:qe}=await db.from("price_quotes").insert({passenger_id:waitOrder?.passenger_id||who.user.id,city_id:pricingCity,tariff_id:tariffId,route_km:routeKm,route_min:routeMin,amount_rub:total,pickup_lat:n(start.latitude),pickup_lng:n(start.longitude),destination_lat:n(end.latitude),destination_lng:n(end.longitude),breakdown,expires_at:new Date(Date.now()+240000).toISOString()}).select("id,amount_rub,expires_at,breakdown").single();
   if(qe)throw qe;
   if(waitOrder){
