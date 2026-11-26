@@ -43,6 +43,30 @@ on conflict do nothing;
 -- LadyGo operations, driver freeze, live line, reporting and editable pricing.
 -- Additive migration: existing orders and profiles remain compatible.
 
+create table if not exists public.intercity_route_prices (
+  from_city_id text not null references public.service_cities(city_id),
+  to_city_id text not null references public.service_cities(city_id),
+  tariff_id text not null check(tariff_id in ('economy','comfort','comfort_plus')),
+  fixed_price_rub numeric(10,2) not null check(fixed_price_rub > 0),
+  is_active boolean not null default true,
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.profiles(id),
+  primary key(from_city_id,to_city_id,tariff_id),
+  check(from_city_id<>to_city_id)
+);
+alter table public.intercity_route_prices enable row level security;
+drop policy if exists "admins manage intercity route prices" on public.intercity_route_prices;
+create policy "admins manage intercity route prices" on public.intercity_route_prices
+  for all to authenticated using(public.ladygo_is_admin())
+  with check(public.ladygo_is_admin());
+
+insert into public.intercity_route_prices(from_city_id,to_city_id,tariff_id,fixed_price_rub)
+values
+ ('kislovodsk','stavropol','economy',6600),
+ ('stavropol','kislovodsk','economy',6600)
+on conflict(from_city_id,to_city_id,tariff_id) do update
+  set fixed_price_rub=excluded.fixed_price_rub,is_active=true,updated_at=now();
+
 alter table public.driver_presence add column if not exists online_since timestamptz;
 
 alter table public.city_tariff_configs
