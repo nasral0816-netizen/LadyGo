@@ -2464,6 +2464,12 @@ export default function LadyGoApp() {
           <Text style={st.adminDetail}>Средний чек: {fmt(adminReport.average_check_rub)} · Комиссия: {fmt(adminReport.commission_rub)} · Уникальных водителей: {adminReport.drivers_unique ?? 0}</Text>
           <Text style={st.adminDetail}>На линии сейчас: {adminReport.drivers_on_line ?? 0} · Заморожено: {adminReport.drivers_frozen ?? 0}</Text>
           <View style={{flexDirection:'row',gap:8}}><TouchableOpacity style={[st.adminApprove,{flex:1}]} onPress={exportAdminReportCsv}><Text style={st.adminActionText}>Экспорт CSV</Text></TouchableOpacity><TouchableOpacity style={[st.adminApprove,{flex:1}]} onPress={exportAdminReportPdf}><Text style={st.adminActionText}>Экспорт PDF</Text></TouchableOpacity></View>
+          <Text style={st.sectionTitle}>Активность по дням</Text>
+          {(adminReport.by_day||[]).map(day => <View key={day.day} style={{gap:4}}>
+            <View style={st.rowBetween}><Text style={st.adminDetail}>{day.day}</Text><Text style={st.adminDetail}>{day.orders} заказов · {day.active_drivers} водителей</Text></View>
+            <View style={{height:9,backgroundColor:'#E8EFEA',borderRadius:8,overflow:'hidden'}}><View style={{height:9,width:Math.max(2,Number(day.orders||0)/Math.max(1,...(adminReport.by_day||[]).map(item=>Number(item.orders||0)))*100)+'%',backgroundColor:P.green,borderRadius:8}}/></View>
+            <Text style={st.adminDate}>Выручка: {fmt(day.revenue_rub)}</Text>
+          </View>)}
           <Text style={st.sectionTitle}>По городам</Text>{(adminReport.by_city||[]).map((x,i)=><Text key={i} style={st.adminDetail}>{x.city}: {x.orders} заказов · {fmt(x.revenue_rub)}</Text>)}
           <Text style={st.sectionTitle}>По тарифам</Text>{(adminReport.by_tariff||[]).map((x,i)=><Text key={i} style={st.adminDetail}>{x.tariff}: {x.orders} заказов · {fmt(x.revenue_rub)}</Text>)}
         </View> : <Text style={st.muted}>Выбери период и сформируй отчёт.</Text>}
