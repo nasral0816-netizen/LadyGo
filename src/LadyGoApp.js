@@ -480,6 +480,8 @@ export default function LadyGoApp() {
   const [adminReportDays, setAdminReportDays] = useState(7);
   const [adminTariffs, setAdminTariffs] = useState([]);
   const [adminTariffsLoading, setAdminTariffsLoading] = useState(false);
+  const [adminRoutePrices, setAdminRoutePrices] = useState([]);
+  const [adminFreezeHours, setAdminFreezeHours] = useState('48');
   const [supportSubject, setSupportSubject] = useState('');
   const [supportMessage, setSupportMessage] = useState('');
   const [supportSending, setSupportSending] = useState(false);
@@ -1180,6 +1182,9 @@ export default function LadyGoApp() {
       const { data, error } = await supabase.from('city_tariff_configs').select('*').order('city_id').order('tariff_id');
       if (error) throw error;
       setAdminTariffs(data || []);
+      const { data: routes, error: routeError } = await supabase.from('intercity_route_prices').select('*').order('from_city_id').order('to_city_id');
+      if (routeError) throw routeError;
+      setAdminRoutePrices(routes || []);
     } catch (e) { Alert.alert('Не удалось загрузить тарифы', translateError(e)); }
     finally { setAdminTariffsLoading(false); }
   }, [profile?.role]);
@@ -1197,6 +1202,28 @@ export default function LadyGoApp() {
   }, [profile?.role, tab, loadAdminDrivers, loadAdminTariffs]);
 
   const updateAdminTariff = (id, field, value) => setAdminTariffs(rows => rows.map(row => row.id === id ? { ...row, [field]: value } : row));
+
+  const updateAdminRoutePrice = (from, to, tariffId, value) =>
+    setAdminRoutePrices(rows => rows.map(row =>
+      row.from_city_id === from && row.to_city_id === to && row.tariff_id === tariffId
+        ? { ...row, fixed_price_rub: value } : row
+    ));
+  const saveAdminRoutePrice = async row => {
+    const price = Number(row.fixed_price_rub);
+    if (!Number.isFinite(price) || price <= 0) {
+      Alert.alert('Проверь цену', 'Цена маршрута должна быть больше нуля.');
+      return;
+    }
+    try {
+      const { error } = await supabase.from('intercity_route_prices')
+        .update({ fixed_price_rub: price, updated_by: session?.user?.id, updated_at: new Date().toISOString() })
+        .eq('from_city_id', row.from_city_id).eq('to_city_id', row.to_city_id).eq('tariff_id', row.tariff_id);
+      if (error) throw error;
+      Alert.alert('Цена маршрута сохранена', row.from_city_id + ' → ' + row.to_city_id);
+      await loadAdminTariffs();
+    } catch (e) { Alert.alert('Не удалось сохранить цену', translateError(e)); }
+  };
+
 
   const saveAdminTariff = async row => {
     const numericFields = ['min_price_rub','city_per_km_rub','city_per_min_rub','out_per_km_rub','out_per_min_rub','night_multiplier','peak_multiplier','weekend_multiplier','surge_multiplier','child_surcharge_rub','delivery_surcharge_rub','commission_rate_pct'];
