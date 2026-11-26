@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Modal, Platform, SafeAreaView, ScrollView,
-  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image, Vibration
+  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image, Vibration, Animated, PanResponder
 } from 'react-native';
 import { YandexMapView, Marker, Polyline, geocodeAddress, findDrivingRoutes } from 'expo-yandex-mapkit';
 import * as Location from 'expo-location';
@@ -366,6 +366,45 @@ function Field({ label, value, onChangeText, placeholder, onFocus, icon, autoCap
   </View>;
 }
 
+
+function InputField({ label, value, onChangeText, placeholder, hint, error, keyboardType = 'default', maxLength, autoCapitalize = 'sentences', mask }) {
+  const handleChange = raw => onChangeText(mask ? mask(raw) : raw);
+  return <View style={{ gap: 5 }}>
+    {label ? <Text style={{ color: P.ink, fontSize: 13, fontWeight: '800' }}>{label}</Text> : null}
+    <TextInput style={[st.authInput, error ? { borderColor: '#C23F5B', borderWidth: 1.5 } : null]}
+      value={value} onChangeText={handleChange} placeholder={placeholder} placeholderTextColor="#A9A2A7"
+      keyboardType={keyboardType} maxLength={maxLength} autoCapitalize={autoCapitalize}/>
+    {error ? <Text style={{ color: '#C23F5B', fontSize: 11 }}>{error}</Text> : hint ? <Text style={{ color: P.muted, fontSize: 11 }}>{hint}</Text> : null}
+  </View>;
+}
+
+function SwipeAccept({ disabled, onAccept }) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const [trackWidth, setTrackWidth] = useState(300);
+  const knob = 54;
+  const max = Math.max(0, trackWidth - knob - 8);
+  const reset = () => Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 24, bounciness: 5 }).start();
+  const pan = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => !disabled,
+    onMoveShouldSetPanResponder: (_, gesture) => !disabled && Math.abs(gesture.dx) > 5,
+    onPanResponderMove: (_, gesture) => translateX.setValue(Math.max(0, Math.min(max, gesture.dx))),
+    onPanResponderRelease: (_, gesture) => {
+      if (gesture.dx >= max * 0.72 && max > 0) {
+        Vibration.vibrate(35);
+        Animated.timing(translateX, { toValue: max, duration: 120, useNativeDriver: true }).start(() => onAccept?.());
+      } else reset();
+    },
+    onPanResponderTerminate: reset
+  }), [disabled, max, onAccept, translateX]);
+  useEffect(() => { if (disabled) reset(); }, [disabled]);
+  return <View onLayout={e => setTrackWidth(e.nativeEvent.layout.width)} style={{ height: 62, borderRadius: 18, backgroundColor: disabled ? '#B7C9BE' : '#16845B', justifyContent: 'center', padding: 4, overflow: 'hidden' }}>
+    <Text pointerEvents="none" style={{ color: '#FFFFFF', textAlign: 'center', fontSize: 13, fontWeight: '900' }}>СДВИНЬ, ЧТОБЫ ПРИНЯТЬ ЗАКАЗ  ›</Text>
+    <Animated.View {...pan.panHandlers} style={{ position: 'absolute', left: 4, top: 4, width: knob, height: knob, borderRadius: 15, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', transform: [{ translateX }], elevation: 4 }}>
+      <Text style={{ color: '#16845B', fontSize: 24, fontWeight: '900' }}>››</Text>
+    </Animated.View>
+  </View>;
+}
+
 export default function LadyGoApp() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -433,6 +472,10 @@ export default function LadyGoApp() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminApplications, setAdminApplications] = useState([]);
   const [adminDrivers, setAdminDrivers] = useState([]);
+  const [adminFreezeReason, setAdminFreezeReason] = useState('Нарушение правил сервиса');
+  const [adminReport, setAdminReport] = useState(null);
+  const [adminReportLoading, setAdminReportLoading] = useState(false);
+  const [adminReportDays, setAdminReportDays] = useState(7);
   const [supportSubject, setSupportSubject] = useState('');
   const [supportMessage, setSupportMessage] = useState('');
   const [supportSending, setSupportSending] = useState(false);
@@ -1079,21 +1122,51 @@ export default function LadyGoApp() {
   const loadAdminDrivers = useCallback(async () => {
     if (profile?.role !== 'admin' || !supabase) return;
     try {
-      const allDrivers = [];
-      const pageSize = 500;
-      for (let from = 0; ; from += pageSize) {
-        const { data, error } = await supabase.from('driver_profiles')
-          .select('driver_id,display_name,phone,vehicle_make,vehicle_model,vehicle_color,vehicle_plate,vehicle_year,avatar_url,vehicle_photo_url,updated_at')
-          .order('updated_at', { ascending: false }).range(from, from + pageSize - 1);
-        if (error) throw error;
-        allDrivers.push(...(data || []));
-        if (!data || data.length < pageSize) break;
-      }
-      setAdminDrivers(allDrivers);
+      const { data, error } = await supabase.rpc('ladygo_admin_list_live_drivers');
+      if (error) throw error;
+      setAdminDrivers((data || []).map(d => ({ ...d, display_name: d.full_name })));
     } catch (e) {
       Alert.alert('Не удалось загрузить водителей', translateError(e));
     }
   }, [profile?.role]);
+
+  const freezeAdminDriver = async (driver, hours) => {
+    if (!driver?.driver_id || !supabase) return;
+    const reason = adminFreezeReason.trim();
+    if (reason.length < 3) { Alert.alert('Укажи причину', 'Причина должна содержать не менее 3 символов.'); return; }
+    Alert.alert('Заморозить водителя?', driver.full_name + ' не сможет выйти на линию и принимать заказы.', [
+      { text: 'Отмена', style: 'cancel' },
+      { text: 'Заморозить', style: 'destructive', onPress: async () => {
+        try {
+          const { error } = await supabase.rpc('ladygo_admin_freeze_driver', { p_driver_id: driver.driver_id, p_duration_hours: hours, p_reason: reason });
+          if (error) throw error;
+          await loadAdminDrivers();
+          Alert.alert('Водитель заморожен', 'Срок: ' + (hours === 1 ? '1 час' : hours === 24 ? '24 часа' : hours === 168 ? '7 дней' : '30 дней'));
+        } catch (e) { Alert.alert('Не удалось заморозить', translateError(e)); }
+      }}
+    ]);
+  };
+
+  const unfreezeAdminDriver = async driver => {
+    try {
+      const { error } = await supabase.rpc('ladygo_admin_unfreeze_driver', { p_driver_id: driver.driver_id });
+      if (error) throw error;
+      await loadAdminDrivers();
+    } catch (e) { Alert.alert('Не удалось разморозить', translateError(e)); }
+  };
+
+  const loadAdminReport = useCallback(async (days = adminReportDays) => {
+    if (profile?.role !== 'admin' || !supabase) return;
+    setAdminReportLoading(true);
+    try {
+      const end = new Date();
+      const start = new Date(end.getTime() - days * 86400000);
+      const { data, error } = await supabase.rpc('ladygo_admin_report', { p_start: start.toISOString(), p_end: end.toISOString() });
+      if (error) throw error;
+      setAdminReport(data);
+    } catch (e) { Alert.alert('Не удалось сформировать отчёт', translateError(e)); }
+    finally { setAdminReportLoading(false); }
+  }, [profile?.role, adminReportDays]);
 
   const loadAdminAccounts = useCallback(async () => {
     if (!profile?.is_super_admin || !supabase) return;
@@ -1228,8 +1301,15 @@ export default function LadyGoApp() {
   const submitDriverApplication = async () => {
     if (!session?.user?.id || applicationSaving) return;
     if (!applicationAdult) { Alert.alert('Подтверди возраст', 'Подать заявку на работу водителем можно только с 18 лет.'); return; }
-    if (!application.full_name.trim() || !application.phone.trim() || !application.vehicle_make.trim() || !application.vehicle_model.trim()) {
-      Alert.alert('Заполни обязательные поля', 'Нужны ФИО, телефон, марка и модель автомобиля.'); return;
+    const phoneDigits = application.phone.replace(/\D/g, '');
+    if (!application.full_name.trim() || !application.vehicle_make.trim() || !application.vehicle_model.trim()) {
+      Alert.alert('Заполни обязательные поля', 'Нужны ФИО, марка и модель автомобиля.'); return;
+    }
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+      Alert.alert('Проверь телефон', 'Укажи корректный номер: не менее 10 цифр.'); return;
+    }
+    if (application.vehicle_year && (!/^\d{4}$/.test(application.vehicle_year) || Number(application.vehicle_year) < 1950 || Number(application.vehicle_year) > new Date().getFullYear()+1)) {
+      Alert.alert('Проверь год выпуска', 'Укажи год четырьмя цифрами.'); return;
     }
     setApplicationSaving(true);
     try {
@@ -2226,11 +2306,42 @@ export default function LadyGoApp() {
           ['drivers','Водители',adminDrivers.length],
           ['orders','Заказы',adminOrders.length],
           ['support','Поддержка',adminTickets.filter(x=>x.status==='open').length],
+          ['line','На линии',adminDrivers.filter(x=>x.is_online).length],
+          ['reports','Отчёты','↗'],
           ...(profile?.is_super_admin ? [['admins','Администраторы',adminAccounts.length]] : [])
         ].map(([id,label,count])=><TouchableOpacity key={id} onPress={()=>setAdminSection(id)} style={[st.adminTab,adminSection===id&&st.adminTabActive]}>
           <Text style={[st.adminTabText,adminSection===id&&st.adminTabTextActive]}>{label} · {count}</Text>
         </TouchableOpacity>)}
       </View>
+      {adminSection==='line' && <>
+        <View style={st.rowBetween}><Text style={st.heading}>Водители на линии</Text><TouchableOpacity onPress={loadAdminDrivers}><Text style={st.refreshText}>Обновить</Text></TouchableOpacity></View>
+        <Text style={st.muted}>Статусы обновляются по серверной геопозиции. Замороженные водители исключаются из диспетчеризации.</Text>
+        {adminDrivers.map(d => <View key={d.driver_id} style={st.adminApplicationCard}>
+          <View style={st.rowBetween}><Text style={st.adminApplicantName}>{d.full_name}</Text><Text style={{fontWeight:'900',color:d.driver_status==='frozen'?'#C23F5B':d.driver_status==='available'?P.green:P.muted}}>{({available:'Свободен',in_order:'В заказе',frozen:'Заморожен',stale:'Нет связи',offline:'Не на линии'})[d.driver_status]||d.driver_status}</Text></View>
+          <Text style={st.adminDetail}>Телефон: {d.phone || 'Не указан'}</Text>
+          <Text style={st.adminDetail}>На линии с: {d.online_since ? new Date(d.online_since).toLocaleString('ru-RU') : '—'}</Text>
+          <Text style={st.adminDetail}>Геопозиция: {d.latitude != null ? Number(d.latitude).toFixed(5)+', '+Number(d.longitude).toFixed(5) : 'Нет данных'}</Text>
+          {d.frozen_until ? <Text style={{color:'#C23F5B',fontSize:12,fontWeight:'800'}}>Разморозка: {new Date(d.frozen_until).toLocaleString('ru-RU')} · {d.freeze_reason}</Text> : null}
+          {d.driver_status==='frozen' ? <TouchableOpacity style={st.adminApprove} onPress={()=>unfreezeAdminDriver(d)}><Text style={st.adminActionText}>Разморозить</Text></TouchableOpacity> : <View style={{gap:7}}>
+            <TextInput style={st.phoneInput} value={adminFreezeReason} onChangeText={setAdminFreezeReason} placeholder="Причина заморозки" maxLength={500}/>
+            <View style={{flexDirection:'row',gap:6,flexWrap:'wrap'}}>{[[1,'1 ч'],[24,'24 ч'],[168,'7 дней'],[720,'30 дней']].map(([h,label])=><TouchableOpacity key={h} style={st.adminReject} onPress={()=>freezeAdminDriver(d,h)}><Text style={st.adminRejectText}>Заморозить · {label}</Text></TouchableOpacity>)}</View>
+          </View>}
+        </View>)}
+      </>}
+      {adminSection==='reports' && <>
+        <View style={st.rowBetween}><Text style={st.heading}>Отчёты и статистика</Text>{adminReportLoading&&<ActivityIndicator color={P.green}/>}</View>
+        <View style={{flexDirection:'row',gap:8}}>{[[1,'День'],[7,'Неделя'],[30,'Месяц']].map(([days,label])=><TouchableOpacity key={days} onPress={()=>{setAdminReportDays(days);loadAdminReport(days);}} style={[st.adminTab,adminReportDays===days&&st.adminTabActive]}><Text style={[st.adminTabText,adminReportDays===days&&st.adminTabTextActive]}>{label}</Text></TouchableOpacity>)}</View>
+        <TouchableOpacity style={st.adminApprove} onPress={()=>loadAdminReport(adminReportDays)}><Text style={st.adminActionText}>Сформировать отчёт</Text></TouchableOpacity>
+        {adminReport ? <View style={st.adminApplicationCard}>
+          <Text style={st.adminApplicantName}>Заказы: {adminReport.orders?.total ?? 0}</Text>
+          <Text style={st.adminDetail}>Выполнено: {adminReport.orders?.completed ?? 0} · Отменено: {adminReport.orders?.cancelled ?? 0} · В процессе: {adminReport.orders?.in_progress ?? 0}</Text>
+          <Text style={st.adminApplicantName}>Выручка: {fmt(adminReport.revenue_rub)}</Text>
+          <Text style={st.adminDetail}>Средний чек: {fmt(adminReport.average_check_rub)} · Уникальных водителей: {adminReport.drivers_unique ?? 0}</Text>
+          <Text style={st.adminDetail}>На линии сейчас: {adminReport.drivers_on_line ?? 0} · Заморожено: {adminReport.drivers_frozen ?? 0}</Text>
+          <Text style={st.sectionTitle}>По городам</Text>{(adminReport.by_city||[]).map((x,i)=><Text key={i} style={st.adminDetail}>{x.city}: {x.orders} заказов · {fmt(x.revenue_rub)}</Text>)}
+          <Text style={st.sectionTitle}>По тарифам</Text>{(adminReport.by_tariff||[]).map((x,i)=><Text key={i} style={st.adminDetail}>{x.tariff}: {x.orders} заказов · {fmt(x.revenue_rub)}</Text>)}
+        </View> : <Text style={st.muted}>Выбери период и сформируй отчёт.</Text>}
+      </>}
       {adminSection==='admins' && profile?.is_super_admin && <>
         <View style={st.rowBetween}><Text style={st.heading}>Управление администраторами</Text>{adminAccountsLoading&&<ActivityIndicator color={P.pink}/>}</View>
         <Text style={st.muted}>Главный администратор назначает и снимает права. Максимум — 15 обычных администраторов. Пользователь должен сначала зарегистрироваться в LadyGo.</Text>
@@ -2450,16 +2561,16 @@ export default function LadyGoApp() {
     {tab === 'apply' && profile?.role === 'passenger' && <ScrollView contentContainerStyle={st.pageContent} keyboardShouldPersistTaps="handled">
       <Text style={st.pageTitle}>Анкета водителя</Text>
       <Text style={st.muted}>Заполни данные. После отправки администратор проверит заявку лично.</Text>
-      <TextInput style={st.authInput} placeholder="ФИО полностью *" value={application.full_name} onChangeText={v=>setApplication(p=>({...p,full_name:v}))}/>
-      <TextInput style={st.authInput} placeholder="Телефон *" keyboardType="phone-pad" value={application.phone} onChangeText={v=>setApplication(p=>({...p,phone:v}))}/>
-      <TextInput style={st.authInput} placeholder="Стаж вождения" value={application.experience} onChangeText={v=>setApplication(p=>({...p,experience:v}))}/>
+      <InputField label="ФИО полностью *" value={application.full_name} onChangeText={v=>setApplication(p=>({...p,full_name:v}))} placeholder="Например: Иванова Анна Сергеевна" hint="Укажи фамилию, имя и отчество как в документах." maxLength={120}/>
+      <InputField label="Телефон *" value={application.phone} onChangeText={v=>setApplication(p=>({...p,phone:v}))} placeholder="+7 (___) ___-__-__" hint="Российский номер телефона, 10 цифр после +7." keyboardType="phone-pad" maxLength={24}/>
+      <InputField label="Стаж вождения" value={application.experience} onChangeText={v=>setApplication(p=>({...p,experience:v.replace(/[^0-9]/g,'').slice(0,2)}))} placeholder="Например: 5" hint="Количество полных лет за рулём." keyboardType="number-pad" maxLength={2}/>
       <Text style={st.sectionTitle}>Автомобиль</Text>
-      <TextInput style={st.authInput} placeholder="Марка *" value={application.vehicle_make} onChangeText={v=>setApplication(p=>({...p,vehicle_make:v}))}/>
-      <TextInput style={st.authInput} placeholder="Модель *" value={application.vehicle_model} onChangeText={v=>setApplication(p=>({...p,vehicle_model:v}))}/>
-      <TextInput style={st.authInput} placeholder="Цвет" value={application.vehicle_color} onChangeText={v=>setApplication(p=>({...p,vehicle_color:v}))}/>
-      <TextInput style={st.authInput} placeholder="Госномер" value={application.vehicle_plate} onChangeText={v=>setApplication(p=>({...p,vehicle_plate:v}))}/>
-      <TextInput style={st.authInput} placeholder="Год выпуска" keyboardType="numeric" value={application.vehicle_year} onChangeText={v=>setApplication(p=>({...p,vehicle_year:v}))}/>
-      <TextInput style={st.authInput} placeholder="Информация о водительских документах" value={application.license_info} onChangeText={v=>setApplication(p=>({...p,license_info:v}))}/>
+      <InputField label="Марка автомобиля *" value={application.vehicle_make} onChangeText={v=>setApplication(p=>({...p,vehicle_make:v}))} placeholder="Например: Kia" hint="Производитель автомобиля." maxLength={60}/>
+      <InputField label="Модель автомобиля *" value={application.vehicle_model} onChangeText={v=>setApplication(p=>({...p,vehicle_model:v}))} placeholder="Например: Rio" hint="Модель по документам." maxLength={60}/>
+      <InputField label="Цвет" value={application.vehicle_color} onChangeText={v=>setApplication(p=>({...p,vehicle_color:v}))} placeholder="Например: белый" hint="Основной цвет кузова." maxLength={40}/>
+      <InputField label="Государственный номер" value={application.vehicle_plate} onChangeText={v=>setApplication(p=>({...p,vehicle_plate:v.toUpperCase().replace(/[^А-ЯЁA-Z0-9]/g,'').slice(0,12)}))} placeholder="А123АА26" hint="Номерной знак без пробелов." maxLength={12} autoCapitalize="characters"/>
+      <InputField label="Год выпуска" value={application.vehicle_year} onChangeText={v=>setApplication(p=>({...p,vehicle_year:v.replace(/[^0-9]/g,'').slice(0,4)}))} placeholder="Например: 2020" hint="Четыре цифры, например 2020." keyboardType="number-pad" maxLength={4}/>
+      <InputField label="Водительское удостоверение" value={application.license_info} onChangeText={v=>setApplication(p=>({...p,license_info:v}))} placeholder="Серия и номер: 0000 000000" hint="Укажи серию и номер ВУ. Оригиналы проверяются администратором." maxLength={160}/>
       <Text style={st.sectionTitle}>Фотографии</Text>
       <View style={st.adminPhotoRow}>
         <TouchableOpacity style={st.applicationPhotoButton} onPress={()=>uploadApplicationPhoto('avatar')}><Text style={st.applicationPhotoText}>{applicationAvatar?'✓ Фото профиля добавлено':'+ Фото профиля'}</Text></TouchableOpacity>
@@ -2525,10 +2636,9 @@ export default function LadyGoApp() {
             <Text style={{fontSize:11,color:P.muted,fontWeight:'700'}}>Стоимость поездки</Text>
             <Text style={{fontSize:28,color:P.pinkDark,fontWeight:'900'}}>{fmt(incomingOffer?.estimated_price_rub||incomingOffer?.price_rub||0)}</Text>
           </View>
-          <TouchableOpacity disabled={offerActionBusy || !incomingOffer} onPress={() => acceptDriverOrder(incomingOffer)} style={{backgroundColor:P.pink,borderRadius:15,padding:17,alignItems:'center',opacity:offerActionBusy?0.6:1}}>
-            {offerActionBusy ? <ActivityIndicator color="#FFFFFF"/> : <Text style={{fontSize:16,fontWeight:'900',color:'#FFFFFF'}}>ПРИНЯТЬ ЗАКАЗ</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity disabled={offerActionBusy || !incomingOffer} onPress={() => declineDriverOrder(incomingOffer)} style={{borderWidth:1,borderColor:P.line,borderRadius:15,padding:15,alignItems:'center'}}>
+          <SwipeAccept disabled={offerActionBusy || !incomingOffer} onAccept={() => acceptDriverOrder(incomingOffer)} />
+          {offerActionBusy ? <ActivityIndicator color={P.green}/> : null}
+          <TouchableOpacity disabled={offerActionBusy || !incomingOffer} onPress={() => Alert.alert('Отказаться от заказа?', 'Заказ будет предложен следующему водителю.', [{text:'Назад',style:'cancel'},{text:'Отказать',style:'destructive',onPress:()=>declineDriverOrder(incomingOffer)}])} style={{borderWidth:1,borderColor:P.line,borderRadius:15,padding:15,alignItems:'center'}}>
             <Text style={{fontSize:14,fontWeight:'800',color:P.ink}}>Отказать</Text>
           </TouchableOpacity>
         </View>
