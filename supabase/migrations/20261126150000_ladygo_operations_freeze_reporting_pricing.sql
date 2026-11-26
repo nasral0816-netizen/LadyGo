@@ -1,3 +1,45 @@
+create table if not exists public.service_cities (
+  city_id text primary key check (city_id ~ '^[a-z0-9_]{2,40}$'),
+  city_name text not null,
+  latitude double precision not null check(latitude between -90 and 90),
+  longitude double precision not null check(longitude between -180 and 180),
+  radius_km numeric(6,2) not null default 25 check(radius_km between 1 and 100),
+  is_active boolean not null default true,
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.profiles(id)
+);
+alter table public.service_cities enable row level security;
+drop policy if exists "admins manage service cities" on public.service_cities;
+create policy "admins manage service cities" on public.service_cities
+  for all to authenticated using(public.ladygo_is_admin())
+  with check(public.ladygo_is_admin());
+drop policy if exists "authenticated read active service cities" on public.service_cities;
+create policy "authenticated read active service cities" on public.service_cities
+  for select to authenticated using(is_active);
+
+insert into public.service_cities(city_id,city_name,latitude,longitude,radius_km)
+values
+ ('kislovodsk','Кисловодск',43.9050,42.7167,25),
+ ('pyatigorsk','Пятигорск',44.0486,43.0594,25),
+ ('essentuki','Ессентуки',44.0444,42.8606,22),
+ ('stavropol','Ставрополь',45.0445,41.9691,30)
+on conflict(city_id) do update set city_name=excluded.city_name,
+ latitude=excluded.latitude,longitude=excluded.longitude,radius_km=excluded.radius_km;
+
+insert into public.city_tariff_configs(
+ city_id,tariff_id,name,min_price_rub,included_km,included_min,free_wait_min,
+ wait_per_min_rub,city_per_km_rub,city_per_min_rub,out_per_km_rub,out_per_min_rub,
+ pickup_free_km,pickup_free_min,active
+)
+select c.city_id,t.tariff_id,replace(t.name,'базовый тариф РФ','базовый тариф города'),
+ t.min_price_rub,t.included_km,t.included_min,t.free_wait_min,t.wait_per_min_rub,
+ t.city_per_km_rub,t.city_per_min_rub,t.out_per_km_rub,t.out_per_min_rub,
+ t.pickup_free_km,t.pickup_free_min,true
+from public.service_cities c
+cross join public.city_tariff_configs t
+where t.city_id='russia_default' and c.city_id<>'kislovodsk'
+on conflict do nothing;
+
 -- LadyGo operations, driver freeze, live line, reporting and editable pricing.
 -- Additive migration: existing orders and profiles remain compatible.
 
