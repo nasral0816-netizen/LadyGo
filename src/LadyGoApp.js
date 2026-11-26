@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Modal, Platform, SafeAreaView, ScrollView,
-  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image, Vibration, Animated, PanResponder
+  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image, Vibration, Animated, PanResponder, Share
 } from 'react-native';
 import { YandexMapView, Marker, Polyline, geocodeAddress, findDrivingRoutes } from 'expo-yandex-mapkit';
 import * as Location from 'expo-location';
@@ -476,6 +476,8 @@ export default function LadyGoApp() {
   const [adminReport, setAdminReport] = useState(null);
   const [adminReportLoading, setAdminReportLoading] = useState(false);
   const [adminReportDays, setAdminReportDays] = useState(7);
+  const [adminTariffs, setAdminTariffs] = useState([]);
+  const [adminTariffsLoading, setAdminTariffsLoading] = useState(false);
   const [supportSubject, setSupportSubject] = useState('');
   const [supportMessage, setSupportMessage] = useState('');
   const [supportSending, setSupportSending] = useState(false);
@@ -1168,6 +1170,39 @@ export default function LadyGoApp() {
     } catch (e) { Alert.alert('Не удалось сформировать отчёт', translateError(e)); }
     finally { setAdminReportLoading(false); }
   }, [profile?.role, adminReportDays]);
+
+  const loadAdminTariffs = useCallback(async () => {
+    if (profile?.role !== 'admin' || !supabase) return;
+    setAdminTariffsLoading(true);
+    try {
+      const { data, error } = await supabase.from('city_tariff_configs').select('*').order('city_id').order('tariff_id');
+      if (error) throw error;
+      setAdminTariffs(data || []);
+    } catch (e) { Alert.alert('Не удалось загрузить тарифы', translateError(e)); }
+    finally { setAdminTariffsLoading(false); }
+  }, [profile?.role]);
+
+  const updateAdminTariff = (id, field, value) => setAdminTariffs(rows => rows.map(row => row.id === id ? { ...row, [field]: value } : row));
+
+  const saveAdminTariff = async row => {
+    const numericFields = ['min_price_rub','city_per_km_rub','city_per_min_rub','out_per_km_rub','out_per_min_rub','night_multiplier','peak_multiplier','weekend_multiplier','surge_multiplier','child_surcharge_rub','delivery_surcharge_rub','commission_rate_pct'];
+    const payload = Object.fromEntries(numericFields.map(field => [field, Number(row[field] ?? 0)]));
+    if (Object.values(payload).some(value => !Number.isFinite(value) || value < 0)) { Alert.alert('Проверь значения', 'Тарифные параметры должны быть неотрицательными числами.'); return; }
+    try {
+      const { error } = await supabase.from('city_tariff_configs').update({ ...payload, updated_by: session?.user?.id, updated_at: new Date().toISOString() }).eq('id', row.id);
+      if (error) throw error;
+      Alert.alert('Тариф сохранён', row.city_id + ' · ' + row.name);
+      await loadAdminTariffs();
+    } catch (e) { Alert.alert('Не удалось сохранить тариф', translateError(e)); }
+  };
+
+  const exportAdminReportCsv = async () => {
+    if (!adminReport) return;
+    const lines = [['Показатель','Значение'],['Заказы',adminReport.orders?.total ?? 0],['Выполнено',adminReport.orders?.completed ?? 0],['Отменено',adminReport.orders?.cancelled ?? 0],['В процессе',adminReport.orders?.in_progress ?? 0],['Выручка, руб.',adminReport.revenue_rub ?? 0],['Средний чек, руб.',adminReport.average_check_rub ?? 0],['Комиссия, руб.',adminReport.commission_rub ?? 0],['Уникальных водителей',adminReport.drivers_unique ?? 0]].map(row => row.map(value => '"'+String(value).replace(/"/g,'""')+'"').join(';'));
+    const csv = '\\uFEFF' + lines.join('\\r\\n');
+    try { await Share.share({ title: 'LadyGo — отчёт CSV', message: csv }); }
+    catch (e) { Alert.alert('Экспорт не выполнен', translateError(e)); }
+  };
 
   const loadAdminAccounts = useCallback(async () => {
     if (!profile?.is_super_admin || !supabase) return;
@@ -2309,6 +2344,7 @@ export default function LadyGoApp() {
           ['support','Поддержка',adminTickets.filter(x=>x.status==='open').length],
           ['line','На линии',adminDrivers.filter(x=>x.is_online).length],
           ['reports','Отчёты','↗'],
+          ['tariffs','Тарифы',adminTariffs.length],
           ...(profile?.is_super_admin ? [['admins','Администраторы',adminAccounts.length]] : [])
         ].map(([id,label,count])=><TouchableOpacity key={id} onPress={()=>setAdminSection(id)} style={[st.adminTab,adminSection===id&&st.adminTabActive]}>
           <Text style={[st.adminTabText,adminSection===id&&st.adminTabTextActive]}>{label} · {count}</Text>
@@ -2329,6 +2365,17 @@ export default function LadyGoApp() {
           </View>}
         </View>)}
       </>}
+      {adminSection==='tariffs' && <>
+        <View style={st.rowBetween}><Text style={st.heading}>Редактор тарифов</Text><TouchableOpacity onPress={loadAdminTariffs}><Text style={st.refreshText}>{adminTariffsLoading?'…':'Обновить'}</Text></TouchableOpacity></View>
+        <Text style={st.muted}>Значения сохраняются в базе и применяются без пересборки APK. Городские ставки можно менять независимо.</Text>
+        {adminTariffs.map(row => <View key={row.id} style={st.adminApplicationCard}>
+          <Text style={st.adminApplicantName}>{row.city_id} · {row.name}</Text>
+          <View style={{flexDirection:'row',flexWrap:'wrap',gap:7}}>
+            {[["min_price_rub","Минимум"],["city_per_km_rub","Город ₽/км"],["city_per_min_rub","Город ₽/мин"],["out_per_km_rub","Межгород ₽/км"],["out_per_min_rub","Межгород ₽/мин"],["night_multiplier","Ночь ×"],["peak_multiplier","Час пик ×"],["weekend_multiplier","Выходные ×"],["surge_multiplier","Дефицит ×"],["child_surcharge_rub","Детский +₽"],["delivery_surcharge_rub","Доставка +₽"],["commission_rate_pct","Комиссия %"]].map(([field,label])=><View key={field} style={{width:'48%',gap:3}}><Text style={st.adminDetail}>{label}</Text><TextInput style={st.phoneInput} keyboardType="decimal-pad" value={String(row[field] ?? 0)} onChangeText={v=>updateAdminTariff(row.id,field,v.replace(',','.').replace(/[^0-9.]/g,''))}/></View>)}
+          </View>
+          <TouchableOpacity style={st.adminApprove} onPress={()=>saveAdminTariff(row)}><Text style={st.adminActionText}>Сохранить тариф</Text></TouchableOpacity>
+        </View>)}
+      </>}
       {adminSection==='reports' && <>
         <View style={st.rowBetween}><Text style={st.heading}>Отчёты и статистика</Text>{adminReportLoading&&<ActivityIndicator color={P.green}/>}</View>
         <View style={{flexDirection:'row',gap:8}}>{[[1,'День'],[7,'Неделя'],[30,'Месяц']].map(([days,label])=><TouchableOpacity key={days} onPress={()=>{setAdminReportDays(days);loadAdminReport(days);}} style={[st.adminTab,adminReportDays===days&&st.adminTabActive]}><Text style={[st.adminTabText,adminReportDays===days&&st.adminTabTextActive]}>{label}</Text></TouchableOpacity>)}</View>
@@ -2339,6 +2386,7 @@ export default function LadyGoApp() {
           <Text style={st.adminApplicantName}>Выручка: {fmt(adminReport.revenue_rub)}</Text>
           <Text style={st.adminDetail}>Средний чек: {fmt(adminReport.average_check_rub)} · Комиссия: {fmt(adminReport.commission_rub)} · Уникальных водителей: {adminReport.drivers_unique ?? 0}</Text>
           <Text style={st.adminDetail}>На линии сейчас: {adminReport.drivers_on_line ?? 0} · Заморожено: {adminReport.drivers_frozen ?? 0}</Text>
+          <TouchableOpacity style={st.adminApprove} onPress={exportAdminReportCsv}><Text style={st.adminActionText}>Поделиться отчётом CSV</Text></TouchableOpacity>
           <Text style={st.sectionTitle}>По городам</Text>{(adminReport.by_city||[]).map((x,i)=><Text key={i} style={st.adminDetail}>{x.city}: {x.orders} заказов · {fmt(x.revenue_rub)}</Text>)}
           <Text style={st.sectionTitle}>По тарифам</Text>{(adminReport.by_tariff||[]).map((x,i)=><Text key={i} style={st.adminDetail}>{x.tariff}: {x.orders} заказов · {fmt(x.revenue_rub)}</Text>)}
         </View> : <Text style={st.muted}>Выбери период и сформируй отчёт.</Text>}
