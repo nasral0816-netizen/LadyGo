@@ -2426,6 +2426,7 @@ export default function LadyGoApp() {
           {d.driver_status==='frozen' ? <TouchableOpacity style={st.adminApprove} onPress={()=>unfreezeAdminDriver(d)}><Text style={st.adminActionText}>Разморозить</Text></TouchableOpacity> : <View style={{gap:7}}>
             <TextInput style={st.phoneInput} value={adminFreezeReason} onChangeText={setAdminFreezeReason} placeholder="Причина заморозки" maxLength={500}/>
             <View style={{flexDirection:'row',gap:6,flexWrap:'wrap'}}>{[[1,'1 ч'],[24,'24 ч'],[168,'7 дней'],[720,'30 дней']].map(([h,label])=><TouchableOpacity key={h} style={st.adminReject} onPress={()=>freezeAdminDriver(d,h)}><Text style={st.adminRejectText}>Заморозить · {label}</Text></TouchableOpacity>)}</View>
+            <View style={{flexDirection:'row',alignItems:'center',gap:8}}><Text style={st.adminDetail}>Свой срок, часов:</Text><TextInput style={[st.phoneInput,{flex:1}]} value={adminFreezeHours} onChangeText={v=>setAdminFreezeHours(v.replace(/[^0-9]/g,'').slice(0,4))} keyboardType="number-pad" placeholder="Например, 48"/><TouchableOpacity style={st.adminReject} onPress={()=>freezeAdminDriver(d,Number(adminFreezeHours))}><Text style={st.adminRejectText}>Применить</Text></TouchableOpacity></View>
           </View>}
         </View>)}
       </>}
