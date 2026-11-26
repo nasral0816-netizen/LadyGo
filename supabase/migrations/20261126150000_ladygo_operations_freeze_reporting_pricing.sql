@@ -94,7 +94,7 @@ begin
 
   insert into public.driver_presence(driver_id,is_online,updated_at)
     values(p_driver_id,false,now())
-    on conflict(driver_id) do update set is_online=false,updated_at=now();
+    on conflict(driver_id) do update set is_online=false,online_since=null,updated_at=now();
   return v_expiry;
 end;
 $$;
@@ -255,7 +255,7 @@ begin
 end;
 $$;
 revoke all on function public.ladygo_dispatch_next_driver(uuid) from public, anon;
-grant execute on function public.ladygo_dispatch_next_driver(uuid) to authenticated, service_role;
+grant execute on function public.ladygo_dispatch_next_driver(uuid) to service_role;
 
 -- Re-check freeze after locking the order and before accepting the offer.
 create or replace function public.ladygo_accept_order(p_order_id uuid,p_price numeric default null)
