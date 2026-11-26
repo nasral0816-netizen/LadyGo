@@ -9,6 +9,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import * as TaskManager from 'expo-task-manager';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { supabase } from './supabase';
 
 Notifications.setNotificationHandler({
@@ -1211,9 +1213,22 @@ export default function LadyGoApp() {
   const exportAdminReportCsv = async () => {
     if (!adminReport) return;
     const lines = [['Показатель','Значение'],['Заказы',adminReport.orders?.total ?? 0],['Выполнено',adminReport.orders?.completed ?? 0],['Отменено',adminReport.orders?.cancelled ?? 0],['В процессе',adminReport.orders?.in_progress ?? 0],['Выручка, руб.',adminReport.revenue_rub ?? 0],['Средний чек, руб.',adminReport.average_check_rub ?? 0],['Комиссия, руб.',adminReport.commission_rub ?? 0],['Уникальных водителей',adminReport.drivers_unique ?? 0]].map(row => row.map(value => '"'+String(value).replace(/"/g,'""')+'"').join(';'));
-    const csv = '\\uFEFF' + lines.join('\\r\\n');
+    const csv = '\uFEFF' + lines.join('\r\n');
     try { await Share.share({ title: 'LadyGo — отчёт CSV', message: csv }); }
     catch (e) { Alert.alert('Экспорт не выполнен', translateError(e)); }
+  };
+
+  const exportAdminReportPdf = async () => {
+    if (!adminReport) return;
+    const cityRows = (adminReport.by_city || []).map(x => `<tr><td>${String(x.city)}</td><td>${Number(x.orders||0)}</td><td>${Number(x.revenue_rub||0).toLocaleString('ru-RU')} ₽</td></tr>`).join('');
+    const tariffRows = (adminReport.by_tariff || []).map(x => `<tr><td>${String(x.tariff)}</td><td>${Number(x.orders||0)}</td><td>${Number(x.revenue_rub||0).toLocaleString('ru-RU')} ₽</td></tr>`).join('');
+    const money = value => Number(value||0).toLocaleString('ru-RU') + ' ₽';
+    const html = `<!doctype html><html lang="ru"><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;padding:28px;color:#18352a}h1{color:#0d5138}table{width:100%;border-collapse:collapse;margin:12px 0 24px}td,th{border-bottom:1px solid #dce8df;padding:9px;text-align:left}th{background:#eff6f0}.metric{font-size:18px;font-weight:bold;margin:10px 0}</style><body><h1>LadyGo — отчёт</h1><p>Период: ${new Date(adminReport.period.start).toLocaleString('ru-RU')} — ${new Date(adminReport.period.end).toLocaleString('ru-RU')}</p><div class="metric">Выручка: ${money(adminReport.revenue_rub)}</div><p>Заказов: ${adminReport.orders?.total||0} · Выполнено: ${adminReport.orders?.completed||0} · Отменено: ${adminReport.orders?.cancelled||0} · В процессе: ${adminReport.orders?.in_progress||0}</p><p>Средний чек: ${money(adminReport.average_check_rub)} · Комиссия: ${money(adminReport.commission_rub)} · Уникальных водителей: ${adminReport.drivers_unique||0}</p><h2>По городам</h2><table><tr><th>Город</th><th>Заказы</th><th>Выручка</th></tr>${cityRows}</table><h2>По тарифам</h2><table><tr><th>Тариф</th><th>Заказы</th><th>Выручка</th></tr>${tariffRows}</table></body></html>`;
+    try {
+      const file = await Print.printToFileAsync({ html, base64: false });
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(file.uri, { mimeType: 'application/pdf', UTI: '.pdf', dialogTitle: 'Отчёт LadyGo' });
+      else Alert.alert('PDF создан', 'Файл сохранён во временную папку приложения: ' + file.uri);
+    } catch (e) { Alert.alert('Не удалось экспортировать PDF', translateError(e)); }
   };
 
   const loadAdminAccounts = useCallback(async () => {
@@ -2408,7 +2423,7 @@ export default function LadyGoApp() {
           <Text style={st.adminApplicantName}>Выручка: {fmt(adminReport.revenue_rub)}</Text>
           <Text style={st.adminDetail}>Средний чек: {fmt(adminReport.average_check_rub)} · Комиссия: {fmt(adminReport.commission_rub)} · Уникальных водителей: {adminReport.drivers_unique ?? 0}</Text>
           <Text style={st.adminDetail}>На линии сейчас: {adminReport.drivers_on_line ?? 0} · Заморожено: {adminReport.drivers_frozen ?? 0}</Text>
-          <TouchableOpacity style={st.adminApprove} onPress={exportAdminReportCsv}><Text style={st.adminActionText}>Поделиться отчётом CSV</Text></TouchableOpacity>
+          <View style={{flexDirection:'row',gap:8}}><TouchableOpacity style={[st.adminApprove,{flex:1}]} onPress={exportAdminReportCsv}><Text style={st.adminActionText}>Экспорт CSV</Text></TouchableOpacity><TouchableOpacity style={[st.adminApprove,{flex:1}]} onPress={exportAdminReportPdf}><Text style={st.adminActionText}>Экспорт PDF</Text></TouchableOpacity></View>
           <Text style={st.sectionTitle}>По городам</Text>{(adminReport.by_city||[]).map((x,i)=><Text key={i} style={st.adminDetail}>{x.city}: {x.orders} заказов · {fmt(x.revenue_rub)}</Text>)}
           <Text style={st.sectionTitle}>По тарифам</Text>{(adminReport.by_tariff||[]).map((x,i)=><Text key={i} style={st.adminDetail}>{x.tariff}: {x.orders} заказов · {fmt(x.revenue_rub)}</Text>)}
         </View> : <Text style={st.muted}>Выбери период и сформируй отчёт.</Text>}
