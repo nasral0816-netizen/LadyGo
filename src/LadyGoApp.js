@@ -2369,7 +2369,7 @@ export default function LadyGoApp() {
                 </TouchableOpacity>}
                 <View style={{ backgroundColor: '#FFFFFF', borderRadius: 10, padding: 10, gap: 4 }}>
                   <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>Данные тестовой поездки</Text>
-                  <Text style={{ color: P.muted, fontSize: 11 }}>Тариф: {o.tariff_id === 'comfort' ? 'Комфорт' : o.tariff_id === 'comfort_plus' ? 'Комфорт +' : 'Эконом'}</Text>
+                  <Text style={{ color: P.muted, fontSize: 11 }}>Тариф: {({standard:'Обычный',economy:'Женский',comfort:'Детский',comfort_plus:'Доставка'})[o.tariff_id] || o.tariff_id || 'Обычный'}</Text>
                   <Text style={{ color: P.muted, fontSize: 11 }}>Оплата: {o.payment_method === 'cash' ? 'Наличные' : o.payment_method === 'card' ? 'Карта — не подключена' : (o.payment_method || 'Не выбрана')}</Text>
                   <Text style={{ color: P.muted, fontSize: 11 }}>Расчётная стоимость: {fmt(o.estimated_price_rub || o.price_rub || 0)}</Text>
                 </View>
