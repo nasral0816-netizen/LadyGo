@@ -478,6 +478,8 @@ export default function LadyGoApp() {
   const [adminReport, setAdminReport] = useState(null);
   const [adminReportLoading, setAdminReportLoading] = useState(false);
   const [adminReportDays, setAdminReportDays] = useState(7);
+  const [adminReportStart, setAdminReportStart] = useState('');
+  const [adminReportEnd, setAdminReportEnd] = useState('');
   const [adminTariffs, setAdminTariffs] = useState([]);
   const [adminTariffsLoading, setAdminTariffsLoading] = useState(false);
   const [adminRoutePrices, setAdminRoutePrices] = useState([]);
@@ -1163,12 +1165,16 @@ export default function LadyGoApp() {
     } catch (e) { Alert.alert('Не удалось разморозить', translateError(e)); }
   };
 
-  const loadAdminReport = useCallback(async (days = adminReportDays) => {
+  const loadAdminReport = useCallback(async (days = adminReportDays, customStart = null, customEnd = null) => {
     if (profile?.role !== 'admin' || !supabase) return;
     setAdminReportLoading(true);
     try {
-      const end = new Date();
-      const start = new Date(end.getTime() - days * 86400000);
+      const end = customEnd ? new Date(customEnd + 'T23:59:59.999') : new Date();
+      const start = customStart ? new Date(customStart + 'T00:00:00') : new Date(end.getTime() - days * 86400000);
+      if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start || end.getTime()-start.getTime() > 366*86400000) {
+        Alert.alert('Неверный период', 'Укажи даты в формате ГГГГ-ММ-ДД. Период не должен превышать 366 дней.');
+        return;
+      }
       const { data, error } = await supabase.rpc('ladygo_admin_report', { p_start: start.toISOString(), p_end: end.toISOString() });
       if (error) throw error;
       setAdminReport(data);
@@ -2456,7 +2462,11 @@ export default function LadyGoApp() {
       {adminSection==='reports' && <>
         <View style={st.rowBetween}><Text style={st.heading}>Отчёты и статистика</Text>{adminReportLoading&&<ActivityIndicator color={P.green}/>}</View>
         <View style={{flexDirection:'row',gap:8}}>{[[1,'День'],[7,'Неделя'],[30,'Месяц']].map(([days,label])=><TouchableOpacity key={days} onPress={()=>{setAdminReportDays(days);loadAdminReport(days);}} style={[st.adminTab,adminReportDays===days&&st.adminTabActive]}><Text style={[st.adminTabText,adminReportDays===days&&st.adminTabTextActive]}>{label}</Text></TouchableOpacity>)}</View>
-        <TouchableOpacity style={st.adminApprove} onPress={()=>loadAdminReport(adminReportDays)}><Text style={st.adminActionText}>Сформировать отчёт</Text></TouchableOpacity>
+        <View style={{flexDirection:'row',gap:8}}>
+          <View style={{flex:1}}><Text style={st.adminDate}>Начало периода</Text><TextInput style={st.phoneInput} value={adminReportStart} onChangeText={setAdminReportStart} placeholder="ГГГГ-ММ-ДД" maxLength={10}/></View>
+          <View style={{flex:1}}><Text style={st.adminDate}>Конец периода</Text><TextInput style={st.phoneInput} value={adminReportEnd} onChangeText={setAdminReportEnd} placeholder="ГГГГ-ММ-ДД" maxLength={10}/></View>
+        </View>
+        <TouchableOpacity style={st.adminApprove} onPress={()=>loadAdminReport(adminReportDays,adminReportStart.trim()||null,adminReportEnd.trim()||null)}><Text style={st.adminActionText}>Сформировать отчёт за период</Text></TouchableOpacity>
         {adminReport ? <View style={st.adminApplicationCard}>
           <Text style={st.adminApplicantName}>Заказы: {adminReport.orders?.total ?? 0}</Text>
           <Text style={st.adminDetail}>Выполнено: {adminReport.orders?.completed ?? 0} · Отменено: {adminReport.orders?.cancelled ?? 0} · В процессе: {adminReport.orders?.in_progress ?? 0}</Text>
