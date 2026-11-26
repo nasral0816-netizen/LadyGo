@@ -2194,6 +2194,16 @@ export default function LadyGoApp() {
           </View>
           {quoteLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text>}
         </View>
+        {quote?.breakdown ? <View style={{backgroundColor:'#F8FAF8',borderRadius:14,padding:12,gap:5}}>
+          <Text style={{fontSize:12,fontWeight:'900',color:P.ink}}>Из чего складывается цена</Text>
+          <Text style={st.adminDetail}>Базовая стоимость: {fmt(quote.breakdown.base_fare)}</Text>
+          <Text style={st.adminDetail}>Маршрут: {fmt(quote.breakdown.route_cost)} · {quote.breakdown.route_km} км · {quote.breakdown.route_min} мин</Text>
+          {Number(quote.breakdown.tariff_surcharge)>0 ? <Text style={st.adminDetail}>Надбавка тарифа: {fmt(quote.breakdown.tariff_surcharge)}</Text> : null}
+          {Number(quote.breakdown.options_cost)>0 ? <Text style={st.adminDetail}>Дополнительные опции: {fmt(quote.breakdown.options_cost)}</Text> : null}
+          {Number(quote.breakdown.time_multiplier)>1 ? <Text style={st.adminDetail}>Коэффициент времени: ×{quote.breakdown.time_multiplier}</Text> : null}
+          {Number(quote.breakdown.surge_multiplier)>1 ? <Text style={st.adminDetail}>Повышенный спрос: ×{quote.breakdown.surge_multiplier}</Text> : null}
+          {quote.breakdown.fixed_route_price ? <Text style={st.adminDetail}>Фиксированный междугородний тариф: {fmt(quote.breakdown.fixed_route_price)}</Text> : null}
+        </View> : null}
         <Text style={st.sectionTitle}>Предпочтительный способ оплаты</Text>
         <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>💵</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <Text style={st.muted}>Онлайн-оплата в приложении пока не подключена. Выбор способа — только предпочтение, списания не происходит.</Text>
