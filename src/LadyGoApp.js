@@ -134,8 +134,8 @@ const P = {
   map: 'https://tiles.openfreemap.org/styles/liberty'
 };
 const TARIFFS = [
-  // Сохраняем тарифные ID для совместимости с действующим сервисом расчёта цены.
-  { id: 'economy', name: 'Женский', sub: 'Поездки для женщин', icon: '♀' },
+  { id: 'standard', name: 'Обычный', sub: 'Базовый городской тариф', icon: '🚕' },
+  { id: 'economy', name: 'Женский', sub: 'Поездки для женщин · цена как у обычного', icon: '♀' },
   { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '♡' },
   { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '⌂' }
 ];
@@ -434,7 +434,7 @@ export default function LadyGoApp() {
   const [searching, setSearching] = useState(false);
   const [route, setRoute] = useState([]);
   const [routeInfo, setRouteInfo] = useState(null);
-  const [tariff, setTariff] = useState('economy');
+  const [tariff, setTariff] = useState('standard');
   const [payment, setPayment] = useState('cash');
   const [quote, setQuote] = useState(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
@@ -2454,7 +2454,7 @@ export default function LadyGoApp() {
         </View>)}
         <Text style={st.sectionTitle}>Фиксированные междугородние цены</Text>
         {adminRoutePrices.map(row => <View key={row.from_city_id+'-'+row.to_city_id+'-'+row.tariff_id} style={st.adminApplicationCard}>
-          <Text style={st.adminApplicantName}>{({kislovodsk:'Кисловодск',pyatigorsk:'Пятигорск',essentuki:'Ессентуки',stavropol:'Ставрополь'})[row.from_city_id] || row.from_city_id} → {({kislovodsk:'Кисловодск',pyatigorsk:'Пятигорск',essentuki:'Ессентуки',stavropol:'Ставрополь'})[row.to_city_id] || row.to_city_id} · {({economy:'Обычный',comfort:'Комфорт',comfort_plus:'Комфорт+'})[row.tariff_id] || row.tariff_id}</Text>
+          <Text style={st.adminApplicantName}>{({kislovodsk:'Кисловодск',pyatigorsk:'Пятигорск',essentuki:'Ессентуки',stavropol:'Ставрополь'})[row.from_city_id] || row.from_city_id} → {({kislovodsk:'Кисловодск',pyatigorsk:'Пятигорск',essentuki:'Ессентуки',stavropol:'Ставрополь'})[row.to_city_id] || row.to_city_id} · {({standard:'Обычный',economy:'Женский',comfort:'Детский',comfort_plus:'Доставка'})[row.tariff_id] || row.tariff_id}</Text>
           <TextInput style={st.phoneInput} keyboardType="decimal-pad" value={String(row.fixed_price_rub)} onChangeText={v=>updateAdminRoutePrice(row.from_city_id,row.to_city_id,row.tariff_id,v.replace(',','.').replace(/[^0-9.]/g,''))}/>
           <TouchableOpacity style={st.adminApprove} onPress={()=>saveAdminRoutePrice(row)}><Text style={st.adminActionText}>Сохранить цену маршрута</Text></TouchableOpacity>
         </View>)}
