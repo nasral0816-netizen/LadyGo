@@ -77,7 +77,7 @@ Deno.serve(async req=>{
  if(authErr||!who.user)return json({error:"Сессия недействительна."},401);
  const db=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
  try{
-  const body=await req.json(),requestedCity=String(body.city_id||"russia_default"),tariffId=String(body.tariff_id||"economy"),action=String(body.action||"quote");
+  const body=await req.json(),requestedCity=String(body.city_id||"russia_default"),tariffId=String(body.tariff_id||"standard"),action=String(body.action||"quote");
   if(action==="create_order"){
     let quoteId=String(body.price_token??"");
     const pickup={latitude:Number(body.pickup_lat),longitude:Number(body.pickup_lng)};
@@ -184,7 +184,7 @@ Deno.serve(async req=>{
     }
     return json({order});
   }
-  if(!["economy","comfort","comfort_plus"].includes(tariffId))return json({error:"Неизвестный тариф."},400);
+  if(!["standard","economy","comfort","comfort_plus"].includes(tariffId))return json({error:"Неизвестный тариф."},400);
   // Prefer a city-specific tariff when supplied; otherwise use the nationwide
   // baseline. This lets every Russian region accept quotes before local tariffs
   // are individually configured, without silently borrowing another city's rates.
