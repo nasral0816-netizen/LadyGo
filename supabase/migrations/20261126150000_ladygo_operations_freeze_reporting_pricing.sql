@@ -124,7 +124,8 @@ returns table(
   driver_id uuid, full_name text, phone text, is_online boolean,
   driver_status text, latitude double precision, longitude double precision,
   presence_updated_at timestamptz, online_since timestamptz,
-  frozen_until timestamptz, freeze_reason text
+  frozen_until timestamptz, freeze_reason text,
+  vehicle_make text, vehicle_model text, vehicle_color text, vehicle_plate text, vehicle_year smallint
 )
 language plpgsql stable security definer
 set search_path = 'public', 'pg_temp'
@@ -145,7 +146,7 @@ begin
     end::text,
     dl.latitude,dl.longitude,pr.updated_at,
     pr.online_since,
-    f.expires_at,f.reason
+    f.expires_at,f.reason,dp.vehicle_make,dp.vehicle_model,dp.vehicle_color,dp.vehicle_plate,dp.vehicle_year
   from public.profiles p
   join public.driver_applications a on a.user_id=p.id and a.status='approved'
   left join public.driver_profiles dp on dp.driver_id=p.id
@@ -316,6 +317,13 @@ begin
     ),
     'revenue_rub',coalesce(sum(coalesce(o.price_rub,o.estimated_price_rub,0)) filter(where o.status='completed'),0),
     'average_check_rub',coalesce(avg(coalesce(o.price_rub,o.estimated_price_rub,0)) filter(where o.status='completed'),0),
+    'commission_rub',coalesce((
+      select sum(coalesce(ox.price_rub,ox.estimated_price_rub,0)*coalesce(ct.commission_rate_pct,0)/100)
+      from public.orders ox
+      left join public.price_quotes qx on qx.id=ox.price_quote_id
+      left join public.city_tariff_configs ct on ct.city_id=qx.city_id and ct.tariff_id=ox.tariff_id
+      where ox.created_at>=p_start and ox.created_at<p_end and ox.status='completed'
+    ),0),
     'drivers_unique',count(distinct o.driver_id) filter(where o.driver_id is not null),
     'by_city',coalesce((select jsonb_agg(x) from (
       select coalesce(nullif(pq.city_id,''),'не указан') city,
