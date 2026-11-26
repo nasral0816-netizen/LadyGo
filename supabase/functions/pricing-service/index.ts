@@ -190,22 +190,27 @@ Deno.serve(async req=>{
   // are individually configured, without silently borrowing another city's rates.
   let pricingCity=requestedCity;
   const cityPoints = Array.isArray(body.points) ? body.points : [];
-  if (cityPoints.length && Number.isFinite(Number(cityPoints[0]?.latitude)) && Number.isFinite(Number(cityPoints[0]?.longitude))) {
+  let knownCities:any[] = [];
+  let originCityId:string|null = null;
+  let destinationCityId:string|null = null;
+  const toRadCity = (v:number) => v*Math.PI/180;
+  const nearestCity = (point:any) => {
+    if (!point || !Number.isFinite(Number(point.latitude)) || !Number.isFinite(Number(point.longitude))) return null;
+    return knownCities.map((city:any)=>{
+      const dLat=toRadCity(Number(city.latitude)-Number(point.latitude));
+      const dLon=toRadCity(Number(city.longitude)-Number(point.longitude));
+      const h=Math.sin(dLat/2)**2+Math.cos(toRadCity(Number(point.latitude)))*Math.cos(toRadCity(Number(city.latitude)))*Math.sin(dLon/2)**2;
+      return {city,distance:6371*2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h))};
+    }).filter((x:any)=>x.distance<=Number(x.city.radius_km)).sort((a:any,b:any)=>a.distance-b.distance)[0]?.city ?? null;
+  };
+  if (cityPoints.length) {
     const { data: cities, error: cityError } = await db.from("service_cities")
       .select("city_id,latitude,longitude,radius_km").eq("is_active", true);
     if (cityError) throw cityError;
-    const origin = cityPoints[0];
-    const toRad = (v:number) => v*Math.PI/180;
-    const cityDistance = (city:any) => {
-      const dLat=toRad(Number(city.latitude)-Number(origin.latitude));
-      const dLon=toRad(Number(city.longitude)-Number(origin.longitude));
-      const h=Math.sin(dLat/2)**2+Math.cos(toRad(Number(origin.latitude)))*Math.cos(toRad(Number(city.latitude)))*Math.sin(dLon/2)**2;
-      return 6371*2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
-    };
-    const nearest = (cities||[]).map((city:any)=>({city,distance:cityDistance(city)}))
-      .filter((x:any)=>x.distance<=Number(x.city.radius_km))
-      .sort((a:any,b:any)=>a.distance-b.distance)[0];
-    if (nearest) pricingCity=nearest.city.city_id;
+    knownCities=cities||[];
+    originCityId=nearestCity(cityPoints[0])?.city_id ?? null;
+    destinationCityId=nearestCity(cityPoints[cityPoints.length-1])?.city_id ?? null;
+    if (originCityId) pricingCity=originCityId;
   }
   let {data:t,error:te}=await db.from("city_tariff_configs").select("*").eq("city_id",pricingCity).eq("tariff_id",tariffId).eq("active",true).maybeSingle();
   if(te)throw te;
@@ -227,8 +232,19 @@ Deno.serve(async req=>{
   const outside=routeKm>35;
   const perKm=outside?n(t.out_per_km_rub):n(t.city_per_km_rub),perMin=outside?n(t.out_per_min_rub):n(t.city_per_min_rub);
   const billableKm=Math.max(0,routeKm-n(t.included_km)),billableMin=Math.max(0,routeMin-n(t.included_min));
-  const routeCost=n(t.min_price_rub)+billableKm*perKm+billableMin*perMin;
+  let routeCost=n(t.min_price_rub)+billableKm*perKm+billableMin*perMin;
   const baseFareRub=60;
+  let fixedRoutePrice:number|null = null;
+  if (originCityId && destinationCityId && originCityId!==destinationCityId && routeKm>35) {
+    const { data: fixedRoute, error: fixedRouteError } = await db.from("intercity_route_prices")
+      .select("fixed_price_rub").eq("from_city_id",originCityId).eq("to_city_id",destinationCityId)
+      .eq("tariff_id",tariffId).eq("is_active",true).maybeSingle();
+    if (fixedRouteError) throw fixedRouteError;
+    if (fixedRoute?.fixed_price_rub != null) {
+      fixedRoutePrice=n(fixedRoute.fixed_price_rub);
+      routeCost=Math.max(0,fixedRoutePrice-baseFareRub);
+    }
+  }
   const pickupKm=0,pickupMin=0,pickupCost=0;
   const opts=Array.isArray(body.options)?body.options.filter((x:string)=>FREE.includes(x)||Object.hasOwn(PAID,x)):[];
   const optionsCost=opts.reduce((sum:number,x:string)=>sum+(PAID[x]||0),0);
@@ -287,7 +303,7 @@ Deno.serve(async req=>{
   const tolls=0,discount=0;
   const subtotal=baseFareRub+routeCost+optionsCost+tariffSurcharge+tolls+waitCost-discount;
   const total=Math.round(Math.max(n(t.min_price_rub)*0.7,subtotal*timeMultiplier*demandMultiplier));
-  const breakdown={tariff:t.name,city_id:pricingCity,pricing_scope:isNationalDefault?"russia_national_default":"city_specific",route_km:+routeKm.toFixed(2),route_min:Math.round(routeMin),route_estimated:route.estimated===true,included_km:n(t.included_km),included_min:n(t.included_min),billable_km:+billableKm.toFixed(2),billable_min:+billableMin.toFixed(2),min_price:n(t.min_price_rub),base_fare:baseFareRub,route_cost:+routeCost.toFixed(2),pickup_km:+pickupKm.toFixed(2),pickup_min:Math.round(pickupMin),pickup_cost:+pickupCost.toFixed(2),available_drivers_nearby:availableDrivers,surge_multiplier:surge,surge_reason:surgeReason,night_multiplier:nightMultiplier,peak_multiplier:peakMultiplier,weekend_multiplier:weekendMultiplier,time_multiplier:+timeMultiplier.toFixed(3),tariff_surcharge:+tariffSurcharge.toFixed(2),tariff_surcharge_reason:tariffId==="comfort"?"Детский тариф":tariffId==="comfort_plus"?"Доставка":"Без надбавки",options:opts,options_cost:optionsCost,tolls,discount,free_wait_min:n(t.free_wait_min),wait_minutes:waitMinutes,wait_cost:waitCost,subtotal:+subtotal.toFixed(2),total,currency:"RUB"};
+  const breakdown={tariff:t.name,city_id:pricingCity,pricing_scope:isNationalDefault?"russia_national_default":"city_specific",route_km:+routeKm.toFixed(2),route_min:Math.round(routeMin),route_estimated:route.estimated===true,included_km:n(t.included_km),included_min:n(t.included_min),billable_km:+billableKm.toFixed(2),billable_min:+billableMin.toFixed(2),min_price:n(t.min_price_rub),base_fare:baseFareRub,route_cost:+routeCost.toFixed(2),fixed_route_price:fixedRoutePrice,from_city_id:originCityId,to_city_id:destinationCityId,pickup_km:+pickupKm.toFixed(2),pickup_min:Math.round(pickupMin),pickup_cost:+pickupCost.toFixed(2),available_drivers_nearby:availableDrivers,surge_multiplier:surge,surge_reason:surgeReason,night_multiplier:nightMultiplier,peak_multiplier:peakMultiplier,weekend_multiplier:weekendMultiplier,time_multiplier:+timeMultiplier.toFixed(3),tariff_surcharge:+tariffSurcharge.toFixed(2),tariff_surcharge_reason:tariffId==="comfort"?"Детский тариф":tariffId==="comfort_plus"?"Доставка":"Без надбавки",options:opts,options_cost:optionsCost,tolls,discount,free_wait_min:n(t.free_wait_min),wait_minutes:waitMinutes,wait_cost:waitCost,subtotal:+subtotal.toFixed(2),total,currency:"RUB"};
   const {data:q,error:qe}=await db.from("price_quotes").insert({passenger_id:waitOrder?.passenger_id||who.user.id,city_id:pricingCity,tariff_id:tariffId,route_km:routeKm,route_min:routeMin,amount_rub:total,pickup_lat:n(start.latitude),pickup_lng:n(start.longitude),destination_lat:n(end.latitude),destination_lng:n(end.longitude),breakdown,expires_at:new Date(Date.now()+240000).toISOString()}).select("id,amount_rub,expires_at,breakdown").single();
   if(qe)throw qe;
   if(waitOrder){
