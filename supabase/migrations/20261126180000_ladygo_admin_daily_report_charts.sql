@@ -39,8 +39,8 @@ begin
       from public.orders o3 where o3.created_at>=p_start and o3.created_at<p_end
       group by 1 order by 1
     ) x),'[]'::jsonb),
-    'by_day',coalesce((select jsonb_agg(x order by x.day) from (
-      select to_char(date_trunc('day',o4.created_at),'YYYY-MM-DD') day,
+    'by_day',coalesce((select jsonb_agg(x order by x.day_key) from (
+      select to_char(date_trunc('day',o4.created_at),'YYYY-MM-DD' ) day_key,
         count(*) orders,
         count(distinct o4.driver_id) filter(where o4.driver_id is not null) active_drivers,
         coalesce(sum(coalesce(o4.price_rub,o4.estimated_price_rub,0)) filter(where o4.status='completed'),0) revenue_rub
