@@ -41,6 +41,12 @@ where tariff_id='comfort';
 update public.city_tariff_configs set name='Доставка',delivery_surcharge_rub=100
 where tariff_id='comfort_plus';
 
+alter table public.intercity_route_prices
+  drop constraint if exists intercity_route_prices_tariff_id_check;
+alter table public.intercity_route_prices
+  add constraint intercity_route_prices_tariff_id_check
+  check (tariff_id in ('standard','economy','comfort','comfort_plus'));
+
 insert into public.intercity_route_prices(from_city_id,to_city_id,tariff_id,fixed_price_rub,is_active)
 values ('kislovodsk','stavropol','standard',6600,true),
        ('stavropol','kislovodsk','standard',6600,true)
