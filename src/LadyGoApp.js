@@ -494,6 +494,7 @@ export default function LadyGoApp() {
   const [adminSelectedDriverId, setAdminSelectedDriverId] = useState(null);
   const [adminSection, setAdminSection] = useState('applications');
   const [application, setApplication] = useState({ full_name: '', phone: '', experience: '', vehicle_make: '', vehicle_model: '', vehicle_color: '', vehicle_plate: '', vehicle_year: '', license_info: '' });
+  const [applicationErrors, setApplicationErrors] = useState({});
   const [applicationAdult, setApplicationAdult] = useState(false);
   const [applicationAvatar, setApplicationAvatar] = useState('');
   const [applicationVehiclePhoto, setApplicationVehiclePhoto] = useState('');
@@ -1389,19 +1390,23 @@ export default function LadyGoApp() {
     } catch (e) { Alert.alert('Не удалось загрузить фото', translateError(e)); }
   };
 
+  const updateApplicationField = (field, value) => {
+    setApplication(current => ({ ...current, [field]: value }));
+    setApplicationErrors(current => ({ ...current, [field]: '' }));
+  };
+
   const submitDriverApplication = async () => {
     if (!session?.user?.id || applicationSaving) return;
     if (!applicationAdult) { Alert.alert('Подтверди возраст', 'Подать заявку на работу водителем можно только с 18 лет.'); return; }
     const phoneDigits = application.phone.replace(/\D/g, '');
-    if (!application.full_name.trim() || !application.vehicle_make.trim() || !application.vehicle_model.trim()) {
-      Alert.alert('Заполни обязательные поля', 'Нужны ФИО, марка и модель автомобиля.'); return;
-    }
-    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
-      Alert.alert('Проверь телефон', 'Укажи корректный номер: не менее 10 цифр.'); return;
-    }
-    if (application.vehicle_year && (!/^\d{4}$/.test(application.vehicle_year) || Number(application.vehicle_year) < 1950 || Number(application.vehicle_year) > new Date().getFullYear()+1)) {
-      Alert.alert('Проверь год выпуска', 'Укажи год четырьмя цифрами.'); return;
-    }
+    const errors = {};
+    if (!application.full_name.trim()) errors.full_name = 'Укажи ФИО полностью.';
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) errors.phone = 'Укажи корректный номер телефона.';
+    if (!application.vehicle_make.trim()) errors.vehicle_make = 'Укажи марку автомобиля.';
+    if (!application.vehicle_model.trim()) errors.vehicle_model = 'Укажи модель автомобиля.';
+    if (application.vehicle_year && (!/^\d{4}$/.test(application.vehicle_year) || Number(application.vehicle_year) < 1950 || Number(application.vehicle_year) > new Date().getFullYear()+1)) errors.vehicle_year = 'Год должен быть четырёхзначным: 1950 — ' + (new Date().getFullYear()+1) + '.';
+    setApplicationErrors(errors);
+    if (Object.keys(errors).length) { Alert.alert('Проверь анкету', 'Исправь поля, отмеченные сообщениями об ошибке.'); return; }
     setApplicationSaving(true);
     try {
       const { error } = await supabase.from('driver_applications').insert({
@@ -2683,16 +2688,16 @@ export default function LadyGoApp() {
     {tab === 'apply' && profile?.role === 'passenger' && <ScrollView contentContainerStyle={st.pageContent} keyboardShouldPersistTaps="handled">
       <Text style={st.pageTitle}>Анкета водителя</Text>
       <Text style={st.muted}>Заполни данные. После отправки администратор проверит заявку лично.</Text>
-      <InputField label="ФИО полностью *" value={application.full_name} onChangeText={v=>setApplication(p=>({...p,full_name:v}))} placeholder="Например: Иванова Анна Сергеевна" hint="Укажи фамилию, имя и отчество как в документах." maxLength={120}/>
-      <InputField label="Телефон *" value={application.phone} onChangeText={v=>setApplication(p=>({...p,phone:v}))} placeholder="+7 (___) ___-__-__" hint="Российский номер телефона, 10 цифр после +7." keyboardType="phone-pad" maxLength={24}/>
-      <InputField label="Стаж вождения" value={application.experience} onChangeText={v=>setApplication(p=>({...p,experience:v.replace(/[^0-9]/g,'').slice(0,2)}))} placeholder="Например: 5" hint="Количество полных лет за рулём." keyboardType="number-pad" maxLength={2}/>
+      <InputField label="ФИО полностью *" value={application.full_name} onChangeText={v=>updateApplicationField('full_name',v)} placeholder="Например: Иванова Анна Сергеевна" hint="Укажи фамилию, имя и отчество как в документах." error={applicationErrors.full_name} maxLength={120}/>
+      <InputField label="Телефон *" value={application.phone} onChangeText={v=>updateApplicationField('phone',v)} placeholder="+7 (___) ___-__-__" hint="Российский номер телефона, 10 цифр после +7." error={applicationErrors.phone} keyboardType="phone-pad" maxLength={24} mask={formatRussianPhone}/>
+      <InputField label="Стаж вождения" value={application.experience} onChangeText={v=>updateApplicationField('experience',v.replace(/[^0-9]/g,'').slice(0,2))} placeholder="Например: 5" hint="Количество полных лет за рулём." keyboardType="number-pad" maxLength={2}/>
       <Text style={st.sectionTitle}>Автомобиль</Text>
-      <InputField label="Марка автомобиля *" value={application.vehicle_make} onChangeText={v=>setApplication(p=>({...p,vehicle_make:v}))} placeholder="Например: Kia" hint="Производитель автомобиля." maxLength={60}/>
-      <InputField label="Модель автомобиля *" value={application.vehicle_model} onChangeText={v=>setApplication(p=>({...p,vehicle_model:v}))} placeholder="Например: Rio" hint="Модель по документам." maxLength={60}/>
-      <InputField label="Цвет" value={application.vehicle_color} onChangeText={v=>setApplication(p=>({...p,vehicle_color:v}))} placeholder="Например: белый" hint="Основной цвет кузова." maxLength={40}/>
-      <InputField label="Государственный номер" value={application.vehicle_plate} onChangeText={v=>setApplication(p=>({...p,vehicle_plate:v.toUpperCase().replace(/[^А-ЯЁA-Z0-9]/g,'').slice(0,12)}))} placeholder="А123АА26" hint="Номерной знак без пробелов." maxLength={12} autoCapitalize="characters"/>
-      <InputField label="Год выпуска" value={application.vehicle_year} onChangeText={v=>setApplication(p=>({...p,vehicle_year:v.replace(/[^0-9]/g,'').slice(0,4)}))} placeholder="Например: 2020" hint="Четыре цифры, например 2020." keyboardType="number-pad" maxLength={4}/>
-      <InputField label="Водительское удостоверение" value={application.license_info} onChangeText={v=>setApplication(p=>({...p,license_info:v}))} placeholder="Серия и номер: 0000 000000" hint="Укажи серию и номер ВУ. Оригиналы проверяются администратором." maxLength={160}/>
+      <InputField label="Марка автомобиля *" value={application.vehicle_make} onChangeText={v=>updateApplicationField('vehicle_make',v)} placeholder="Например: Kia" hint="Производитель автомобиля." error={applicationErrors.vehicle_make} maxLength={60}/>
+      <InputField label="Модель автомобиля *" value={application.vehicle_model} onChangeText={v=>updateApplicationField('vehicle_model',v)} placeholder="Например: Rio" hint="Модель по документам." error={applicationErrors.vehicle_model} maxLength={60}/>
+      <InputField label="Цвет" value={application.vehicle_color} onChangeText={v=>updateApplicationField('vehicle_color',v)} placeholder="Например: белый" hint="Основной цвет кузова." maxLength={40}/>
+      <InputField label="Государственный номер" value={application.vehicle_plate} onChangeText={v=>updateApplicationField('vehicle_plate',v.toUpperCase().replace(/[^А-ЯЁA-Z0-9]/g,'').slice(0,12))} placeholder="А123АА26" hint="Номерной знак без пробелов." maxLength={12} autoCapitalize="characters"/>
+      <InputField label="Год выпуска" value={application.vehicle_year} onChangeText={v=>updateApplicationField('vehicle_year',v.replace(/[^0-9]/g,'').slice(0,4))} placeholder="Например: 2020" hint="Четыре цифры, например 2020." error={applicationErrors.vehicle_year} keyboardType="number-pad" maxLength={4}/>
+      <InputField label="Водительское удостоверение" value={application.license_info} onChangeText={v=>updateApplicationField('license_info',v)} placeholder="Серия и номер: 0000 000000" hint="Укажи серию и номер ВУ. Оригиналы проверяются администратором." maxLength={160}/>
       <Text style={st.sectionTitle}>Фотографии</Text>
       <View style={st.adminPhotoRow}>
         <TouchableOpacity style={st.applicationPhotoButton} onPress={()=>uploadApplicationPhoto('avatar')}><Text style={st.applicationPhotoText}>{applicationAvatar?'✓ Фото профиля добавлено':'+ Фото профиля'}</Text></TouchableOpacity>
