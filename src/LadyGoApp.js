@@ -1149,7 +1149,7 @@ export default function LadyGoApp() {
           const { error } = await supabase.rpc('ladygo_admin_freeze_driver', { p_driver_id: driver.driver_id, p_duration_hours: hours, p_reason: reason });
           if (error) throw error;
           await loadAdminDrivers();
-          Alert.alert('Водитель заморожен', 'Срок: ' + (hours === 1 ? '1 час' : hours === 24 ? '24 часа' : hours === 168 ? '7 дней' : '30 дней'));
+          Alert.alert('Водитель заморожен', 'Срок: ' + (hours === 1 ? '1 час' : hours === 24 ? '24 часа' : hours === 168 ? '7 дней' : hours === 720 ? '30 дней' : hours + ' ч'));
         } catch (e) { Alert.alert('Не удалось заморозить', translateError(e)); }
       }}
     ]);
