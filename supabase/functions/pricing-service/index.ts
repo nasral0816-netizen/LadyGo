@@ -189,6 +189,24 @@ Deno.serve(async req=>{
   // baseline. This lets every Russian region accept quotes before local tariffs
   // are individually configured, without silently borrowing another city's rates.
   let pricingCity=requestedCity;
+  const cityPoints = Array.isArray(body.points) ? body.points : [];
+  if (cityPoints.length && Number.isFinite(Number(cityPoints[0]?.latitude)) && Number.isFinite(Number(cityPoints[0]?.longitude))) {
+    const { data: cities, error: cityError } = await db.from("service_cities")
+      .select("city_id,latitude,longitude,radius_km").eq("is_active", true);
+    if (cityError) throw cityError;
+    const origin = cityPoints[0];
+    const toRad = (v:number) => v*Math.PI/180;
+    const cityDistance = (city:any) => {
+      const dLat=toRad(Number(city.latitude)-Number(origin.latitude));
+      const dLon=toRad(Number(city.longitude)-Number(origin.longitude));
+      const h=Math.sin(dLat/2)**2+Math.cos(toRad(Number(origin.latitude)))*Math.cos(toRad(Number(city.latitude)))*Math.sin(dLon/2)**2;
+      return 6371*2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
+    };
+    const nearest = (cities||[]).map((city:any)=>({city,distance:cityDistance(city)}))
+      .filter((x:any)=>x.distance<=Number(x.city.radius_km))
+      .sort((a:any,b:any)=>a.distance-b.distance)[0];
+    if (nearest) pricingCity=nearest.city.city_id;
+  }
   let {data:t,error:te}=await db.from("city_tariff_configs").select("*").eq("city_id",pricingCity).eq("tariff_id",tariffId).eq("active",true).maybeSingle();
   if(te)throw te;
   if(!t && pricingCity!=="russia_default"){
