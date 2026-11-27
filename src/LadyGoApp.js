@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Platform, SafeAreaView, ScrollView,
+  ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Platform, SafeAreaView, ScrollView, PanResponder,
   StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image
 } from 'react-native';
 import { YandexMapView, Marker, Polyline, geocodeAddress, findDrivingRoutes } from 'expo-yandex-mapkit';
@@ -125,8 +125,8 @@ TaskManager.defineTask(LADYGO_DRIVER_LOCATION_TASK, async ({ data, error }) => {
 });
 
 const P = {
-  pink: '#E84F87', pinkDark: '#C93670', pale: '#FFF0F5', ink: '#19171B',
-  muted: '#817A80', line: '#ECE8EB', white: '#FFFFFF', green: '#16845B',
+  pink: '#D94F83', pinkDark: '#B93669', pale: '#FFF1F5', ink: '#211B1F',
+  muted: '#776D73', line: '#EDE4E8', white: '#FFFFFF', green: '#176344', gold: '#C79A38',
   map: 'https://tiles.openfreemap.org/styles/liberty'
 };
 const TARIFFS = [
@@ -229,7 +229,7 @@ async function findAddresses(q) {
   }));
 }
 
-function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, allowPickDestination = true }) {
+function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, mapCollapsed = false, allowPickDestination = true }) {
   const cameraRef = useRef(null);
   const [zoom, setZoom] = useState(17);
   const [is3D, setIs3D] = useState(true);
@@ -261,7 +261,7 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
     }
   };
 
-  return <View style={st.map}>
+  return <View collapsable={false} style={[st.map, mapCollapsed && st.mapCollapsed]}>
     <YandexMapView
       ref={cameraRef}
       style={{ flex: 1 }}
@@ -361,6 +361,14 @@ export default function LadyGoApp() {
   const [busy, setBusy] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [tab, setTab] = useState('ride');
+  const [mapCollapsed, setMapCollapsed] = useState(false);
+  const mapPanResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+    onPanResponderRelease: (_, gesture) => {
+      if (gesture.dy < -24) setMapCollapsed(true);
+      else if (gesture.dy > 24) setMapCollapsed(false);
+    }
+  }), []);
   const [pickupText, setPickupText] = useState('Моё местоположение');
   const [destinationText, setDestinationText] = useState('');
   const [pickup, setPickup] = useState(null);
@@ -1884,9 +1892,9 @@ export default function LadyGoApp() {
     </View>
     <NetworkHint />
     {tab === 'ride' && <View style={{ flex: 1 }}>
-      <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination}/>
+      <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination} mapCollapsed={mapCollapsed}/>
       <ScrollView style={st.sheet} contentContainerStyle={st.sheetContent} keyboardShouldPersistTaps="handled">
-        <View style={st.sheetHandle}/>
+        <View {...mapPanResponder.panHandlers} accessibilityRole="button" accessibilityLabel="Потяните вверх, чтобы уменьшить карту, вниз — чтобы увеличить" style={st.sheetHandleWrap}><View style={st.sheetHandle}/><Text style={st.sheetHandleHint}>{mapCollapsed ? 'Потяните вниз, чтобы развернуть карту' : 'Потяните вверх, чтобы освободить место'}</Text></View>
         <View style={st.rowBetween}><Text style={st.heading}>Куда едем?</Text><View style={st.cityPill}><Text style={st.cityPillText}>Поиск по России</Text></View></View>
         <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('pickup'); setQuery(''); }}><Field label="ОТКУДА" value={pickupText} placeholder="Выберите место подачи" icon="●"/></TouchableOpacity>
         <View style={st.connector}/>
@@ -2466,7 +2474,8 @@ const st = StyleSheet.create({
   chatSend: { width: 44, height: 44, borderRadius: 14, backgroundColor: P.pink, alignItems: 'center', justifyContent: 'center' },
   chatSendText: { color: P.white, fontSize: 19, fontWeight: '900' },
   avatarText: { color: P.pinkDark, fontWeight: '900', fontSize: 16 },
-  map: { height: 280, backgroundColor: '#E9E7E3' },
+  map: { height: 270, flexShrink: 0, backgroundColor: '#E9E7E3', zIndex: 0, elevation: 0, overflow: 'hidden' },
+  mapCollapsed: { height: 148 },
   mapControls: { position: 'absolute', left: 9, bottom: 12, gap: 6, alignItems: 'flex-start' },
   locateButton: { height: 34, paddingHorizontal: 10, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.97)', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
   locateButtonText: { color: P.pinkDark, fontSize: 11, fontWeight: '800' },
@@ -2479,8 +2488,10 @@ const st = StyleSheet.create({
   mapLabel: { position: 'absolute', top: 12, left: 12, flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: P.white, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, elevation: 2 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: P.green },
   mapLabelText: { color: P.ink, fontSize: 12, fontWeight: '700' },
-  sheet: { flex: 1, backgroundColor: P.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, marginTop: -18 },
-  sheetContent: { padding: 18, paddingBottom: 26, gap: 12 },
+  sheet: { flex: 1, minHeight: 180, backgroundColor: P.white, borderTopLeftRadius: 26, borderTopRightRadius: 26, marginTop: -20, zIndex: 3, elevation: 8, overflow: 'hidden' },
+  sheetHandleWrap: { minHeight: 34, alignItems: 'center', justifyContent: 'center', paddingBottom: 4 },
+  sheetHandleHint: { color: '#A49AA0', fontSize: 9, fontWeight: '700', marginTop: 4 },
+  sheetContent: { padding: 17, paddingBottom: 28, gap: 13 },
   sheetHandle: { width: 38, height: 4, borderRadius: 3, backgroundColor: '#DDD7DC', alignSelf: 'center', marginBottom: 3 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cityPill: { backgroundColor: P.pale, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20 },
