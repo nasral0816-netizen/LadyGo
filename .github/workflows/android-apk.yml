@@ -12,6 +12,7 @@ on:
       - tech/stabilize-android-dispatch-2026-11-23
       - fix/order-submit-diagnostics-2026-11-24
       - feat/vpn-connectivity-hints-2026-11-25
+      - feat/map-sheet-brand-refresh-2026-11-28
     paths:
       - '**'
       - '!README.md'
@@ -53,6 +54,17 @@ jobs:
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
+      - name: Render LadyGo launcher icons
+        run: |
+          python3 -m pip install --quiet cairosvg
+          python3 - <<'PY'
+          import cairosvg
+          source = 'assets/ladygo-emblem.svg'
+          cairosvg.svg2png(url=source, write_to='icon.png', output_width=1024, output_height=1024)
+          cairosvg.svg2png(url=source, write_to='adaptive-icon.png', output_width=1024, output_height=1024)
+          print('Rendered premium LadyGo launcher and adaptive icons')
+          PY
 
       - name: Expo configuration diagnostics
         run: npx expo-doctor
