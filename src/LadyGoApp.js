@@ -1369,7 +1369,7 @@ export default function LadyGoApp() {
       {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}>
         <Text style={[st.adminTopButtonText, tab === 'admin' && st.adminTopButtonTextActive]}>⚙ Админ</Text>
       </TouchableOpacity>}
-      <View style={st.headerActions}><TouchableOpacity style={st.headerAction} onPress={() => setTab('orders')} accessibilityRole="button" accessibilityLabel="Уведомления и поездки"><Text style={st.headerActionIcon}>♧</Text>{activeOrder ? <View style={st.notificationDot}/> : null}</TouchableOpacity><TouchableOpacity style={st.headerAction} onPress={() => setTab('profile')} accessibilityRole="button" accessibilityLabel="Профиль"><Text style={st.headerActionIcon}>♙</Text></TouchableOpacity></View>
+      <View style={st.headerActions}><TouchableOpacity style={st.headerAction} onPress={() => setTab('orders')} accessibilityRole="button" accessibilityLabel="Уведомления и поездки"><Text style={st.headerActionIcon}>🔔</Text>{activeOrder ? <View style={st.notificationDot}/> : null}</TouchableOpacity><TouchableOpacity style={st.headerAction} onPress={() => setTab('profile')} accessibilityRole="button" accessibilityLabel="Профиль"><Text style={st.headerActionIcon}>👤</Text></TouchableOpacity></View>
     </View>
     {tab === 'ride' && <View style={{ flex: 1 }}>
       <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination} mapHeight={mapHeight}/>
@@ -1385,9 +1385,10 @@ export default function LadyGoApp() {
         <View style={st.tariffs}>{TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[st.tariff, tariff === t.id && st.tariffSelected]}>
           <Text style={st.tariffIcon}>{t.icon}</Text><Text style={st.tariffName}>{t.name}</Text><Text style={st.tariffSub}>{t.sub}</Text>{(previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
         </TouchableOpacity>)}</View>
+        <View style={st.networkHint}><Text style={st.networkHintIcon}>ⓘ</Text><Text style={st.networkHintText}>Если карта или другие сервисы не загружаются, проверь интернет. В сетях с ограничениями попробуй включить VPN.</Text></View>
         <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>{(previewFare) ? 'Предварительная стоимость' : 'Стоимость поездки'}</Text><Text style={st.priceHint}>{(previewFare) ? 'Расчёт по длине и времени маршрута' : 'Укажи оба адреса для расчёта'}</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
         <Text style={st.sectionTitle}>Способ оплаты</Text>
-        <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>Р</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
+        <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>💵</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
         <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || busy}>
           {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
@@ -1800,7 +1801,7 @@ export default function LadyGoApp() {
 
       <TouchableOpacity style={st.profileRow} onPress={() => { setTab('support'); loadMyTickets(); }}><Text style={st.profileRowIcon}>?</Text><Text style={st.profileRowText}>Поддержка и обращения</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.logout} onPress={signOut}><Text style={st.logoutText}>Выйти из аккаунта</Text></TouchableOpacity>
-      <Text style={st.footnote}>LadyGo · 6.9.0 · Создано независимым автором @acyma</Text>
+      <Text style={st.footnote}>LadyGo · 6.9.2 · Создано независимым автором @acyma</Text>
     </ScrollView>}
     <View style={st.bottomNav}>
       {([['ride','⌖','Поездки',() => setTab('ride')],['driver','♧','Водитель',() => { if (profile?.role === 'driver') { setTab('driver'); loadDriverOrders(); } else setTab('apply'); }],['support','☏','Поддержка',() => { setTab('support'); loadMyTickets(); }],['profile','♙','Профиль',() => setTab('profile')]]).map(([id,icon,label,action]) => <TouchableOpacity key={id} style={st.navItem} onPress={action}><Text style={[st.navIcon, (tab === id || (id === 'driver' && tab === 'apply')) && st.navActive]}>{icon}</Text><Text style={[st.navLabel, (tab === id || (id === 'driver' && tab === 'apply')) && st.navActive]}>{label}</Text></TouchableOpacity>)}
