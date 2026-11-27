@@ -11,6 +11,28 @@ import * as Device from 'expo-device';
 import * as TaskManager from 'expo-task-manager';
 import { supabase } from './supabase';
 
+
+function LineIcon({ name, size = 24, color = '#176344' }) {
+  const scale = size / 24;
+  const box = { width: size, height: size, alignItems: 'center', justifyContent: 'center' };
+  const stroke = { borderColor: color, borderWidth: Math.max(1.4, 1.8 * scale) };
+  const shape = (width, height, extra = {}) => ({ width: width * scale, height: height * scale, ...stroke, ...extra });
+  const dot = (diameter, extra = {}) => ({ width: diameter * scale, height: diameter * scale, borderRadius: diameter * scale, ...stroke, ...extra });
+  const fill = { backgroundColor: color };
+  if (name === 'bell') return <View style={box}><View style={shape(15, 15, { borderTopLeftRadius: 9 * scale, borderTopRightRadius: 9 * scale, borderBottomLeftRadius: 4 * scale, borderBottomRightRadius: 4 * scale, borderBottomWidth: 0, marginTop: 1 * scale })}/><View style={{ width: 19 * scale, height: 2 * scale, backgroundColor: color, marginTop: -1 * scale, borderRadius: 2 }}/><View style={{ width: 5 * scale, height: 3 * scale, backgroundColor: color, borderRadius: 3, marginTop: 2 * scale }}/></View>;
+  if (name === 'user') return <View style={box}><View style={dot(8, { marginBottom: 2 * scale })}/><View style={shape(17, 9, { borderTopLeftRadius: 10 * scale, borderTopRightRadius: 10 * scale, borderBottomWidth: 0, marginTop: 1 * scale })}/></View>;
+  if (name === 'car') return <View style={box}><View style={shape(17, 8, { borderTopLeftRadius: 7 * scale, borderTopRightRadius: 7 * scale, borderBottomWidth: 0, marginBottom: -1 * scale })}/><View style={shape(21, 8, { borderRadius: 4 * scale })}/><View style={{ flexDirection: 'row', width: 17 * scale, justifyContent: 'space-between', marginTop: -2 * scale }}><View style={{ width: 4 * scale, height: 4 * scale, borderRadius: 3, backgroundColor: color }}/><View style={{ width: 4 * scale, height: 4 * scale, borderRadius: 3, backgroundColor: color }}/></View></View>;
+  if (name === 'child') return <View style={box}><View style={dot(12, { marginBottom: 1 * scale })}/><View style={shape(13, 7, { borderTopLeftRadius: 8 * scale, borderTopRightRadius: 8 * scale, borderBottomWidth: 0 })}/></View>;
+  if (name === 'parcel') return <View style={box}><View style={shape(17, 17, { borderRadius: 2 * scale })}/><View style={{ position: 'absolute', width: 11 * scale, height: 1.5 * scale, backgroundColor: color, top: 5 * scale, transform: [{ rotate: '25deg' }] }}/><View style={{ position: 'absolute', width: 1.5 * scale, height: 9 * scale, backgroundColor: color, top: 5 * scale }}/></View>;
+  if (name === 'pin') return <View style={box}><View style={{ width: 15 * scale, height: 15 * scale, borderRadius: 10 * scale, borderWidth: 2 * scale, borderColor: color, alignItems: 'center', justifyContent: 'center', marginTop: -4 * scale }}><View style={{ width: 4 * scale, height: 4 * scale, borderRadius: 3, backgroundColor: color }}/></View><View style={{ width: 9 * scale, height: 9 * scale, borderRightWidth: 2 * scale, borderBottomWidth: 2 * scale, borderColor: color, transform: [{ rotate: '45deg' }], marginTop: -6 * scale }}/></View>;
+  if (name === 'chat') return <View style={box}><View style={shape(19, 14, { borderRadius: 6 * scale, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 * scale })}><View style={dot(2, { backgroundColor: color })}/><View style={dot(2, { backgroundColor: color })}/><View style={dot(2, { backgroundColor: color })}/></View><View style={{ width: 5 * scale, height: 5 * scale, borderLeftWidth: 1.6 * scale, borderBottomWidth: 1.6 * scale, borderColor: color, transform: [{ rotate: '-12deg' }], alignSelf: 'flex-start', marginLeft: 5 * scale, marginTop: -1 * scale }}/></View>;
+  if (name === 'cash') return <View style={box}><View style={shape(21, 14, { borderRadius: 2 * scale, alignItems: 'center', justifyContent: 'center' })}><View style={{ width: 6 * scale, height: 6 * scale, borderRadius: 4 * scale, borderWidth: 1.4 * scale, borderColor: color }}/></View><View style={{ position: 'absolute', width: 15 * scale, height: 1.3 * scale, backgroundColor: color, top: 5 * scale }}/></View>;
+  if (name === 'female') return <View style={box}><View style={{ width: 13 * scale, height: 13 * scale, borderRadius: 8 * scale, borderWidth: 2 * scale, borderColor: color, marginTop: -4 * scale }}/><View style={{ width: 2 * scale, height: 7 * scale, backgroundColor: color }}/><View style={{ width: 8 * scale, height: 2 * scale, backgroundColor: color, marginTop: -1 * scale }}/></View>;
+  if (name === 'support') return <View style={box}><View style={shape(18, 18, { borderRadius: 10 * scale, alignItems: 'center', justifyContent: 'center' })}><View style={{ width: 2 * scale, height: 7 * scale, backgroundColor: color, borderRadius: 2 }}/><View style={{ width: 2 * scale, height: 2 * scale, backgroundColor: color, borderRadius: 2, marginTop: 2 * scale }}/></View></View>;
+  if (name === 'gear') return <View style={box}><View style={dot(13, { alignItems: 'center', justifyContent: 'center' })}><View style={dot(5, { borderWidth: 1.4 * scale })}/></View>{[0,45,90,135].map(a=><View key={a} style={{ position: 'absolute', width: 3 * scale, height: 7 * scale, backgroundColor: color, borderRadius: 2, transform: [{ rotate: a + 'deg' }] }}/>)}</View>;
+  return <View style={box}><View style={dot(15)}/></View>;
+}
+
 function calculatePolylineKm(points) {
   const toRad = value => value * Math.PI / 180;
   let meters = 0;
@@ -98,9 +120,9 @@ const P = {
 };
 const TARIFFS = [
   // Сохраняем тарифные ID для совместимости с действующим сервисом расчёта цены.
-  { id: 'economy', name: 'Женский', sub: 'Поездки для женщин', icon: '♀' },
-  { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '🧒' },
-  { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '📦' }
+  { id: 'economy', name: 'Женский', sub: 'Поездки для женщин', icon: 'female' },
+  { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: 'child' },
+  { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: 'parcel' }
 ];
 const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Ищем водителя', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
@@ -200,7 +222,7 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
       {route?.length > 1 && <Polyline points={route} strokeColor={P.green} strokeWidth={5} outlineColor="#FFFFFF" outlineWidth={2} />}
       {driverLocation && <Marker point={{ latitude: Number(driverLocation.latitude), longitude: Number(driverLocation.longitude) }}>
         <View style={{ backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 2, borderColor: P.green, padding: 5 }}>
-          <Text style={{ fontSize: 20 }}>🚘</Text>
+          <LineIcon name="car" size={22} />
         </View>
       </Marker>}
     </YandexMapView>
@@ -1364,12 +1386,12 @@ export default function LadyGoApp() {
     <View style={st.topbar}><View style={st.brandBlock}><Image source={require('../icon.png')} style={st.topLogo} resizeMode="contain"/><View><Text style={st.logoSmall}>LadyGo</Text><Text style={st.topSub}>Поездки с заботой</Text></View></View>
       {profile?.role === 'driver' && <View style={st.modeSwitch}>
         <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>⌖  Пассажир</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>🚘  Водитель</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}><LineIcon name="car" size={18}/>  Водитель</Text></TouchableOpacity>
       </View>}
       {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}>
         <Text style={[st.adminTopButtonText, tab === 'admin' && st.adminTopButtonTextActive]}>⚙ Админ</Text>
       </TouchableOpacity>}
-      <View style={st.headerActions}><TouchableOpacity style={st.headerAction} onPress={() => setTab('orders')} accessibilityRole="button" accessibilityLabel="Уведомления и поездки"><Text style={st.headerActionIcon}>🔔</Text>{activeOrder ? <View style={st.notificationDot}/> : null}</TouchableOpacity><TouchableOpacity style={st.headerAction} onPress={() => setTab('profile')} accessibilityRole="button" accessibilityLabel="Профиль"><Text style={st.headerActionIcon}>👤</Text></TouchableOpacity></View>
+      <View style={st.headerActions}><TouchableOpacity style={st.headerAction} onPress={() => setTab('orders')} accessibilityRole="button" accessibilityLabel="Уведомления и поездки"><LineIcon name="bell" size={23}/>{activeOrder ? <View style={st.notificationDot}/> : null}</TouchableOpacity><TouchableOpacity style={st.headerAction} onPress={() => setTab('profile')} accessibilityRole="button" accessibilityLabel="Профиль"><LineIcon name="user" size={23}/></TouchableOpacity></View>
     </View>
     {tab === 'ride' && <View style={{ flex: 1 }}>
       <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination} mapHeight={mapHeight}/>
@@ -1383,12 +1405,12 @@ export default function LadyGoApp() {
         {routeInfo && <View style={st.routeMeta}><Text style={st.routeMetaText}>Маршрут {routeInfo.km} км</Text><Text style={st.routeMetaText}>Около {routeInfo.minutes} мин</Text></View>}
         <Text style={st.sectionTitle}>Выберите услугу</Text>
         <View style={st.tariffs}>{TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[st.tariff, tariff === t.id && st.tariffSelected]}>
-          <Text style={st.tariffIcon}>{t.icon}</Text><Text style={st.tariffName}>{t.name}</Text><Text style={st.tariffSub}>{t.sub}</Text>{(previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
+          <View style={st.tariffIcon}><LineIcon name={t.icon} size={27} color={tariff === t.id ? P.gold : P.green}/></View><Text style={st.tariffName}>{t.name}</Text><Text style={st.tariffSub}>{t.sub}</Text>{(previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
         </TouchableOpacity>)}</View>
         <View style={st.networkHint}><Text style={st.networkHintIcon}>ⓘ</Text><Text style={st.networkHintText}>Если карта или другие сервисы не загружаются, проверь интернет. В сетях с ограничениями попробуй включить VPN.</Text></View>
         <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>{(previewFare) ? 'Предварительная стоимость' : 'Стоимость поездки'}</Text><Text style={st.priceHint}>{(previewFare) ? 'Расчёт по длине и времени маршрута' : 'Укажи оба адреса для расчёта'}</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
         <Text style={st.sectionTitle}>Способ оплаты</Text>
-        <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>💵</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
+        <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><View style={st.payIcon}><LineIcon name="cash" size={22}/></View><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
         <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || busy}>
           {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
@@ -1673,7 +1695,7 @@ export default function LadyGoApp() {
           </TouchableOpacity>
         </View>
         <View style={[st.driverModeHint, { backgroundColor: driverOnline ? '#EAF8F1' : '#F6F0E4', borderColor: driverOnline ? '#B9E5D0' : P.line }]}>
-          <Text style={st.driverModeIcon}>🚘</Text>
+          <View style={st.driverModeIcon}><LineIcon name="car" size={25}/></View>
           <View style={{flex:1}}>
             <Text style={st.driverModeTitle}>{driverOnline ? 'Вы на линии' : 'Вы не на линии'}</Text>
             <Text style={st.driverModeSub}>{driverOnline ? 'Получаем предложения ближайших поездок' : 'Включите режим, чтобы получать заказы'}</Text>
@@ -1723,7 +1745,7 @@ export default function LadyGoApp() {
         <View style={st.vehicleEditorCard}>
           <View style={st.rowBetween}><Text style={st.heading}>Фото водителя</Text><Text style={st.vehicleEditorHint}>Для карточки поездки</Text></View>
           <View style={st.driverPhotoEditorRow}>
-            {driverPhotoPreview ? <Image source={{ uri: driverPhotoPreview }} style={st.driverPhotoPreview} /> : <View style={st.driverPhotoPlaceholder}><Text style={st.driverPhotoPlaceholderText}>👤</Text></View>}
+            {driverPhotoPreview ? <Image source={{ uri: driverPhotoPreview }} style={st.driverPhotoPreview} /> : <View style={st.driverPhotoPlaceholder}><LineIcon name="user" size={30}/></View>}
             <View style={{ flex: 1, gap: 8 }}>
               <Text style={st.vehicleEditorHint}>Пассажир увидит это фото вместе с именем и рейтингом водителя</Text>
               <TouchableOpacity style={st.vehiclePhotoButton} onPress={chooseDriverPhoto} disabled={driverPhotoUploading}>
@@ -1734,7 +1756,7 @@ export default function LadyGoApp() {
         </View>
         <View style={st.vehicleEditorCard}>
           <View style={st.rowBetween}><Text style={st.heading}>Мой автомобиль</Text><Text style={st.vehicleEditorHint}>Данные для пассажира</Text></View>
-          {vehiclePhotoPreview ? <Image source={{ uri: vehiclePhotoPreview }} style={st.vehiclePhotoPreview} resizeMode="cover" /> : <View style={st.vehiclePhotoPlaceholder}><Text style={st.vehiclePhotoIcon}>🚘</Text><Text style={st.vehiclePhotoPlaceholderText}>Добавь фото своего автомобиля</Text></View>}
+          {vehiclePhotoPreview ? <Image source={{ uri: vehiclePhotoPreview }} style={st.vehiclePhotoPreview} resizeMode="cover" /> : <View style={st.vehiclePhotoPlaceholder}><LineIcon name="car" size={30}/><Text style={st.vehiclePhotoPlaceholderText}>Добавь фото своего автомобиля</Text></View>}
           <TouchableOpacity style={st.vehiclePhotoButton} onPress={chooseVehiclePhoto} disabled={vehicleUploading}>
             {vehicleUploading ? <ActivityIndicator color={P.green}/> : <Text style={st.vehiclePhotoButtonText}>{vehiclePhotoPreview ? 'Изменить фото машины' : 'Добавить фото машины'}</Text>}
           </TouchableOpacity>
@@ -1796,15 +1818,15 @@ export default function LadyGoApp() {
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
       <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.phone || profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.phone || profile?.email || 'Аккаунт LadyGo'}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
       <TouchableOpacity style={st.profileRow} onPress={() => setTab('orders')}><Text style={st.profileRowIcon}>◷</Text><Text style={st.profileRowText}>История поездок</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
-      {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
-      {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><Text style={st.profileRowIcon}>🚘</Text><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}
+      {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}><View style={st.profileRowIcon}><LineIcon name="gear" size={22}/></View><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
+      {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><View style={st.profileRowIcon}><LineIcon name="car" size={22}/></View><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}
 
       <TouchableOpacity style={st.profileRow} onPress={() => { setTab('support'); loadMyTickets(); }}><Text style={st.profileRowIcon}>?</Text><Text style={st.profileRowText}>Поддержка и обращения</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.logout} onPress={signOut}><Text style={st.logoutText}>Выйти из аккаунта</Text></TouchableOpacity>
       <Text style={st.footnote}>LadyGo · 6.9.2 · Создано независимым автором @acyma</Text>
     </ScrollView>}
     <View style={st.bottomNav}>
-      {([['ride','⌖','Поездки',() => setTab('ride')],['driver','🚘','Водитель',() => { if (profile?.role === 'driver') { setTab('driver'); loadDriverOrders(); } else setTab('apply'); }],['support','☏','Поддержка',() => { setTab('support'); loadMyTickets(); }],['profile','♙','Профиль',() => setTab('profile')]]).map(([id,icon,label,action]) => <TouchableOpacity key={id} style={st.navItem} onPress={action}><Text style={[st.navIcon, (tab === id || (id === 'driver' && tab === 'apply')) && st.navActive]}>{icon}</Text><Text style={[st.navLabel, (tab === id || (id === 'driver' && tab === 'apply')) && st.navActive]}>{label}</Text></TouchableOpacity>)}
+      {([['ride','pin','Поездки',() => setTab('ride')],['driver','car','Водитель',() => { if (profile?.role === 'driver') { setTab('driver'); loadDriverOrders(); } else setTab('apply'); }],['support','chat','Чат',() => { setTab('support'); loadMyTickets(); }],['profile','user','Профиль',() => setTab('profile')]]).map(([id,icon,label,action]) => <TouchableOpacity key={id} style={st.navItem} onPress={action}><View style={st.navIcon}><LineIcon name={icon} size={23} color={(tab === id || (id === 'driver' && tab === 'apply')) ? P.green : '#87938A'}/></View><Text style={[st.navLabel, (tab === id || (id === 'driver' && tab === 'apply')) && st.navActive]}>{label}</Text></TouchableOpacity>)}
     </View>
   </SafeAreaView>;
 }
