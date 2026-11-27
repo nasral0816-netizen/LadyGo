@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Animated, BackHandler, Keyboard, Linking, Platform, SafeAreaView, ScrollView, PanResponder,
+  ActivityIndicator, Alert, Animated, BackHandler, Dimensions, Keyboard, Linking, Platform, SafeAreaView, ScrollView, PanResponder,
   StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image
 } from 'react-native';
 import { YandexMapView, Marker, Polyline, geocodeAddress, findDrivingRoutes } from 'expo-yandex-mapkit';
@@ -273,15 +273,18 @@ export default function LadyGoApp() {
   const [route, setRoute] = useState([]);
   const [routeInfo, setRouteInfo] = useState(null);
   const [tariff, setTariff] = useState('economy');
-  const mapHeight = useRef(new Animated.Value(270)).current;
+  const expandedMapHeight = Math.round(Math.min(440, Math.max(300, Dimensions.get('window').height * 0.47)));
+  const mapHeight = useRef(new Animated.Value(expandedMapHeight)).current;
   const animateMapHeight = useCallback((collapsed) => {
-    Animated.spring(mapHeight, { toValue: collapsed ? 148 : 270, useNativeDriver: false, speed: 18, bounciness: 3 }).start();
-  }, [mapHeight]);
+    Animated.spring(mapHeight, { toValue: collapsed ? 176 : expandedMapHeight, useNativeDriver: false, speed: 16, bounciness: 2 }).start();
+  }, [mapHeight, expandedMapHeight]);
   const mapPanResponder = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.15,
+    onPanResponderTerminationRequest: () => false,
     onPanResponderRelease: (_, gesture) => {
-      if (gesture.dy < -24) animateMapHeight(true);
-      else if (gesture.dy > 24) animateMapHeight(false);
+      if (gesture.dy < -22 || gesture.vy < -0.45) animateMapHeight(true);
+      else if (gesture.dy > 22 || gesture.vy > 0.45) animateMapHeight(false);
     }
   }), [animateMapHeight]);
   const [payment, setPayment] = useState('cash');
@@ -1358,7 +1361,7 @@ export default function LadyGoApp() {
   </SafeAreaView>;
 
   return <SafeAreaView style={st.screen}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
-    <View style={st.topbar}><View><Text style={st.logoSmall}>LadyGo</Text><Text style={st.topSub}>Поездки с заботой</Text></View>
+    <View style={st.topbar}><View style={st.brandBlock}><Image source={require('../icon.png')} style={st.topLogo} resizeMode="contain"/><View><Text style={st.logoSmall}>LadyGo</Text><Text style={st.topSub}>Поездки с заботой</Text></View></View>
       {profile?.role === 'driver' && <View style={st.modeSwitch}>
         <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>⌖  Пассажир</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>🚘  Водитель</Text></TouchableOpacity>
@@ -1366,19 +1369,19 @@ export default function LadyGoApp() {
       {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}>
         <Text style={[st.adminTopButtonText, tab === 'admin' && st.adminTopButtonTextActive]}>⚙ Админ</Text>
       </TouchableOpacity>}
-      <TouchableOpacity style={st.avatar} onPress={() => setTab('profile')}><Text style={st.avatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></TouchableOpacity>
+      <View style={st.headerActions}><TouchableOpacity style={st.headerAction} onPress={() => setTab('orders')} accessibilityRole="button" accessibilityLabel="Уведомления и поездки"><Text style={st.headerActionIcon}>♧</Text>{activeOrder ? <View style={st.notificationDot}/> : null}</TouchableOpacity><TouchableOpacity style={st.headerAction} onPress={() => setTab('profile')} accessibilityRole="button" accessibilityLabel="Профиль"><Text style={st.headerActionIcon}>♙</Text></TouchableOpacity></View>
     </View>
     {tab === 'ride' && <View style={{ flex: 1 }}>
       <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination} mapHeight={mapHeight}/>
       <ScrollView style={st.sheet} contentContainerStyle={st.sheetContent} keyboardShouldPersistTaps="handled">
         <View {...mapPanResponder.panHandlers} accessibilityRole="button" accessibilityLabel="Потяните вверх, чтобы уменьшить карту, вниз — чтобы увеличить" style={st.sheetHandleWrap}><View style={st.sheetHandle}/><Text style={st.sheetHandleHint}>Потяните вверх или вниз, чтобы изменить размер карты</Text></View>
-        <View style={st.rowBetween}><Text style={st.heading}>Куда едем?</Text><View style={st.cityPill}><Text style={st.cityPillText}>Поиск по России</Text></View></View>
+        <View style={st.rowBetween}><Text style={st.heading}>Куда едем?</Text><View style={st.cityPill}><Text style={st.cityPillText}>Кисловодск · КМВ</Text></View></View>
         <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('pickup'); setQuery(''); }}><Field label="ОТКУДА" value={pickupText} placeholder="Выберите место подачи" icon="●"/></TouchableOpacity>
         <View style={st.connector}/>
         <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('destination'); setQuery(''); }}><Field label="КУДА" value={destinationText} placeholder="Введите адрес назначения" icon="●"/></TouchableOpacity>
         <TouchableOpacity style={st.locateRow} onPress={locate}><Text style={st.locateRowIcon}>◎</Text><Text style={st.locateRowText}>Определить моё местоположение</Text></TouchableOpacity>
         {routeInfo && <View style={st.routeMeta}><Text style={st.routeMetaText}>Маршрут {routeInfo.km} км</Text><Text style={st.routeMetaText}>Около {routeInfo.minutes} мин</Text></View>}
-        <Text style={st.sectionTitle}>Выберите тариф</Text>
+        <Text style={st.sectionTitle}>Выберите услугу</Text>
         <View style={st.tariffs}>{TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[st.tariff, tariff === t.id && st.tariffSelected]}>
           <Text style={st.tariffIcon}>{t.icon}</Text><Text style={st.tariffName}>{t.name}</Text><Text style={st.tariffSub}>{t.sub}</Text>{(previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
         </TouchableOpacity>)}</View>
@@ -1800,7 +1803,7 @@ export default function LadyGoApp() {
       <Text style={st.footnote}>LadyGo · 6.9.0 · Создано независимым автором @acyma</Text>
     </ScrollView>}
     <View style={st.bottomNav}>
-      {([['ride','⌖','Заказать'],['orders','◷','Поездки'],['profile','○','Профиль']]).map(([id,icon,label]) => <TouchableOpacity key={id} style={st.navItem} onPress={() => setTab(id)}><Text style={[st.navIcon, tab === id && st.navActive]}>{icon}</Text><Text style={[st.navLabel, tab === id && st.navActive]}>{label}</Text></TouchableOpacity>)}
+      {([['ride','⌖','Поездки',() => setTab('ride')],['driver','♧','Водитель',() => { if (profile?.role === 'driver') { setTab('driver'); loadDriverOrders(); } else setTab('apply'); }],['support','☏','Поддержка',() => { setTab('support'); loadMyTickets(); }],['profile','♙','Профиль',() => setTab('profile')]]).map(([id,icon,label,action]) => <TouchableOpacity key={id} style={st.navItem} onPress={action}><Text style={[st.navIcon, (tab === id || (id === 'driver' && tab === 'apply')) && st.navActive]}>{icon}</Text><Text style={[st.navLabel, (tab === id || (id === 'driver' && tab === 'apply')) && st.navActive]}>{label}</Text></TouchableOpacity>)}
     </View>
   </SafeAreaView>;
 }
@@ -1820,12 +1823,18 @@ const st = StyleSheet.create({
   phoneOrderBtn: { minHeight: 52, borderRadius: 16, borderWidth: 1.5, borderColor: P.green, backgroundColor: P.white, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
   phoneOrderText: { color: P.green, fontSize: 15, fontWeight: '800' },
   switchText: { color: P.green, textAlign: 'center', fontWeight: '700', padding: 12 },
-  footnote: { color: '#A69DA3', fontSize: 11, textAlign: 'center', marginTop: 20 },
-  topbar: { height: 62, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: P.white, borderBottomWidth: 1, borderColor: '#F6F0E4' },
+  footnote: { color: P.muted, fontSize: 11, textAlign: 'center', marginTop: 20 },
+  topbar: { height: 76, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: P.white, borderBottomWidth: 1, borderColor: P.line, zIndex: 12, elevation: 3 },
+  brandBlock: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  topLogo: { width: 54, height: 54, borderRadius: 27, borderWidth: 1, borderColor: P.gold, backgroundColor: P.pale },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerAction: { width: 44, height: 44, borderRadius: 22, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: P.line },
+  headerActionIcon: { color: P.green, fontSize: 23, fontWeight: '700' },
+  notificationDot: { position: 'absolute', top: 7, right: 7, width: 8, height: 8, borderRadius: 4, backgroundColor: P.gold, borderWidth: 1, borderColor: P.white },
   logoSmall: { color: P.green, fontSize: 25, fontWeight: '900', letterSpacing: -1 },
   topSub: { color: P.muted, fontSize: 10, marginTop: -2 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
-  modeSwitch: { flexDirection: 'row', backgroundColor: '#F6F0E4', borderRadius: 16, padding: 4, gap: 3, borderWidth: 1, borderColor: '#EDE5E9', flexShrink: 1 },
+  modeSwitch: { flexDirection: 'row', backgroundColor: P.pale, borderRadius: 16, padding: 4, gap: 3, borderWidth: 1, borderColor: P.line, flexShrink: 1 },
   modeOption: { paddingHorizontal: 9, paddingVertical: 9, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   modeOptionActive: { backgroundColor: P.green, elevation: 2, shadowColor: P.green, shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
   modeText: { color: P.muted, fontSize: 10, fontWeight: '900' },
@@ -1930,7 +1939,7 @@ const st = StyleSheet.create({
   chatSend: { width: 44, height: 44, borderRadius: 14, backgroundColor: P.green, alignItems: 'center', justifyContent: 'center' },
   chatSendText: { color: P.white, fontSize: 19, fontWeight: '900' },
   avatarText: { color: P.green, fontWeight: '900', fontSize: 16 },
-  map: { flexShrink: 0, backgroundColor: '#E9E7E3', zIndex: 0, elevation: 0, overflow: 'hidden' },
+  map: { flexShrink: 0, backgroundColor: '#E7EDE5', zIndex: 0, elevation: 0, overflow: 'hidden' },
   mapControls: { position: 'absolute', left: 9, bottom: 12, gap: 6, alignItems: 'flex-start' },
   locateButton: { height: 34, paddingHorizontal: 10, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.97)', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
   locateButtonText: { color: P.green, fontSize: 11, fontWeight: '800' },
@@ -1943,9 +1952,9 @@ const st = StyleSheet.create({
   mapLabel: { position: 'absolute', top: 12, left: 12, flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: P.white, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, elevation: 2 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: P.green },
   mapLabelText: { color: P.ink, fontSize: 12, fontWeight: '700' },
-  sheet: { flex: 1, minHeight: 180, backgroundColor: P.white, borderTopLeftRadius: 26, borderTopRightRadius: 26, marginTop: -20, zIndex: 3, elevation: 8, overflow: 'hidden' },
+  sheet: { flex: 1, minHeight: 180, backgroundColor: P.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -22, zIndex: 20, elevation: 18, overflow: 'hidden' },
   sheetContent: { padding: 17, paddingBottom: 28, gap: 13 },
-  sheetHandleWrap: { minHeight: 38, alignItems: 'center', justifyContent: 'center', paddingBottom: 4 },
+  sheetHandleWrap: { minHeight: 42, alignItems: 'center', justifyContent: 'center', paddingBottom: 4, zIndex: 21, elevation: 2 },
   sheetHandleHint: { color: P.muted, fontSize: 9, fontWeight: '700', marginTop: 4 },
   sheetHandle: { width: 38, height: 4, borderRadius: 3, backgroundColor: '#D8E6D6', alignSelf: 'center', marginBottom: 3 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -1963,13 +1972,16 @@ const st = StyleSheet.create({
   routeMetaText: { color: P.muted, fontSize: 12, fontWeight: '700' },
   sectionTitle: { color: P.ink, fontSize: 15, fontWeight: '800', marginTop: 6 },
   tariffs: { flexDirection: 'row', gap: 8 },
-  tariff: { flex: 1, minHeight: 108, borderWidth: 1, borderColor: P.line, borderRadius: 17, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, paddingVertical: 9, gap: 5, backgroundColor: P.white },
-  tariffSelected: { borderColor: P.gold, backgroundColor: '#F6F0E4', borderWidth: 1.6 },
+  tariff: { flex: 1, minHeight: 96, borderWidth: 1, borderColor: P.line, borderRadius: 19, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, paddingVertical: 9, gap: 5, backgroundColor: P.white },
+  tariffSelected: { borderColor: P.gold, backgroundColor: '#F4EBD5', borderWidth: 2, shadowColor: P.gold, shadowOpacity: 0.16, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   tariffIcon: { color: P.green, fontSize: 22, fontWeight: '900' },
   tariffName: { color: P.ink, fontSize: 12, fontWeight: '800', textAlign: 'center' },
   tariffSub: { color: P.muted, fontSize: 9, lineHeight: 12, textAlign: 'center' },
   tariffPrice: { color: P.green, fontSize: 11, fontWeight: '800' },
-  priceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FAF7F8', borderRadius: 15, padding: 14, gap: 10 },
+  networkHint: { flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: '#EEF4EA', borderWidth: 1, borderColor: '#D9E5D2', borderRadius: 18, padding: 14 },
+  networkHintIcon: { color: P.green, fontSize: 22, fontWeight: '900' },
+  networkHintText: { flex: 1, color: P.ink, fontSize: 12, lineHeight: 18 },
+  priceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F6F0E4', borderRadius: 17, padding: 14, gap: 10 },
   priceTitle: { color: P.ink, fontWeight: '800', fontSize: 13 },
   priceHint: { color: P.muted, fontSize: 11, marginTop: 3 },
   priceValue: { color: P.green, fontWeight: '900', fontSize: 19 },
@@ -1980,10 +1992,10 @@ const st = StyleSheet.create({
   payText: { color: P.ink, fontSize: 12, fontWeight: '700' },
   phoneInput: { borderWidth: 1, borderColor: P.line, borderRadius: 13, padding: 14, fontSize: 14, color: P.ink },
   disabled: { opacity: 0.45 },
-  bottomNav: { height: 62, flexDirection: 'row', borderTopWidth: 1, borderColor: P.line, backgroundColor: P.white, paddingBottom: Platform.OS === 'android' ? 4 : 0 },
+  bottomNav: { height: 68, flexDirection: 'row', borderTopWidth: 1, borderColor: P.line, backgroundColor: P.white, paddingBottom: Platform.OS === 'android' ? 4 : 0, zIndex: 30, elevation: 12 },
   navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
-  navIcon: { color: '#A69EA4', fontSize: 21, fontWeight: '800' },
-  navLabel: { color: '#9C949A', fontSize: 10, fontWeight: '700' },
+  navIcon: { color: '#87938A', fontSize: 21, fontWeight: '800' },
+  navLabel: { color: '#87938A', fontSize: 10, fontWeight: '700' },
   navActive: { color: P.green },
   searchScreen: { flex: 1, backgroundColor: P.white },
   searchTop: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 10, minHeight: 60, borderBottomWidth: 1, borderColor: P.line },
@@ -2005,7 +2017,7 @@ const st = StyleSheet.create({
   orderDate: { color: P.muted, fontSize: 11 },
   orderAddress: { color: P.ink, fontSize: 13, lineHeight: 19 },
   orderPrice: { color: P.ink, fontSize: 16, fontWeight: '900' },
-  cancelText: { color: '#176344', fontSize: 12, fontWeight: '800' },
+  cancelText: { color: P.green, fontSize: 12, fontWeight: '800' },
   profileCard: { alignItems: 'center', backgroundColor: P.pale, borderRadius: 20, padding: 24, gap: 7 },
   profileAvatar: { width: 68, height: 68, borderRadius: 34, backgroundColor: P.white, alignItems: 'center', justifyContent: 'center', marginBottom: 5 },
   profileAvatarText: { color: P.green, fontSize: 28, fontWeight: '900' },
@@ -2014,14 +2026,14 @@ const st = StyleSheet.create({
   profileRowText: { flex: 1, color: P.ink, fontSize: 14, fontWeight: '700' },
   chevron: { color: P.muted, fontSize: 22 },
   logout: { alignItems: 'center', padding: 16, marginTop: 8 },
-  logoutText: { color: '#176344', fontSize: 14, fontWeight: '800' },
+  logoutText: { color: P.green, fontSize: 14, fontWeight: '800' },
   refreshText: { color: P.green, fontSize: 13, fontWeight: '800', marginBottom: 10 },
   ratingSummary: { color: P.green, fontSize: 12, fontWeight: '800' },
   rateBox: { backgroundColor: '#F6F0E4', borderWidth: 1, borderColor: '#E8DEC9', borderRadius: 14, padding: 12, gap: 8 },
   rateTitle: { color: P.ink, fontSize: 13, fontWeight: '800' },
   rateStars: { flexDirection: 'row', gap: 10 },
   rateStar: { color: '#D8E6D6', fontSize: 30 },
-  rateStarActive: { color: '#F3A72F' },
+  rateStarActive: { color: P.gold },
   rateSubmit: { backgroundColor: P.green, paddingVertical: 11, borderRadius: 12, alignItems: 'center' },
   rateSubmitText: { color: P.white, fontSize: 13, fontWeight: '900' },
   ratingThanks: { color: P.green, fontSize: 12, fontWeight: '800' },
@@ -2044,7 +2056,7 @@ const st = StyleSheet.create({
   passengerDriverPhoto: { width: 62, height: 62, borderRadius: 31, backgroundColor: P.pale },
   passengerDriverPlaceholder: { width: 62, height: 62, borderRadius: 31, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
   passengerDriverInitial: { color: P.green, fontSize: 25, fontWeight: '900' },
-  passengerDriverRating: { color: '#C17A18', fontSize: 13, fontWeight: '900' },
+  passengerDriverRating: { color: P.gold, fontSize: 13, fontWeight: '900' },
   driverPhotoEditorRow: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   driverPhotoPreview: { width: 92, height: 92, borderRadius: 46, backgroundColor: P.pale },
   driverPhotoPlaceholder: { width: 92, height: 92, borderRadius: 46, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
