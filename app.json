@@ -7,7 +7,7 @@
     "userInterfaceStyle": "light",
     "scheme": "ladygo",
     "description": "LadyGo — заказ поездок, поиск ближайших водителей, GPS-сопровождение и поддержка.",
-    "primaryColor": "#E84F87",
+    "primaryColor": "#176344",
     "backgroundColor": "#FFF8F2",
     "icon": "./icon.png",
     "android": {
