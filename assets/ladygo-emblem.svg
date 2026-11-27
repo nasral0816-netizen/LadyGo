@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512">
 <defs>
- <linearGradient id="bg" x2="0" y2="1"><stop stop-color="#FFF9F2"/><stop offset="1" stop-color="#FCE9E6"/></linearGradient>
+ <linearGradient id="bg" x2="0" y2="1"><stop stop-color="#FFF9F2"/><stop offset="1" stop-color="#F6F0E4"/></linearGradient>
  <linearGradient id="gold" x2="1" y2="1"><stop stop-color="#F8D77A"/><stop offset=".48" stop-color="#B98119"/><stop offset="1" stop-color="#F7D77B"/></linearGradient>
  <linearGradient id="hill" x2="0" y2="1"><stop stop-color="#B9D9B3"/><stop offset="1" stop-color="#3C7953"/></linearGradient>
 </defs>
@@ -24,5 +24,5 @@
  <path d="M27 60 L47 60 M239 59 L259 59" stroke="#E3B63E" stroke-width="5"/>
 </g>
 <g fill="#E4B43E"><path d="M410 73 l8 18 18 8 -18 8 -8 18 -8 -18 -18 -8 18 -8Z"/></g>
-<g fill="#F2A5B8"><circle cx="62" cy="376" r="8"/><circle cx="79" cy="365" r="7"/><circle cx="447" cy="365" r="9"/><circle cx="463" cy="377" r="7"/></g>
+<g fill="#C79A38"><circle cx="62" cy="376" r="8"/><circle cx="79" cy="365" r="7"/><circle cx="447" cy="365" r="9"/><circle cx="463" cy="377" r="7"/></g>
 </svg>
