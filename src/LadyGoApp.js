@@ -266,11 +266,12 @@ function formatRussianPhone(value) {
 
 function Field({ label, value, onChangeText, placeholder, onFocus, icon, autoCapitalize = 'sentences' }) {
   return <View style={st.field}>
-    <Text style={st.fieldIcon}>{icon}</Text>
+    <View style={st.fieldIconWrap}><LineIcon name={icon === 'pickup' ? 'navigation' : 'pin'} size={23} color={P.green}/></View>
     <View style={{ flex: 1 }}>
       <Text style={st.fieldLabel}>{label}</Text>
-      <Text numberOfLines={1} style={[st.fieldInput, !value && { color: "#A9A2A7" }]}>{value || placeholder}</Text>
+      <Text numberOfLines={1} style={[st.fieldInput, !value && { color: "#8C918B" }]}>{value || placeholder}</Text>
     </View>
+    <Text style={st.fieldChevron}>›</Text>
   </View>;
 }
 
@@ -1383,7 +1384,7 @@ export default function LadyGoApp() {
   </SafeAreaView>;
 
   return <SafeAreaView style={st.screen}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
-    <View style={st.topbar}><View style={st.brandBlock}><Image source={require('../icon.png')} style={st.topLogo} resizeMode="contain"/><View><Text style={st.logoSmall}>LadyGo</Text><Text style={st.topSub}>Поездки с заботой</Text></View></View>
+    <View style={[st.topbar, tab === 'ride' && st.topbarOverlay]}><View style={st.brandBlock}><Image source={require('../icon.png')} style={st.topLogo} resizeMode="contain"/><View><Text style={st.logoSmall}>LadyGo</Text><Text style={st.topSub}>Поездки с заботой</Text></View></View>
       {profile?.role === 'driver' && <View style={st.modeSwitch}>
         <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><View style={{flexDirection:'row',alignItems:'center',gap:5}}><LineIcon name="pin" size={16} color={tab !== 'driver' ? P.white : P.green}/><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>Пассажир</Text></View></TouchableOpacity>
         <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><View style={{flexDirection:'row',alignItems:'center',gap:5}}><LineIcon name="car" size={17} color={tab === 'driver' ? P.white : P.green}/><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>Водитель</Text></View></TouchableOpacity>
@@ -1396,24 +1397,19 @@ export default function LadyGoApp() {
     {tab === 'ride' && <View style={{ flex: 1 }}>
       <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination} mapHeight={mapHeight}/>
       <ScrollView style={st.sheet} contentContainerStyle={st.sheetContent} keyboardShouldPersistTaps="handled">
-        <View {...mapPanResponder.panHandlers} accessibilityRole="button" accessibilityLabel="Потяните вверх, чтобы уменьшить карту, вниз — чтобы увеличить" style={st.sheetHandleWrap}><View style={st.sheetHandle}/><Text style={st.sheetHandleHint}>Потяните вверх или вниз, чтобы изменить размер карты</Text></View>
-        <View style={st.rowBetween}><Text style={st.heading}>Куда едем?</Text><View style={st.cityPill}><Text style={st.cityPillText}>Кисловодск · КМВ</Text></View></View>
-        <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('pickup'); setQuery(''); }}><Field label="ОТКУДА" value={pickupText} placeholder="Выберите место подачи" icon="●"/></TouchableOpacity>
-        <View style={st.connector}/>
-        <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('destination'); setQuery(''); }}><Field label="КУДА" value={destinationText} placeholder="Введите адрес назначения" icon="●"/></TouchableOpacity>
-        <TouchableOpacity style={st.locateRow} onPress={locate}><LineIcon name="pin" size={20}/><Text style={st.locateRowText}>Определить моё местоположение</Text></TouchableOpacity>
-        {routeInfo && <View style={st.routeMeta}><Text style={st.routeMetaText}>Маршрут {routeInfo.km} км</Text><Text style={st.routeMetaText}>Около {routeInfo.minutes} мин</Text></View>}
-        <Text style={st.sectionTitle}>Выберите услугу</Text>
+        <View {...mapPanResponder.panHandlers} accessibilityRole="button" accessibilityLabel="Потяните вверх или вниз, чтобы изменить размер карты" style={st.sheetHandleWrap}><View style={st.sheetHandle}/></View>
+        <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('pickup'); setQuery(''); }}><Field label="Откуда" value={pickupText} placeholder="Текущее местоположение" icon="pickup"/></TouchableOpacity>
+        <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('destination'); setQuery(''); }}><Field label="Куда" value={destinationText} placeholder="Куда поедем?" icon="pin"/></TouchableOpacity>
         <View style={st.tariffs}>{TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[st.tariff, tariff === t.id && st.tariffSelected]}>
-          <View style={st.tariffIcon}><LineIcon name={t.icon} size={27} color={tariff === t.id ? P.gold : P.green}/></View><Text style={st.tariffName}>{t.name}</Text><Text style={st.tariffSub}>{t.sub}</Text>{(previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
+          <View style={st.tariffIcon}><LineIcon name={t.icon} size={27} color={P.green}/></View><Text style={st.tariffName}>{t.name}</Text>{previewFare && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
         </TouchableOpacity>)}</View>
-        <View style={st.networkHint}><Text style={st.networkHintIcon}>ⓘ</Text><Text style={st.networkHintText}>Если карта или другие сервисы не загружаются, проверь интернет. В сетях с ограничениями попробуй включить VPN.</Text></View>
+        <View style={st.networkHint}><LineIcon name="support" size={22}/><Text style={st.networkHintText}>Если карта или другие сервисы не загружаются, проверьте интернет. Если вы находитесь в сети с ограничениями, попробуйте включить VPN.</Text></View>
         <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>{(previewFare) ? 'Предварительная стоимость' : 'Стоимость поездки'}</Text><Text style={st.priceHint}>{(previewFare) ? 'Расчёт по длине и времени маршрута' : 'Укажи оба адреса для расчёта'}</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
         <Text style={st.sectionTitle}>Способ оплаты</Text>
         <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><View style={st.payIcon}><LineIcon name="cash" size={22}/></View><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
         <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
         <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || busy}>
-          {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
+          {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Рассчитать стоимость</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={st.phoneOrderBtn} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com?subject=Поддержка%20LadyGo')}>
           <Text style={st.phoneOrderText}>✉  Написать в поддержку</Text>
@@ -1841,13 +1837,14 @@ const st = StyleSheet.create({
   authCard: { gap: 14 },
   heading: { color: P.ink, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 },
   authInput: { borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 17, fontSize: 16, color: P.ink, backgroundColor: '#FFFCF6' },
-  primaryBtn: { backgroundColor: P.green, minHeight: 56, borderRadius: 17, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, marginTop: 8 },
+  primaryBtn: { backgroundColor: P.green, minHeight: 60, borderRadius: 23, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, marginTop: 1, elevation: 2 },
   primaryText: { color: P.white, fontSize: 16, fontWeight: '800' },
   phoneOrderBtn: { minHeight: 52, borderRadius: 16, borderWidth: 1.5, borderColor: P.green, backgroundColor: P.white, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
   phoneOrderText: { color: P.green, fontSize: 15, fontWeight: '800' },
   switchText: { color: P.green, textAlign: 'center', fontWeight: '700', padding: 12 },
   footnote: { color: P.muted, fontSize: 11, textAlign: 'center', marginTop: 20 },
   topbar: { height: 76, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: P.white, borderBottomWidth: 1, borderColor: P.line, zIndex: 12, elevation: 3 },
+  topbarOverlay: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: 'transparent', borderBottomWidth: 0, elevation: 0, zIndex: 40 },
   brandBlock: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   topLogo: { width: 54, height: 54, borderRadius: 27, borderWidth: 1, borderColor: P.gold, backgroundColor: P.pale },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -1976,17 +1973,19 @@ const st = StyleSheet.create({
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: P.green },
   mapLabelText: { color: P.ink, fontSize: 12, fontWeight: '700' },
   sheet: { flex: 1, minHeight: 180, backgroundColor: P.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -22, zIndex: 20, elevation: 18, overflow: 'hidden' },
-  sheetContent: { padding: 17, paddingBottom: 28, gap: 13 },
-  sheetHandleWrap: { minHeight: 42, alignItems: 'center', justifyContent: 'center', paddingBottom: 4, zIndex: 21, elevation: 2 },
-  sheetHandleHint: { color: P.muted, fontSize: 9, fontWeight: '700', marginTop: 4 },
-  sheetHandle: { width: 38, height: 4, borderRadius: 3, backgroundColor: '#D8E6D6', alignSelf: 'center', marginBottom: 3 },
+  sheetContent: { paddingHorizontal: 16, paddingTop: 9, paddingBottom: 22, gap: 10 },
+  sheetHandleWrap: { minHeight: 25, alignItems: 'center', justifyContent: 'center', paddingBottom: 2, zIndex: 21, elevation: 2 },
+  sheetHandleHint: { display: 'none' },
+  sheetHandle: { width: 42, height: 5, borderRadius: 4, backgroundColor: '#D8D6D1', alignSelf: 'center', marginBottom: 2 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cityPill: { backgroundColor: P.pale, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20 },
   cityPillText: { color: P.green, fontSize: 11, fontWeight: '800' },
-  field: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#FFFCF6', borderWidth: 1, borderColor: P.line, borderRadius: 16 },
+  field: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 15, paddingVertical: 8, backgroundColor: '#F7F1E8', borderWidth: 0, borderRadius: 24 },
+  fieldIconWrap: { width: 30, alignItems: 'center', justifyContent: 'center' },
+  fieldChevron: { color: P.ink, fontSize: 27, fontWeight: '300', paddingLeft: 5 },
   fieldIcon: { color: P.green, fontSize: 16, fontWeight: '900' },
-  fieldLabel: { color: P.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  fieldInput: { color: P.ink, fontSize: 16, padding: 0, marginTop: 3, minHeight: 25 },
+  fieldLabel: { color: P.ink, fontSize: 15, fontWeight: '800', letterSpacing: 0 },
+  fieldInput: { color: P.muted, fontSize: 13, padding: 0, marginTop: 2, minHeight: 21 },
   connector: { height: 7, width: 1, backgroundColor: '#D8E6D6', marginLeft: 23, marginTop: -12, marginBottom: -12, zIndex: 2 },
   locateRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 5 },
   locateRowIcon: { color: P.green, fontSize: 18 },
@@ -1994,16 +1993,16 @@ const st = StyleSheet.create({
   routeMeta: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#F6F0E4', padding: 11, borderRadius: 12 },
   routeMetaText: { color: P.muted, fontSize: 12, fontWeight: '700' },
   sectionTitle: { color: P.ink, fontSize: 15, fontWeight: '800', marginTop: 6 },
-  tariffs: { flexDirection: 'row', gap: 8 },
-  tariff: { flex: 1, minHeight: 96, borderWidth: 1, borderColor: P.line, borderRadius: 19, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, paddingVertical: 9, gap: 5, backgroundColor: P.white },
+  tariffs: { flexDirection: 'row', gap: 7, marginTop: 1 },
+  tariff: { flex: 1, minHeight: 88, borderWidth: 1, borderColor: P.line, borderRadius: 23, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 7, gap: 5, backgroundColor: '#FBF8F1' },
   tariffSelected: { borderColor: P.gold, backgroundColor: '#F4EBD5', borderWidth: 2, shadowColor: P.gold, shadowOpacity: 0.16, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   tariffIcon: { color: P.green, fontSize: 22, fontWeight: '900' },
   tariffName: { color: P.ink, fontSize: 12, fontWeight: '800', textAlign: 'center' },
   tariffSub: { color: P.muted, fontSize: 9, lineHeight: 12, textAlign: 'center' },
   tariffPrice: { color: P.green, fontSize: 11, fontWeight: '800' },
-  networkHint: { flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: '#EEF4EA', borderWidth: 1, borderColor: '#D9E5D2', borderRadius: 18, padding: 14 },
+  networkHint: { flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: '#EDF4EA', borderWidth: 0, borderRadius: 23, paddingHorizontal: 15, paddingVertical: 13 },
   networkHintIcon: { color: P.green, fontSize: 22, fontWeight: '900' },
-  networkHintText: { flex: 1, color: P.ink, fontSize: 12, lineHeight: 18 },
+  networkHintText: { flex: 1, color: P.ink, fontSize: 12, lineHeight: 17 },
   priceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F6F0E4', borderRadius: 17, padding: 14, gap: 10 },
   priceTitle: { color: P.ink, fontWeight: '800', fontSize: 13 },
   priceHint: { color: P.muted, fontSize: 11, marginTop: 3 },
