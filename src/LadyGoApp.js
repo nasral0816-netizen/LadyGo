@@ -1385,11 +1385,11 @@ export default function LadyGoApp() {
   return <SafeAreaView style={st.screen}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
     <View style={st.topbar}><View style={st.brandBlock}><Image source={require('../icon.png')} style={st.topLogo} resizeMode="contain"/><View><Text style={st.logoSmall}>LadyGo</Text><Text style={st.topSub}>Поездки с заботой</Text></View></View>
       {profile?.role === 'driver' && <View style={st.modeSwitch}>
-        <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>⌖  Пассажир</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}><LineIcon name="car" size={18}/>  Водитель</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><View style={{flexDirection:'row',alignItems:'center',gap:5}}><LineIcon name="pin" size={16} color={tab !== 'driver' ? P.white : P.green}/><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>Пассажир</Text></View></TouchableOpacity>
+        <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><View style={{flexDirection:'row',alignItems:'center',gap:5}}><LineIcon name="car" size={17} color={tab === 'driver' ? P.white : P.green}/><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>Водитель</Text></View></TouchableOpacity>
       </View>}
       {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}>
-        <Text style={[st.adminTopButtonText, tab === 'admin' && st.adminTopButtonTextActive]}>⚙ Админ</Text>
+        <View style={{flexDirection:'row',alignItems:'center',gap:5}}><LineIcon name="gear" size={16} color={tab === 'admin' ? P.white : P.green}/><Text style={[st.adminTopButtonText, tab === 'admin' && st.adminTopButtonTextActive]}>Админ</Text></View>
       </TouchableOpacity>}
       <View style={st.headerActions}><TouchableOpacity style={st.headerAction} onPress={() => setTab('orders')} accessibilityRole="button" accessibilityLabel="Уведомления и поездки"><LineIcon name="bell" size={23}/>{activeOrder ? <View style={st.notificationDot}/> : null}</TouchableOpacity><TouchableOpacity style={st.headerAction} onPress={() => setTab('profile')} accessibilityRole="button" accessibilityLabel="Профиль"><LineIcon name="user" size={23}/></TouchableOpacity></View>
     </View>
@@ -1401,7 +1401,7 @@ export default function LadyGoApp() {
         <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('pickup'); setQuery(''); }}><Field label="ОТКУДА" value={pickupText} placeholder="Выберите место подачи" icon="●"/></TouchableOpacity>
         <View style={st.connector}/>
         <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('destination'); setQuery(''); }}><Field label="КУДА" value={destinationText} placeholder="Введите адрес назначения" icon="●"/></TouchableOpacity>
-        <TouchableOpacity style={st.locateRow} onPress={locate}><Text style={st.locateRowIcon}>◎</Text><Text style={st.locateRowText}>Определить моё местоположение</Text></TouchableOpacity>
+        <TouchableOpacity style={st.locateRow} onPress={locate}><LineIcon name="pin" size={20}/><Text style={st.locateRowText}>Определить моё местоположение</Text></TouchableOpacity>
         {routeInfo && <View style={st.routeMeta}><Text style={st.routeMetaText}>Маршрут {routeInfo.km} км</Text><Text style={st.routeMetaText}>Около {routeInfo.minutes} мин</Text></View>}
         <Text style={st.sectionTitle}>Выберите услугу</Text>
         <View style={st.tariffs}>{TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[st.tariff, tariff === t.id && st.tariffSelected]}>
@@ -1821,7 +1821,7 @@ export default function LadyGoApp() {
       {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}><View style={st.profileRowIcon}><LineIcon name="gear" size={22}/></View><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
       {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><View style={st.profileRowIcon}><LineIcon name="car" size={22}/></View><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}
 
-      <TouchableOpacity style={st.profileRow} onPress={() => { setTab('support'); loadMyTickets(); }}><Text style={st.profileRowIcon}>?</Text><Text style={st.profileRowText}>Поддержка и обращения</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
+      <TouchableOpacity style={st.profileRow} onPress={() => { setTab('support'); loadMyTickets(); }}><View style={st.profileRowIcon}><LineIcon name="support" size={22}/></View><Text style={st.profileRowText}>Поддержка и обращения</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.logout} onPress={signOut}><Text style={st.logoutText}>Выйти из аккаунта</Text></TouchableOpacity>
       <Text style={st.footnote}>LadyGo · 6.9.2 · Создано независимым автором @acyma</Text>
     </ScrollView>}
