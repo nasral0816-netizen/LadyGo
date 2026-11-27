@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - release/green-design
     paths:
       - '**'
       - '!README.md'
@@ -41,6 +42,21 @@ jobs:
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
+      - name: Render LadyGo launcher and adaptive icons
+        run: |
+          python3 -m pip install --quiet cairosvg pillow
+          python3 - <<'PY'
+          import cairosvg
+          from PIL import Image
+          cairosvg.svg2png(url='assets/ladygo-emblem.svg', write_to='icon.png', output_width=1024, output_height=1024)
+          cairosvg.svg2png(url='assets/ladygo-emblem.svg', write_to='/tmp/ladygo-adaptive.png', output_width=720, output_height=720)
+          foreground = Image.new('RGBA', (1024, 1024), (0, 0, 0, 0))
+          emblem = Image.open('/tmp/ladygo-adaptive.png').convert('RGBA')
+          foreground.alpha_composite(emblem, ((1024-emblem.width)//2, (1024-emblem.height)//2))
+          foreground.save('adaptive-icon.png')
+          print('LadyGo launcher/adaptive icons rendered')
+          PY
 
       - name: Generate Android project
         run: CI=1 npx expo prebuild --platform android
