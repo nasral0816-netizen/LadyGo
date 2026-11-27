@@ -205,8 +205,8 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
       </Marker>}
     </YandexMapView>
     <View style={st.mapControls}>
-      <TouchableOpacity style={st.locateButton} onPress={handleLocate}>
-        <Text style={st.locateButtonText}>◎  Определить местоположение</Text>
+      <TouchableOpacity style={st.locateButton} onPress={handleLocate} accessibilityRole="button" accessibilityLabel="Определить местоположение">
+        <Text style={st.locateButtonText}>➤</Text>
       </TouchableOpacity>
       <View style={st.mapControlRow}>
         <TouchableOpacity style={[st.mapControl, is3D && st.mapControlActive]} onPress={() => {
@@ -1941,10 +1941,10 @@ const st = StyleSheet.create({
   chatSendText: { color: P.white, fontSize: 19, fontWeight: '900' },
   avatarText: { color: P.green, fontWeight: '900', fontSize: 16 },
   map: { flexShrink: 0, backgroundColor: '#E7EDE5', zIndex: 0, elevation: 0, overflow: 'hidden' },
-  mapControls: { position: 'absolute', left: 9, bottom: 12, gap: 6, alignItems: 'flex-start' },
-  locateButton: { height: 34, paddingHorizontal: 10, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.97)', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
-  locateButtonText: { color: P.green, fontSize: 11, fontWeight: '800' },
-  mapControlRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  mapControls: { position: 'absolute', right: 12, bottom: 14, gap: 7, alignItems: 'flex-end' },
+  locateButton: { width: 46, height: 46, borderRadius: 16, backgroundColor: P.white, justifyContent: 'center', alignItems: 'center', elevation: 4, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
+  locateButtonText: { color: P.green, fontSize: 22, fontWeight: '900' },
+  mapControlRow: { flexDirection: 'column', gap: 6, alignItems: 'center' },
   mapControl: { width: 34, height: 34, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.96)', alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
   mapControlActive: { backgroundColor: P.green },
   mapControlText: { color: P.ink, fontSize: 19, fontWeight: '800', lineHeight: 23 },
