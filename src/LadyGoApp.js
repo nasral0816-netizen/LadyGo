@@ -132,8 +132,8 @@ const P = {
 const TARIFFS = [
   // Сохраняем тарифные ID для совместимости с действующим сервисом расчёта цены.
   { id: 'economy', name: 'Женский', sub: 'Поездки для женщин', icon: '♀' },
-  { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '♡' },
-  { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '⌂' }
+  { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '♧' },
+  { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '▣' }
 ];
 const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Ищем водителя', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
@@ -1903,7 +1903,7 @@ export default function LadyGoApp() {
         {routeInfo && <View style={st.routeMeta}><Text style={st.routeMetaText}>Маршрут {routeInfo.km} км</Text><Text style={st.routeMetaText}>Около {routeInfo.minutes} мин</Text></View>}
         <Text style={st.sectionTitle}>Выберите тариф</Text>
         <View style={st.tariffs}>{TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[st.tariff, tariff === t.id && st.tariffSelected]}>
-          <Text style={st.tariffIcon}>{t.icon}</Text><Text style={st.tariffName}>{t.name}</Text>{(previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
+          <Text style={st.tariffIcon}>{t.icon}</Text><Text style={st.tariffName}>{t.name}</Text><Text style={st.tariffSub}>{t.sub}</Text>{(previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
         </TouchableOpacity>)}</View>
         <View style={st.priceCard}>
           <View style={{ flex: 1 }}>
@@ -2508,10 +2508,11 @@ const st = StyleSheet.create({
   routeMetaText: { color: P.muted, fontSize: 12, fontWeight: '700' },
   sectionTitle: { color: P.ink, fontSize: 15, fontWeight: '800', marginTop: 6 },
   tariffs: { flexDirection: 'row', gap: 8 },
-  tariff: { flex: 1, minHeight: 80, borderWidth: 1, borderColor: P.line, borderRadius: 14, alignItems: 'center', justifyContent: 'center', padding: 7, gap: 5, backgroundColor: P.white },
-  tariffSelected: { borderColor: P.pink, backgroundColor: P.pale },
-  tariffIcon: { color: P.pink, fontSize: 20, fontWeight: '900' },
-  tariffName: { color: P.ink, fontSize: 12, fontWeight: '800' },
+  tariff: { flex: 1, minHeight: 108, borderWidth: 1, borderColor: P.line, borderRadius: 17, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, paddingVertical: 9, gap: 5, backgroundColor: P.white },
+  tariffSelected: { borderColor: P.gold, backgroundColor: '#FFF9EF', borderWidth: 1.6 },
+  tariffIcon: { color: P.green, fontSize: 22, fontWeight: '900' },
+  tariffName: { color: P.ink, fontSize: 12, fontWeight: '800', textAlign: 'center' },
+  tariffSub: { color: P.muted, fontSize: 9, lineHeight: 12, textAlign: 'center' },
   tariffPrice: { color: P.pinkDark, fontSize: 11, fontWeight: '800' },
   priceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FAF7F8', borderRadius: 15, padding: 14, gap: 10 },
   priceTitle: { color: P.ink, fontWeight: '800', fontSize: 13 },
