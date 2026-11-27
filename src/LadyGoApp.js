@@ -341,8 +341,8 @@ function Field({ label, value, onChangeText, placeholder, onFocus, icon, autoCap
 
 function NetworkHint() {
   return (
-    <View style={{ marginHorizontal: 14, marginTop: 8, marginBottom: 6, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 11, backgroundColor: '#FFF0F5', borderWidth: 1, borderColor: '#F5D6E2' }}>
-      <Text style={{ color: '#8F315A', fontSize: 11, lineHeight: 16, textAlign: 'center' }}>
+    <View style={{ marginHorizontal: 14, marginTop: 8, marginBottom: 6, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 11, backgroundColor: '#F0F5EC', borderWidth: 1, borderColor: '#D8E6D6' }}>
+      <Text style={{ color: '#176344', fontSize: 11, lineHeight: 16, textAlign: 'center' }}>
         Если приложение, карта или сервисы не загружаются, проверьте интернет. Если вы находитесь в сети с ограничениями, попробуйте включить VPN и повторить попытку.
       </Text>
     </View>
@@ -680,7 +680,7 @@ export default function LadyGoApp() {
             foregroundService: {
               notificationTitle: 'LadyGo — вы на линии',
               notificationBody: 'Обновляем местоположение, чтобы получать заказы рядом.',
-              notificationColor: '#E84F87'
+              notificationColor: '#176344'
             }
           });
         }
@@ -1977,10 +1977,10 @@ export default function LadyGoApp() {
             <Text style={st.orderAddress}>●  {o.pickup_address}</Text>
             <Text style={st.orderAddress}>●  {o.destination_address}</Text>
             {o.localPresentation && o.virtual_driver && <>
-              <View style={{ marginTop: 12, padding: 13, borderRadius: 14, backgroundColor: '#FFF7FA', borderWidth: 1, borderColor: '#F4C6D7', gap: 8 }}>
+              <View style={{ marginTop: 12, padding: 13, borderRadius: 14, backgroundColor: '#F8F5EC', borderWidth: 1, borderColor: '#E8DEC9', gap: 8 }}>
                 <Text style={{ color: P.pinkDark, fontSize: 11, fontWeight: '900' }}>ТЕСТОВАЯ КАРТОЧКА ВОДИТЕЛЯ</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#F7D8E4', alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#F0E8D8', alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ color: P.pinkDark, fontSize: 20, fontWeight: '900' }}>В</Text>
                   </View>
                   <View style={{ flex: 1 }}>
@@ -1990,7 +1990,7 @@ export default function LadyGoApp() {
                 </View>
                 <Text style={{ color: P.ink, fontWeight: '800' }}>Lada Granta · белая</Text>
                 <Text style={{ color: P.muted, fontSize: 12 }}>А000АА 26 · условный номер</Text>
-                <View style={{ height: 1, backgroundColor: '#F0DCE4', marginVertical: 3 }} />
+                <View style={{ height: 1, backgroundColor: '#E8DEC9', marginVertical: 3 }} />
                 <Text style={{ color: P.ink, fontWeight: '800' }}>Состояние поездки</Text>
                 {[
                   ['accepted', 'Водитель принял заказ'],
@@ -2204,7 +2204,7 @@ export default function LadyGoApp() {
             {driverLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.driverRefreshText}>↻</Text>}
           </TouchableOpacity>
         </View>
-        <View style={[st.driverModeHint, { backgroundColor: driverOnline ? '#EAF8F1' : '#F7F5F6', borderColor: driverOnline ? '#B9E5D0' : P.line }]}>
+        <View style={[st.driverModeHint, { backgroundColor: driverOnline ? '#EAF8F1' : '#F6F0E4', borderColor: driverOnline ? '#B9E5D0' : P.line }]}>
           <Text style={st.driverModeIcon}>🚘</Text>
           <View style={{flex:1}}>
             <Text style={st.driverModeTitle}>{driverOnline ? 'Вы на линии' : 'Вы не на линии'}</Text>
@@ -2369,25 +2369,25 @@ const st = StyleSheet.create({
   logoSmall: { color: P.green, fontSize: 25, fontWeight: '900', letterSpacing: -1 },
   topSub: { color: P.muted, fontSize: 10, marginTop: -2 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
-  modeSwitch: { flexDirection: 'row', backgroundColor: '#F3EEF1', borderRadius: 16, padding: 4, gap: 3, borderWidth: 1, borderColor: '#EDE5E9', flexShrink: 1 },
+  modeSwitch: { flexDirection: 'row', backgroundColor: '#F6F0E4', borderRadius: 16, padding: 4, gap: 3, borderWidth: 1, borderColor: '#E8DEC9', flexShrink: 1 },
   modeOption: { paddingHorizontal: 9, paddingVertical: 9, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   modeOptionActive: { backgroundColor: P.green, elevation: 2, shadowColor: P.green, shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
   modeText: { color: P.muted, fontSize: 10, fontWeight: '900' },
   modeTextActive: { color: P.white },
-  adminTopButton: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, backgroundColor: P.pale, borderWidth: 1, borderColor: '#F5C7D8' },
+  adminTopButton: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, backgroundColor: P.pale, borderWidth: 1, borderColor: '#E8DEC9' },
   adminTopButtonActive: { backgroundColor: P.pink, borderColor: P.pink },
   adminTopButtonText: { color: P.pinkDark, fontSize: 12, fontWeight: '900' },
   adminTopButtonTextActive: { color: P.white },
   adminRefresh: { width: 42, height: 42, borderRadius: 14, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
   adminRefreshText: { color: P.pinkDark, fontSize: 25, fontWeight: '900' },
   adminStats: { flexDirection: 'row', gap: 9 },
-  adminStat: { flex: 1, backgroundColor: '#FAF6F8', borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 13, gap: 5 },
+  adminStat: { flex: 1, backgroundColor: '#F8F5EC', borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 13, gap: 5 },
   adminStatValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
   adminStatLabel: { color: P.muted, fontSize: 10, fontWeight: '800' },
-  adminHero: { flexDirection:'row', alignItems:'center', gap:12, backgroundColor:'#FFF5F8', borderWidth:1, borderColor:'#F5D8E3', borderRadius:20, padding:16 },
+  adminHero: { flexDirection:'row', alignItems:'center', gap:12, backgroundColor:'#F6F0E4', borderWidth:1, borderColor:'#E8DEC9', borderRadius:20, padding:16 },
   adminEyebrow: { color:P.pinkDark, fontSize:9, fontWeight:'900', letterSpacing:1.2, marginBottom:5 },
   adminTabs: { flexDirection:'row', gap:7, flexWrap:'wrap' },
-  adminTab: { paddingHorizontal:12, paddingVertical:11, borderRadius:13, backgroundColor:'#F5F1F3', borderWidth:1, borderColor:P.line },
+  adminTab: { paddingHorizontal:12, paddingVertical:11, borderRadius:13, backgroundColor:'#F6F0E4', borderWidth:1, borderColor:P.line },
   adminTabActive: { backgroundColor:P.green, borderColor:P.green },
   adminTabText: { color:P.muted, fontSize:11, fontWeight:'800' },
   adminTabTextActive: { color:P.white },
@@ -2396,7 +2396,7 @@ const st = StyleSheet.create({
   adminDetail: { color:P.ink, fontSize:12, lineHeight:17 },
   adminDate: { color:P.muted, fontSize:10 },
   adminStatus: { overflow:'hidden', borderRadius:20, paddingHorizontal:9, paddingVertical:6, fontSize:10, fontWeight:'900' },
-  adminStatusPending: { backgroundColor:'#FFF0D7', color:'#8A5A00' },
+  adminStatusPending: { backgroundColor:'#F6F0E4', color:'#8A5A00' },
   adminStatusApproved: { backgroundColor:'#E5F6EC', color:'#247448' },
   adminStatusRejected: { backgroundColor:'#FCE8EC', color:'#A8324C' },
   adminPhotoRow: { flexDirection:'row', gap:10, flexWrap:'wrap', alignItems:'center' },
@@ -2407,18 +2407,18 @@ const st = StyleSheet.create({
   adminReject: { flex:1, minHeight:44, borderRadius:13, backgroundColor:'#FFF0F3', borderWidth:1, borderColor:'#F2C6D2', alignItems:'center', justifyContent:'center' },
   adminActionText: { color:'#FFFFFF', fontWeight:'900', fontSize:12 },
   adminRejectText: { color:'#B63254', fontWeight:'900', fontSize:12 },
-  applicationStatusCard: { backgroundColor:'#FFF5F8', borderRadius:16, padding:15, gap:6, borderWidth:1, borderColor:'#F5D8E3' },
+  applicationStatusCard: { backgroundColor:'#F6F0E4', borderRadius:16, padding:15, gap:6, borderWidth:1, borderColor:'#E8DEC9' },
   applicationStatusTitle: { color:P.pinkDark, fontWeight:'900', fontSize:14 },
   applicationPhotoButton: { flex:1, minHeight:52, padding:10, borderRadius:13, backgroundColor:P.pale, alignItems:'center', justifyContent:'center' },
   applicationPhotoText: { color:P.pinkDark, fontSize:11, fontWeight:'900', textAlign:'center' },
-  adultConfirm: { padding:14, borderRadius:14, backgroundColor:'#F7F4F6', borderWidth:1, borderColor:P.line },
+  adultConfirm: { padding:14, borderRadius:14, backgroundColor:'#F6F0E4', borderWidth:1, borderColor:P.line },
   adultConfirmText: { color:P.ink, fontSize:13, fontWeight:'800' },
   driverHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   driverEyebrow: { color: P.pinkDark, fontSize: 9, fontWeight: '900', letterSpacing: 1.3, marginBottom: 5 },
   driverSubtitle: { color: P.muted, fontSize: 12, lineHeight: 17, marginTop: -2 },
   driverRefresh: { width: 44, height: 44, borderRadius: 15, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
   driverRefreshText: { color: P.pinkDark, fontSize: 26, fontWeight: '900' },
-  driverModeHint: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, borderRadius: 17, backgroundColor: '#FFF5F8', borderWidth: 1, borderColor: '#F6D8E3' },
+  driverModeHint: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, borderRadius: 17, backgroundColor: '#F6F0E4', borderWidth: 1, borderColor: '#E8DEC9' },
   driverModeIcon: { fontSize: 24 },
   driverModeTitle: { color: P.ink, fontSize: 13, fontWeight: '900' },
   driverModeSub: { color: P.muted, fontSize: 10, marginTop: 3 },
@@ -2427,16 +2427,16 @@ const st = StyleSheet.create({
   shiftButtonOff: { backgroundColor: P.pink },
   shiftButtonText: { color: P.white, fontSize: 15, fontWeight: '900' },
   driverStatsGrid: { flexDirection: 'row', gap: 8 },
-  driverStatCard: { flex: 1, backgroundColor: '#FAF7F9', borderWidth: 1, borderColor: P.line, borderRadius: 15, padding: 12, gap: 7 },
+  driverStatCard: { flex: 1, backgroundColor: '#F8F5EC', borderWidth: 1, borderColor: P.line, borderRadius: 15, padding: 12, gap: 7 },
   driverStatValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
   driverStatLabel: { color: P.muted, fontSize: 9, fontWeight: '800', lineHeight: 13 },
   driverEarningsCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#211B20', borderRadius: 18, padding: 16 },
-  driverEarningsLabel: { color: '#E9DDE3', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  driverEarningsLabel: { color: '#D8E6D6', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
   driverEarningsValue: { color: P.white, fontSize: 25, fontWeight: '900', marginTop: 5 },
-  driverEarningsNote: { color: '#C5B8C0', fontSize: 10, marginTop: 2 },
-  driverEarningsIcon: { color: '#F6A9C5', fontSize: 36, fontWeight: '900', paddingHorizontal: 8 },
+  driverEarningsNote: { color: '#9DAE9E', fontSize: 10, marginTop: 2 },
+  driverEarningsIcon: { color: '#C79A38', fontSize: 36, fontWeight: '900', paddingHorizontal: 8 },
   driverTabs: { gap: 7, paddingVertical: 2 },
-  driverTab: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 13, backgroundColor: '#F6F3F5', borderWidth: 1, borderColor: '#EEE8EC' },
+  driverTab: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 13, backgroundColor: '#F6F0E4', borderWidth: 1, borderColor: '#E8DEC9' },
   driverTabActive: { backgroundColor: P.pink, borderColor: P.pink },
   driverTabText: { color: P.muted, fontSize: 11, fontWeight: '800' },
   driverTabTextActive: { color: P.white },
@@ -2444,8 +2444,8 @@ const st = StyleSheet.create({
   driverSecondaryText: { color: P.pinkDark, fontSize: 12, fontWeight: '900' },
   driverOrderCard: { borderWidth: 1, borderColor: P.line, borderRadius: 19, padding: 15, gap: 13, backgroundColor: P.white },
   driverStatusPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
-  driverStatusNew: { backgroundColor: '#FFF1D9' },
-  driverStatusActive: { backgroundColor: '#FCE5EE' },
+  driverStatusNew: { backgroundColor: '#F6F0E4' },
+  driverStatusActive: { backgroundColor: '#F6F0E4' },
   driverStatusDone: { backgroundColor: '#E6F5EE' },
   driverStatusText: { color: P.ink, fontSize: 10, fontWeight: '900' },
   driverRouteBlock: { flexDirection: 'row', gap: 12, paddingVertical: 3 },
@@ -2455,16 +2455,16 @@ const st = StyleSheet.create({
   driverRouteDotEnd: { width: 9, height: 9, borderRadius: 5, backgroundColor: P.pink },
   driverRouteCaption: { color: P.muted, fontSize: 9, fontWeight: '900', letterSpacing: 0.8, marginBottom: 3 },
   driverRouteAddress: { color: P.ink, fontSize: 13, lineHeight: 19, fontWeight: '600' },
-  driverOrderMeta: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderColor: '#F1EDF0', paddingTop: 11 },
+  driverOrderMeta: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderColor: '#E8DEC9', paddingTop: 11 },
   driverOrderPrice: { color: P.pinkDark, fontSize: 17, fontWeight: '900' },
   driverOrderPayment: { color: P.ink, fontSize: 12, fontWeight: '800' },
   driverActions: { gap: 8 },
-  chatCard: { backgroundColor: '#FFFAFC', borderWidth: 1, borderColor: '#F4DCE6', borderRadius: 18, padding: 13, gap: 10 },
+  chatCard: { backgroundColor: '#FFFAFC', borderWidth: 1, borderColor: '#E8DEC9', borderRadius: 18, padding: 13, gap: 10 },
   chatHint: { color: P.muted, fontSize: 10, fontWeight: '700' },
   chatMessages: { maxHeight: 230, minHeight: 90 },
   chatEmpty: { color: P.muted, fontSize: 13, textAlign: 'center', padding: 18, lineHeight: 19 },
   chatBubble: { maxWidth: '86%', borderRadius: 15, padding: 10, marginVertical: 4, gap: 3 },
-  chatMine: { alignSelf: 'flex-end', backgroundColor: '#FCE5EE', borderBottomRightRadius: 5 },
+  chatMine: { alignSelf: 'flex-end', backgroundColor: '#F6F0E4', borderBottomRightRadius: 5 },
   chatOther: { alignSelf: 'flex-start', backgroundColor: '#F1EEF0', borderBottomLeftRadius: 5 },
   chatSender: { color: P.pinkDark, fontSize: 10, fontWeight: '900' },
   chatMessage: { color: P.ink, fontSize: 14, lineHeight: 19 },
@@ -2504,17 +2504,17 @@ const st = StyleSheet.create({
   locateRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 5 },
   locateRowIcon: { color: P.pink, fontSize: 18 },
   locateRowText: { color: P.pinkDark, fontSize: 13, fontWeight: '700' },
-  routeMeta: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#F8F6F7', padding: 11, borderRadius: 12 },
+  routeMeta: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#FFFCF6', padding: 11, borderRadius: 12 },
   routeMetaText: { color: P.muted, fontSize: 12, fontWeight: '700' },
   sectionTitle: { color: P.ink, fontSize: 15, fontWeight: '800', marginTop: 6 },
   tariffs: { flexDirection: 'row', gap: 8 },
   tariff: { flex: 1, minHeight: 108, borderWidth: 1, borderColor: P.line, borderRadius: 17, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, paddingVertical: 9, gap: 5, backgroundColor: P.white },
-  tariffSelected: { borderColor: P.gold, backgroundColor: '#FFF9EF', borderWidth: 1.6 },
+  tariffSelected: { borderColor: P.gold, backgroundColor: '#F6F0E4', borderWidth: 1.6 },
   tariffIcon: { color: P.green, fontSize: 22, fontWeight: '900' },
   tariffName: { color: P.ink, fontSize: 12, fontWeight: '800', textAlign: 'center' },
   tariffSub: { color: P.muted, fontSize: 9, lineHeight: 12, textAlign: 'center' },
   tariffPrice: { color: P.pinkDark, fontSize: 11, fontWeight: '800' },
-  priceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FAF7F8', borderRadius: 15, padding: 14, gap: 10 },
+  priceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F5EC', borderRadius: 15, padding: 14, gap: 10 },
   priceTitle: { color: P.ink, fontWeight: '800', fontSize: 13 },
   priceHint: { color: P.muted, fontSize: 11, marginTop: 3 },
   priceValue: { color: P.pinkDark, fontWeight: '900', fontSize: 19 },
@@ -2535,14 +2535,14 @@ const st = StyleSheet.create({
   back: { color: P.pink, fontSize: 34, lineHeight: 38 },
   searchInput: { flex: 1, fontSize: 17, color: P.ink, paddingVertical: 12 },
   clear: { color: P.muted, fontSize: 26, paddingHorizontal: 5 },
-  suggestion: { flexDirection: 'row', gap: 12, alignItems: 'center', paddingHorizontal: 17, paddingVertical: 15, borderBottomWidth: 1, borderColor: '#F3EFF1' },
+  suggestion: { flexDirection: 'row', gap: 12, alignItems: 'center', paddingHorizontal: 17, paddingVertical: 15, borderBottomWidth: 1, borderColor: '#F6F0E4' },
   suggestionIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
   suggestionTitle: { color: P.ink, fontSize: 15, fontWeight: '700' },
   suggestionSub: { color: P.muted, fontSize: 12, marginTop: 3 },
   empty: { color: P.muted, textAlign: 'center', padding: 25, lineHeight: 21 },
   pageContent: { padding: 18, gap: 13, paddingBottom: 28 },
   pageTitle: { color: P.ink, fontSize: 27, fontWeight: '900', marginBottom: 5 },
-  emptyCard: { alignItems: 'center', padding: 28, backgroundColor: '#FAF8F9', borderRadius: 20, gap: 10 },
+  emptyCard: { alignItems: 'center', padding: 28, backgroundColor: '#FFFCF6', borderRadius: 20, gap: 10 },
   emptyIcon: { color: P.pink, fontSize: 38 },
   muted: { color: P.muted, fontSize: 13, lineHeight: 19, textAlign: 'center' },
   orderCard: { borderWidth: 1, borderColor: P.line, borderRadius: 17, padding: 15, gap: 10, backgroundColor: P.white },
@@ -2562,7 +2562,7 @@ const st = StyleSheet.create({
   logoutText: { color: '#C23F5B', fontSize: 14, fontWeight: '800' },
   refreshText: { color: P.pinkDark, fontSize: 13, fontWeight: '800', marginBottom: 10 },
   ratingSummary: { color: P.pinkDark, fontSize: 12, fontWeight: '800' },
-  rateBox: { backgroundColor: '#FFF5F8', borderWidth: 1, borderColor: '#F5D6E2', borderRadius: 14, padding: 12, gap: 8 },
+  rateBox: { backgroundColor: '#F6F0E4', borderWidth: 1, borderColor: '#F5D6E2', borderRadius: 14, padding: 12, gap: 8 },
   rateTitle: { color: P.ink, fontSize: 13, fontWeight: '800' },
   rateStars: { flexDirection: 'row', gap: 10 },
   rateStar: { color: '#D8CFD4', fontSize: 30 },
@@ -2570,7 +2570,7 @@ const st = StyleSheet.create({
   rateSubmit: { backgroundColor: P.pink, paddingVertical: 11, borderRadius: 12, alignItems: 'center' },
   rateSubmitText: { color: P.white, fontSize: 13, fontWeight: '900' },
   ratingThanks: { color: P.green, fontSize: 12, fontWeight: '800' },
-  ratingDriverCard: { backgroundColor: '#FFF5F8', borderColor: '#F5D6E2', borderWidth: 1, borderRadius: 16, padding: 14, gap: 5 },
+  ratingDriverCard: { backgroundColor: '#F6F0E4', borderColor: '#F5D6E2', borderWidth: 1, borderRadius: 16, padding: 14, gap: 5 },
   ratingDriverLabel: { color: P.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   ratingDriverValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
   ratingDriverCount: { color: P.muted, fontSize: 12, fontWeight: '700' },
