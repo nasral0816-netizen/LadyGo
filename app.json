@@ -2,20 +2,20 @@
   "expo": {
     "name": "LadyGo",
     "slug": "guga",
-    "version": "6.9.1",
+    "version": "6.9.2",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "ladygo",
     "description": "LadyGo — заказ поездок, поиск ближайших водителей, GPS-сопровождение и поддержка.",
-    "primaryColor": "#E85D91",
-    "backgroundColor": "#E65B8A",
+    "primaryColor": "#176344",
+    "backgroundColor": "#F6F0E4",
     "icon": "./icon.png",
     "android": {
       "package": "com.ladygo.app",
-      "versionCode": 52,
+      "versionCode": 53,
       "adaptiveIcon": {
         "foregroundImage": "./adaptive-icon.png",
-        "backgroundColor": "#E80B87"
+        "backgroundColor": "#F6F0E4"
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
@@ -61,6 +61,12 @@
       "eas": {
         "projectId": "95ac82ec-010d-4770-9aba-9f52878e1b3b"
       }
+    },
+    "splash": {
+      "image": "./icon.png",
+      "imageWidth": 200,
+      "resizeMode": "contain",
+      "backgroundColor": "#F6F0E4"
     }
   }
 }

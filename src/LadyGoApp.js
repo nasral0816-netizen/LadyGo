@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Platform, SafeAreaView, ScrollView,
+  ActivityIndicator, Alert, Animated, BackHandler, Dimensions, Keyboard, Linking, Platform, SafeAreaView, ScrollView, PanResponder,
   StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image
 } from 'react-native';
 import { YandexMapView, Marker, Polyline, geocodeAddress, findDrivingRoutes } from 'expo-yandex-mapkit';
@@ -10,6 +10,29 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import * as TaskManager from 'expo-task-manager';
 import { supabase } from './supabase';
+
+
+function LineIcon({ name, size = 24, color = '#176344' }) {
+  const scale = size / 24;
+  const box = { width: size, height: size, alignItems: 'center', justifyContent: 'center' };
+  const stroke = { borderColor: color, borderWidth: Math.max(1.4, 1.8 * scale) };
+  const shape = (width, height, extra = {}) => ({ width: width * scale, height: height * scale, ...stroke, ...extra });
+  const dot = (diameter, extra = {}) => ({ width: diameter * scale, height: diameter * scale, borderRadius: diameter * scale, ...stroke, ...extra });
+  const fill = { backgroundColor: color };
+  if (name === 'bell') return <View style={box}><View style={shape(15, 15, { borderTopLeftRadius: 9 * scale, borderTopRightRadius: 9 * scale, borderBottomLeftRadius: 4 * scale, borderBottomRightRadius: 4 * scale, borderBottomWidth: 0, marginTop: 1 * scale })}/><View style={{ width: 19 * scale, height: 2 * scale, backgroundColor: color, marginTop: -1 * scale, borderRadius: 2 }}/><View style={{ width: 5 * scale, height: 3 * scale, backgroundColor: color, borderRadius: 3, marginTop: 2 * scale }}/></View>;
+  if (name === 'user') return <View style={box}><View style={dot(8, { marginBottom: 2 * scale })}/><View style={shape(17, 9, { borderTopLeftRadius: 10 * scale, borderTopRightRadius: 10 * scale, borderBottomWidth: 0, marginTop: 1 * scale })}/></View>;
+  if (name === 'car') return <View style={box}><View style={shape(17, 8, { borderTopLeftRadius: 7 * scale, borderTopRightRadius: 7 * scale, borderBottomWidth: 0, marginBottom: -1 * scale })}/><View style={shape(21, 8, { borderRadius: 4 * scale })}/><View style={{ flexDirection: 'row', width: 17 * scale, justifyContent: 'space-between', marginTop: -2 * scale }}><View style={{ width: 4 * scale, height: 4 * scale, borderRadius: 3, backgroundColor: color }}/><View style={{ width: 4 * scale, height: 4 * scale, borderRadius: 3, backgroundColor: color }}/></View></View>;
+  if (name === 'child') return <View style={box}><View style={dot(12, { marginBottom: 1 * scale })}/><View style={shape(13, 7, { borderTopLeftRadius: 8 * scale, borderTopRightRadius: 8 * scale, borderBottomWidth: 0 })}/></View>;
+  if (name === 'parcel') return <View style={box}><View style={shape(17, 17, { borderRadius: 2 * scale })}/><View style={{ position: 'absolute', width: 11 * scale, height: 1.5 * scale, backgroundColor: color, top: 5 * scale, transform: [{ rotate: '25deg' }] }}/><View style={{ position: 'absolute', width: 1.5 * scale, height: 9 * scale, backgroundColor: color, top: 5 * scale }}/></View>;
+  if (name === 'navigation') return <View style={box}><View style={{ width: 0, height: 0, borderLeftWidth: 9 * scale, borderRightWidth: 9 * scale, borderBottomWidth: 21 * scale, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: color, transform: [{ rotate: '38deg' }] }}/><View style={{ position: 'absolute', width: 4 * scale, height: 4 * scale, borderRadius: 3, backgroundColor: '#F6F0E4', top: 10 * scale, left: 10 * scale }}/></View>;
+  if (name === 'pin') return <View style={box}><View style={{ width: 15 * scale, height: 15 * scale, borderRadius: 10 * scale, borderWidth: 2 * scale, borderColor: color, alignItems: 'center', justifyContent: 'center', marginTop: -4 * scale }}><View style={{ width: 4 * scale, height: 4 * scale, borderRadius: 3, backgroundColor: color }}/></View><View style={{ width: 9 * scale, height: 9 * scale, borderRightWidth: 2 * scale, borderBottomWidth: 2 * scale, borderColor: color, transform: [{ rotate: '45deg' }], marginTop: -6 * scale }}/></View>;
+  if (name === 'chat') return <View style={box}><View style={shape(19, 14, { borderRadius: 6 * scale, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 * scale })}><View style={dot(2, { backgroundColor: color })}/><View style={dot(2, { backgroundColor: color })}/><View style={dot(2, { backgroundColor: color })}/></View><View style={{ width: 5 * scale, height: 5 * scale, borderLeftWidth: 1.6 * scale, borderBottomWidth: 1.6 * scale, borderColor: color, transform: [{ rotate: '-12deg' }], alignSelf: 'flex-start', marginLeft: 5 * scale, marginTop: -1 * scale }}/></View>;
+  if (name === 'cash') return <View style={box}><View style={shape(21, 14, { borderRadius: 2 * scale, alignItems: 'center', justifyContent: 'center' })}><View style={{ width: 6 * scale, height: 6 * scale, borderRadius: 4 * scale, borderWidth: 1.4 * scale, borderColor: color }}/></View><View style={{ position: 'absolute', width: 15 * scale, height: 1.3 * scale, backgroundColor: color, top: 5 * scale }}/></View>;
+  if (name === 'female') return <View style={box}><View style={{ width: 13 * scale, height: 13 * scale, borderRadius: 8 * scale, borderWidth: 2 * scale, borderColor: color, marginTop: -4 * scale }}/><View style={{ width: 2 * scale, height: 7 * scale, backgroundColor: color }}/><View style={{ width: 8 * scale, height: 2 * scale, backgroundColor: color, marginTop: -1 * scale }}/></View>;
+  if (name === 'support') return <View style={box}><View style={shape(18, 18, { borderRadius: 10 * scale, alignItems: 'center', justifyContent: 'center' })}><View style={{ width: 2 * scale, height: 7 * scale, backgroundColor: color, borderRadius: 2 }}/><View style={{ width: 2 * scale, height: 2 * scale, backgroundColor: color, borderRadius: 2, marginTop: 2 * scale }}/></View></View>;
+  if (name === 'gear') return <View style={box}><View style={dot(13, { alignItems: 'center', justifyContent: 'center' })}><View style={dot(5, { borderWidth: 1.4 * scale })}/></View>{[0,45,90,135].map(a=><View key={a} style={{ position: 'absolute', width: 3 * scale, height: 7 * scale, backgroundColor: color, borderRadius: 2, transform: [{ rotate: a + 'deg' }] }}/>)}</View>;
+  return <View style={box}><View style={dot(15)}/></View>;
+}
 
 function calculatePolylineKm(points) {
   const toRad = value => value * Math.PI / 180;
@@ -92,15 +115,15 @@ TaskManager.defineTask(LADYGO_DRIVER_LOCATION_TASK, async ({ data, error }) => {
 });
 
 const P = {
-  pink: '#E84F87', pinkDark: '#C93670', pale: '#FFF0F5', ink: '#19171B',
-  muted: '#817A80', line: '#ECE8EB', white: '#FFFFFF', green: '#16845B',
+  green: '#176344', gold: '#C79A38', pale: '#F6F0E4', ink: '#1F2923',
+  muted: '#756F63', line: '#E8DEC9', white: '#FFFCF6',
   map: 'https://tiles.openfreemap.org/styles/liberty'
 };
 const TARIFFS = [
   // Сохраняем тарифные ID для совместимости с действующим сервисом расчёта цены.
-  { id: 'economy', name: 'Женский', sub: 'Поездки для женщин', icon: '♀' },
-  { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '♡' },
-  { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '⌂' }
+  { id: 'economy', name: 'Женский', sub: 'Поездки для женщин', icon: 'female' },
+  { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: 'child' },
+  { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: 'parcel' }
 ];
 const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Ищем водителя', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
@@ -142,7 +165,7 @@ async function findAddresses(q) {
   }));
 }
 
-function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, allowPickDestination = true }) {
+function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, mapHeight, allowPickDestination = true }) {
   const cameraRef = useRef(null);
   const [zoom, setZoom] = useState(17);
   const [is3D, setIs3D] = useState(true);
@@ -174,7 +197,7 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
     }
   };
 
-  return <View style={st.map}>
+  return <Animated.View collapsable={false} style={[st.map, { height: mapHeight }]}>
     <YandexMapView
       ref={cameraRef}
       style={{ flex: 1 }}
@@ -193,20 +216,20 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
         </View>
       </Marker>}
       {destination && <Marker point={{ latitude: Number(destination.latitude), longitude: Number(destination.longitude) }}>
-        <View style={{ backgroundColor: P.pink, borderColor: '#FFFFFF', borderWidth: 2, borderRadius: 16, minWidth: 30, height: 30, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7 }}>
+        <View style={{ backgroundColor: P.green, borderColor: '#FFFFFF', borderWidth: 2, borderRadius: 16, minWidth: 30, height: 30, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7 }}>
           <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>Б</Text>
         </View>
       </Marker>}
-      {route?.length > 1 && <Polyline points={route} strokeColor={P.pink} strokeWidth={5} outlineColor="#FFFFFF" outlineWidth={2} />}
+      {route?.length > 1 && <Polyline points={route} strokeColor={P.green} strokeWidth={5} outlineColor="#FFFFFF" outlineWidth={2} />}
       {driverLocation && <Marker point={{ latitude: Number(driverLocation.latitude), longitude: Number(driverLocation.longitude) }}>
-        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 2, borderColor: P.pink, padding: 5 }}>
-          <Text style={{ fontSize: 20 }}>🚘</Text>
+        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 2, borderColor: P.green, padding: 5 }}>
+          <LineIcon name="car" size={22} />
         </View>
       </Marker>}
     </YandexMapView>
     <View style={st.mapControls}>
-      <TouchableOpacity style={st.locateButton} onPress={handleLocate}>
-        <Text style={st.locateButtonText}>◎  Определить местоположение</Text>
+      <TouchableOpacity style={st.locateButton} onPress={handleLocate} accessibilityRole="button" accessibilityLabel="Определить местоположение">
+        <Text style={st.locateButtonText}>➤</Text>
       </TouchableOpacity>
       <View style={st.mapControlRow}>
         <TouchableOpacity style={[st.mapControl, is3D && st.mapControlActive]} onPress={() => {
@@ -224,7 +247,7 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
       </View>
     </View>
     <View style={st.mapLabel}><View style={st.liveDot}/><Text style={st.mapLabelText}>{pickingDestination ? 'Нажми на карту, чтобы выбрать точку' : 'Яндекс Карты'}</Text></View>
-  </View>;
+  </Animated.View>;
 }
 
 function formatRussianPhone(value) {
@@ -244,11 +267,12 @@ function formatRussianPhone(value) {
 
 function Field({ label, value, onChangeText, placeholder, onFocus, icon, autoCapitalize = 'sentences' }) {
   return <View style={st.field}>
-    <Text style={st.fieldIcon}>{icon}</Text>
+    <View style={st.fieldIconWrap}><LineIcon name={icon === 'pickup' ? 'navigation' : 'pin'} size={23} color={P.green}/></View>
     <View style={{ flex: 1 }}>
       <Text style={st.fieldLabel}>{label}</Text>
-      <Text numberOfLines={1} style={[st.fieldInput, !value && { color: "#A9A2A7" }]}>{value || placeholder}</Text>
+      <Text numberOfLines={1} style={[st.fieldInput, !value && { color: "#8C918B" }]}>{value || placeholder}</Text>
     </View>
+    <Text style={st.fieldChevron}>›</Text>
   </View>;
 }
 
@@ -273,6 +297,21 @@ export default function LadyGoApp() {
   const [route, setRoute] = useState([]);
   const [routeInfo, setRouteInfo] = useState(null);
   const [tariff, setTariff] = useState('economy');
+  const [quoteExpanded, setQuoteExpanded] = useState(false);
+  const expandedMapHeight = Math.round(Math.min(440, Math.max(300, Dimensions.get('window').height * 0.44)));
+  const mapHeight = useRef(new Animated.Value(expandedMapHeight)).current;
+  const animateMapHeight = useCallback((collapsed) => {
+    Animated.spring(mapHeight, { toValue: collapsed ? 176 : expandedMapHeight, useNativeDriver: false, speed: 16, bounciness: 2 }).start();
+  }, [mapHeight, expandedMapHeight]);
+  const mapPanResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.15,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderRelease: (_, gesture) => {
+      if (gesture.dy < -22 || gesture.vy < -0.45) animateMapHeight(true);
+      else if (gesture.dy > 22 || gesture.vy > 0.45) animateMapHeight(false);
+    }
+  }), [animateMapHeight]);
   const [payment, setPayment] = useState('cash');
   const [quote, setQuote] = useState(null);
   const [orders, setOrders] = useState([]);
@@ -514,7 +553,7 @@ export default function LadyGoApp() {
             foregroundService: {
               notificationTitle: 'LadyGo — вы на линии',
               notificationBody: 'Обновляем местоположение, чтобы получать заказы рядом.',
-              notificationColor: '#E84F87'
+              notificationColor: '#176344'
             }
           });
         }
@@ -1320,7 +1359,7 @@ export default function LadyGoApp() {
     ? Math.round((55 + (Number(routeInfo.km) || 0) * 14 + (Number(routeInfo.minutes) || 0) * 1.5) * (tariff === 'comfort' ? 1.25 : tariff === 'comfort_plus' ? 1.15 : 1) / 5) * 5
     : null;
 
-  if (boot) return <View style={st.loading}><ActivityIndicator size="large" color={P.pink}/><Text style={st.muted}>Загружаем LadyGo…</Text></View>;
+  if (boot) return <View style={st.loading}><ActivityIndicator size="large" color={P.green}/><Text style={st.muted}>Загружаем LadyGo…</Text></View>;
   if (!session) return <SafeAreaView style={st.auth}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
     <View style={st.authLogo}><Text style={st.logo}>LadyGo</Text><Text style={st.tagline}>Поездки с заботой</Text></View>
     <View style={st.authCard}><Text style={st.heading}>{register ? 'Создать аккаунт' : 'С возвращением'}</Text>
@@ -1337,7 +1376,7 @@ export default function LadyGoApp() {
       <TextInput autoFocus value={query} onChangeText={setQuery} placeholder={searchField === 'pickup' ? 'Откуда поедем?' : 'Куда поедем?'} style={st.searchInput}/>
       <TouchableOpacity onPress={() => setQuery('')}><Text style={st.clear}>×</Text></TouchableOpacity>
     </View>
-    {searching && <ActivityIndicator color={P.pink} style={{ marginTop: 20 }}/>}
+    {searching && <ActivityIndicator color={P.green} style={{ marginTop: 20 }}/>}
     <ScrollView keyboardShouldPersistTaps="handled">
       {suggestions.map(item => <TouchableOpacity key={item.id} style={st.suggestion} onPress={() => chooseSuggestion(item)}>
         <View style={st.suggestionIcon}><Text>⌖</Text></View><View style={{ flex: 1 }}><Text style={st.suggestionTitle}>{item.label}</Text><Text style={st.suggestionSub}>{item.detail || 'Кисловодск'}</Text></View>
@@ -1347,37 +1386,35 @@ export default function LadyGoApp() {
   </SafeAreaView>;
 
   return <SafeAreaView style={st.screen}><StatusBar barStyle="dark-content" backgroundColor={P.white}/>
-    <View style={st.topbar}><View><Text style={st.logoSmall}>LadyGo</Text><Text style={st.topSub}>Поездки с заботой</Text></View>
+    <View style={[st.topbar, tab === 'ride' && st.topbarOverlay]}><View style={st.brandBlock}><Image source={require('../icon.png')} style={st.topLogo} resizeMode="contain"/><View><Text style={st.logoSmall}>LadyGo</Text><Text style={st.topSub}>Поездки с заботой</Text></View></View>
       {profile?.role === 'driver' && <View style={st.modeSwitch}>
-        <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>⌖  Пассажир</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>🚘  Водитель</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => setTab('ride')} style={[st.modeOption, tab !== 'driver' && st.modeOptionActive]}><View style={{flexDirection:'row',alignItems:'center',gap:5}}><LineIcon name="pin" size={16} color={tab !== 'driver' ? P.white : P.green}/><Text style={[st.modeText, tab !== 'driver' && st.modeTextActive]}>Пассажир</Text></View></TouchableOpacity>
+        <TouchableOpacity onPress={() => { setTab('driver'); loadDriverOrders(); }} style={[st.modeOption, tab === 'driver' && st.modeOptionActive]}><View style={{flexDirection:'row',alignItems:'center',gap:5}}><LineIcon name="car" size={17} color={tab === 'driver' ? P.white : P.green}/><Text style={[st.modeText, tab === 'driver' && st.modeTextActive]}>Водитель</Text></View></TouchableOpacity>
       </View>}
       {profile?.role === 'admin' && <TouchableOpacity style={[st.adminTopButton, tab === 'admin' && st.adminTopButtonActive]} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}>
-        <Text style={[st.adminTopButtonText, tab === 'admin' && st.adminTopButtonTextActive]}>⚙ Админ</Text>
+        <View style={{flexDirection:'row',alignItems:'center',gap:5}}><LineIcon name="gear" size={16} color={tab === 'admin' ? P.white : P.green}/><Text style={[st.adminTopButtonText, tab === 'admin' && st.adminTopButtonTextActive]}>Админ</Text></View>
       </TouchableOpacity>}
-      <TouchableOpacity style={st.avatar} onPress={() => setTab('profile')}><Text style={st.avatarText}>{(profile?.email || 'L').slice(0,1).toUpperCase()}</Text></TouchableOpacity>
+      <View style={st.headerActions}><TouchableOpacity style={st.headerAction} onPress={() => setTab('orders')} accessibilityRole="button" accessibilityLabel="Уведомления и поездки"><LineIcon name="bell" size={23}/>{activeOrder ? <View style={st.notificationDot}/> : null}</TouchableOpacity><TouchableOpacity style={st.headerAction} onPress={() => setTab('profile')} accessibilityRole="button" accessibilityLabel="Профиль"><LineIcon name="user" size={23}/></TouchableOpacity></View>
     </View>
     {tab === 'ride' && <View style={{ flex: 1 }}>
-      <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination}/>
+      <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination} mapHeight={mapHeight}/>
       <ScrollView style={st.sheet} contentContainerStyle={st.sheetContent} keyboardShouldPersistTaps="handled">
-        <View style={st.sheetHandle}/>
-        <View style={st.rowBetween}><Text style={st.heading}>Куда едем?</Text><View style={st.cityPill}><Text style={st.cityPillText}>Поиск по России</Text></View></View>
-        <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('pickup'); setQuery(''); }}><Field label="ОТКУДА" value={pickupText} placeholder="Выберите место подачи" icon="●"/></TouchableOpacity>
-        <View style={st.connector}/>
-        <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('destination'); setQuery(''); }}><Field label="КУДА" value={destinationText} placeholder="Введите адрес назначения" icon="●"/></TouchableOpacity>
-        <TouchableOpacity style={st.locateRow} onPress={locate}><Text style={st.locateRowIcon}>◎</Text><Text style={st.locateRowText}>Определить моё местоположение</Text></TouchableOpacity>
-        {routeInfo && <View style={st.routeMeta}><Text style={st.routeMetaText}>Маршрут {routeInfo.km} км</Text><Text style={st.routeMetaText}>Около {routeInfo.minutes} мин</Text></View>}
-        <Text style={st.sectionTitle}>Выберите тариф</Text>
+        <View {...mapPanResponder.panHandlers} accessibilityRole="button" accessibilityLabel="Потяните вверх или вниз, чтобы изменить размер карты" style={st.sheetHandleWrap}><View style={st.sheetHandle}/></View>
+        <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('pickup'); setQuery(''); }}><Field label="Откуда" value={pickupText} placeholder="Текущее местоположение" icon="pickup"/></TouchableOpacity>
+        <TouchableOpacity activeOpacity={0.8} onPress={() => { setSearchField('destination'); setQuery(''); }}><Field label="Куда" value={destinationText} placeholder="Куда поедем?" icon="pin"/></TouchableOpacity>
         <View style={st.tariffs}>{TARIFFS.map(t => <TouchableOpacity key={t.id} onPress={() => setTariff(t.id)} style={[st.tariff, tariff === t.id && st.tariffSelected]}>
-          <Text style={st.tariffIcon}>{t.icon}</Text><Text style={st.tariffName}>{t.name}</Text>{(previewFare) && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
+          <View style={st.tariffIcon}><LineIcon name={t.icon} size={27} color={P.green}/></View><Text style={st.tariffName}>{t.name}</Text>{previewFare && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
         </TouchableOpacity>)}</View>
-        <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>{(previewFare) ? 'Предварительная стоимость' : 'Стоимость поездки'}</Text><Text style={st.priceHint}>{(previewFare) ? 'Расчёт по длине и времени маршрута' : 'Укажи оба адреса для расчёта'}</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
-        <Text style={st.sectionTitle}>Способ оплаты</Text>
-        <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><Text style={st.payIcon}>Р</Text><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
-        <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
-        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || busy}>
-          {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Заказать поездку</Text>}
+        <View style={st.networkHint}><LineIcon name="support" size={22}/><Text style={st.networkHintText}>Если карта или другие сервисы не загружаются, проверьте интернет. Если вы находитесь в сети с ограничениями, попробуйте включить VPN.</Text></View>
+        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={() => quoteExpanded ? createOrder() : setQuoteExpanded(true)} disabled={!pickup || !destination || !routeInfo || busy}>
+          {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>{quoteExpanded ? 'Заказать поездку' : 'Рассчитать стоимость'}</Text>}
         </TouchableOpacity>
+        {quoteExpanded && <>
+          <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>Предварительная стоимость</Text><Text style={st.priceHint}>Расчёт по длине и времени маршрута</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
+          <Text style={st.sectionTitle}>Способ оплаты</Text>
+          <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><View style={st.payIcon}><LineIcon name="cash" size={22}/></View><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
+          <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
+        </>}
         <TouchableOpacity style={st.phoneOrderBtn} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com?subject=Поддержка%20LadyGo')}>
           <Text style={st.phoneOrderText}>✉  Написать в поддержку</Text>
         </TouchableOpacity>
@@ -1386,7 +1423,7 @@ export default function LadyGoApp() {
     </View>}
     {tab === 'orders' && <ScrollView contentContainerStyle={st.pageContent}>
       <Text style={st.pageTitle}>Мои поездки</Text>
-      {activeOrder && <View style={[st.orderCard,{borderColor:P.pink,borderWidth:1}]}>
+      {activeOrder && <View style={[st.orderCard,{borderColor:P.green,borderWidth:1}]}>
         <View style={st.rowBetween}>
           <Text style={st.orderStatus}>{STATUS[activeOrder.status]||activeOrder.status}</Text>
           <Text style={st.orderDate}>{activeOrder.created_at?new Date(activeOrder.created_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):''}</Text>
@@ -1395,7 +1432,7 @@ export default function LadyGoApp() {
         <Text style={st.orderAddress}>● {activeOrder.destination_address}</Text>
         <View style={st.rowBetween}>
           <Text style={st.orderPrice}>{fmt(activeOrder.price_rub||activeOrder.estimated_price_rub||0)}</Text>
-          {activeOrder.status==='new' ? <Text style={{color:P.pinkDark,fontWeight:'800'}}>Ищем водителя…</Text> : null}
+          {activeOrder.status==='new' ? <Text style={{color:P.green,fontWeight:'800'}}>Ищем водителя…</Text> : null}
         </View>
         {['new','accepted','arrived','in_progress'].includes(activeOrder.status) && <TouchableOpacity onPress={()=>cancelOrder(activeOrder)}><Text style={st.cancelText}>Отменить поездку</Text></TouchableOpacity>}
       </View>}
@@ -1430,11 +1467,11 @@ export default function LadyGoApp() {
             <Text style={st.orderAddress}>●  {o.pickup_address}</Text>
             <Text style={st.orderAddress}>●  {o.destination_address}</Text>
             {o.localPresentation && o.virtual_driver && <>
-              <View style={{ marginTop: 12, padding: 13, borderRadius: 14, backgroundColor: '#FFF7FA', borderWidth: 1, borderColor: '#F4C6D7', gap: 8 }}>
-                <Text style={{ color: P.pinkDark, fontSize: 11, fontWeight: '900' }}>ТЕСТОВАЯ КАРТОЧКА ВОДИТЕЛЯ</Text>
+              <View style={{ marginTop: 12, padding: 13, borderRadius: 14, backgroundColor: '#F6F0E4', borderWidth: 1, borderColor: '#E8DEC9', gap: 8 }}>
+                <Text style={{ color: P.green, fontSize: 11, fontWeight: '900' }}>ТЕСТОВАЯ КАРТОЧКА ВОДИТЕЛЯ</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#F7D8E4', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: P.pinkDark, fontSize: 20, fontWeight: '900' }}>В</Text>
+                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#E8DEC9', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: P.green, fontSize: 20, fontWeight: '900' }}>В</Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={{ color: P.ink, fontSize: 16, fontWeight: '900' }}>{o.virtual_driver}</Text>
@@ -1443,7 +1480,7 @@ export default function LadyGoApp() {
                 </View>
                 <Text style={{ color: P.ink, fontWeight: '800' }}>Lada Granta · белая</Text>
                 <Text style={{ color: P.muted, fontSize: 12 }}>А000АА 26 · условный номер</Text>
-                <View style={{ height: 1, backgroundColor: '#F0DCE4', marginVertical: 3 }} />
+                <View style={{ height: 1, backgroundColor: '#E8DEC9', marginVertical: 3 }} />
                 <Text style={{ color: P.ink, fontWeight: '800' }}>Состояние поездки</Text>
                 {[
                   ['accepted', 'Водитель принял заказ'],
@@ -1467,21 +1504,21 @@ export default function LadyGoApp() {
                     const index = sequence.indexOf(item.status);
                     return { ...item, status: sequence[Math.min(index + 1, sequence.length - 1)] };
                   }))}
-                  style={{ backgroundColor: P.pink, borderRadius: 11, padding: 11, alignItems: 'center', marginTop: 4 }}>
+                  style={{ backgroundColor: P.green, borderRadius: 11, padding: 11, alignItems: 'center', marginTop: 4 }}>
                   <Text style={{ color: '#FFFFFF', fontWeight: '900' }}>Следующий этап (тест)</Text>
                 </TouchableOpacity>}
                 <View style={{ backgroundColor: '#FFFFFF', borderRadius: 10, padding: 10, gap: 4 }}>
                   <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>Данные тестовой поездки</Text>
-                  <Text style={{ color: P.muted, fontSize: 11 }}>Тариф: {o.tariff_id === 'comfort' ? 'Комфорт' : o.tariff_id === 'comfort_plus' ? 'Комфорт +' : 'Эконом'}</Text>
+                  <Text style={{ color: P.muted, fontSize: 11 }}>Тариф: {o.tariff_id === 'comfort' ? 'Детский' : o.tariff_id === 'comfort_plus' ? 'Доставка' : 'Женский'}</Text>
                   <Text style={{ color: P.muted, fontSize: 11 }}>Оплата: {o.payment_method === 'cash' ? 'Наличные' : o.payment_method === 'card' ? 'Карта (симуляция)' : (o.payment_method || 'Не выбрана')}</Text>
                   <Text style={{ color: P.muted, fontSize: 11 }}>Расчётная стоимость: {fmt(o.estimated_price_rub || o.price_rub || 0)}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <TouchableOpacity onPress={() => Alert.alert('Тест звонка водителю', 'Проверка интерфейса завершена. Реальный вызов и передача номера не выполняются в локальном тестовом режиме.')} style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#E8DDE2', padding: 10, alignItems: 'center' }}>
+                  <TouchableOpacity onPress={() => Alert.alert('Тест звонка водителю', 'Проверка интерфейса завершена. Реальный вызов и передача номера не выполняются в локальном тестовом режиме.')} style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#E8DEC9', padding: 10, alignItems: 'center' }}>
                     <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>☎ Тест звонка водителю</Text>
                     <Text style={{ color: P.muted, fontSize: 10 }}>Без реального вызова</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => Alert.alert('Тест звонка пассажиру', 'Проверка интерфейса завершена. Реальный вызов и передача номера не выполняются в локальном тестовом режиме.')} style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#E8DDE2', padding: 10, alignItems: 'center' }}>
+                  <TouchableOpacity onPress={() => Alert.alert('Тест звонка пассажиру', 'Проверка интерфейса завершена. Реальный вызов и передача номера не выполняются в локальном тестовом режиме.')} style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: '#E8DEC9', padding: 10, alignItems: 'center' }}>
                     <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>☎ Тест звонка пассажиру</Text>
                     <Text style={{ color: P.muted, fontSize: 10 }}>Без реального вызова</Text>
                   </TouchableOpacity>
@@ -1507,7 +1544,7 @@ export default function LadyGoApp() {
           <Text style={st.muted}>Заявки, водители и поездки — в одном месте</Text>
         </View>
         <TouchableOpacity style={st.adminRefresh} onPress={() => { loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); }}>
-          {adminLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.adminRefreshText}>↻</Text>}
+          {adminLoading ? <ActivityIndicator color={P.green}/> : <Text style={st.adminRefreshText}>↻</Text>}
         </TouchableOpacity>
       </View>
       <View style={st.adminStats}>
@@ -1527,7 +1564,7 @@ export default function LadyGoApp() {
         </TouchableOpacity>)}
       </View>
       {adminSection==='admins' && profile?.is_super_admin && <>
-        <View style={st.rowBetween}><Text style={st.heading}>Управление администраторами</Text>{adminAccountsLoading&&<ActivityIndicator color={P.pink}/>}</View>
+        <View style={st.rowBetween}><Text style={st.heading}>Управление администраторами</Text>{adminAccountsLoading&&<ActivityIndicator color={P.green}/>}</View>
         <Text style={st.muted}>Главный администратор назначает и снимает права. Максимум — 15 обычных администраторов. Пользователь должен сначала зарегистрироваться в LadyGo.</Text>
         <TextInput style={st.phoneInput} value={adminEmailDraft} onChangeText={setAdminEmailDraft} placeholder="Email зарегистрированного пользователя" autoCapitalize="none" keyboardType="email-address" maxLength={254}/>
         <TouchableOpacity style={st.adminApprove} onPress={()=>changeAdminAccess(adminEmailDraft.trim(),true)}><Text style={st.adminActionText}>Назначить администратором</Text></TouchableOpacity>
@@ -1537,7 +1574,7 @@ export default function LadyGoApp() {
         </View>)}
       </>}
       {adminSection==='applications' && <>
-        <View style={st.rowBetween}><Text style={st.heading}>Заявки на подключение</Text>{adminLoading&&<ActivityIndicator color={P.pink}/>}</View>
+        <View style={st.rowBetween}><Text style={st.heading}>Заявки на подключение</Text>{adminLoading&&<ActivityIndicator color={P.green}/>}</View>
         {adminApplications.length===0 ? <View style={st.emptyCard}><Text style={st.emptyIcon}>▤</Text><Text style={st.heading}>Заявок пока нет</Text><Text style={st.muted}>Новые анкеты кандидатов появятся здесь.</Text></View> :
           adminApplications.map(item=><View key={item.id} style={st.adminApplicationCard}>
             <View style={st.rowBetween}><Text style={st.adminApplicantName}>{item.full_name||'Без имени'}</Text><Text style={[st.adminStatus,item.status==='pending'?st.adminStatusPending:item.status==='approved'?st.adminStatusApproved:st.adminStatusRejected]}>{item.status==='pending'?'На проверке':item.status==='approved'?'Одобрена':'Отклонена'}</Text></View>
@@ -1570,7 +1607,7 @@ export default function LadyGoApp() {
               </View>
               <Text style={st.adminDetail}>{[d.vehicle_color,d.vehicle_make,d.vehicle_model].filter(Boolean).join(' ')||'Автомобиль не заполнен'}</Text>
               <Text style={st.adminDetail}>{d.vehicle_plate||'Номер не указан'} {d.vehicle_year||''}</Text>
-              <Text style={[st.adminDetail,{marginTop:6,fontWeight:'700',color:P.pink}]}>Поездок: {driverTrips.length} · Нажмите, чтобы открыть историю</Text>
+              <Text style={[st.adminDetail,{marginTop:6,fontWeight:'700',color:P.green}]}>Поездок: {driverTrips.length} · Нажмите, чтобы открыть историю</Text>
             </TouchableOpacity>
             {expanded && <View style={{marginTop:12,gap:10}}>
               {driverTrips.length===0 ? <Text style={st.muted}>У этого водителя пока нет назначенных поездок.</Text> : driverTrips.map(o=><View key={o.id} style={{backgroundColor:P.pale,borderRadius:12,padding:11,gap:5}}>
@@ -1654,19 +1691,19 @@ export default function LadyGoApp() {
             <Text style={st.driverSubtitle}>Профиль водителя и данные автомобиля</Text>
           </View>
           <TouchableOpacity style={st.driverRefresh} onPress={loadDriverOrders} disabled={driverLoading}>
-            {driverLoading ? <ActivityIndicator color={P.pink}/> : <Text style={st.driverRefreshText}>↻</Text>}
+            {driverLoading ? <ActivityIndicator color={P.green}/> : <Text style={st.driverRefreshText}>↻</Text>}
           </TouchableOpacity>
         </View>
-        <View style={[st.driverModeHint, { backgroundColor: driverOnline ? '#EAF8F1' : '#F7F5F6', borderColor: driverOnline ? '#B9E5D0' : P.line }]}>
-          <Text style={st.driverModeIcon}>🚘</Text>
+        <View style={[st.driverModeHint, { backgroundColor: driverOnline ? '#EAF8F1' : '#F6F0E4', borderColor: driverOnline ? '#B9E5D0' : P.line }]}>
+          <View style={st.driverModeIcon}><LineIcon name="car" size={25}/></View>
           <View style={{flex:1}}>
             <Text style={st.driverModeTitle}>{driverOnline ? 'Вы на линии' : 'Вы не на линии'}</Text>
             <Text style={st.driverModeSub}>{driverOnline ? 'Получаем предложения ближайших поездок' : 'Включите режим, чтобы получать заказы'}</Text>
           </View>
           <TouchableOpacity onPress={toggleDriverShift} disabled={driverPresenceLoading}
-            style={{backgroundColor:driverOnline?'#FFFFFF':P.pink,borderRadius:12,paddingHorizontal:14,paddingVertical:11}}>
-            {driverPresenceLoading ? <ActivityIndicator color={driverOnline?P.pink:P.white}/> :
-              <Text style={{color:driverOnline?P.pinkDark:P.white,fontWeight:'900'}}>{driverOnline?'Завершить смену':'Выйти на линию'}</Text>}
+            style={{backgroundColor:driverOnline?'#FFFFFF':P.green,borderRadius:12,paddingHorizontal:14,paddingVertical:11}}>
+            {driverPresenceLoading ? <ActivityIndicator color={driverOnline?P.green:P.white}/> :
+              <Text style={{color:driverOnline?P.green:P.white,fontWeight:'900'}}>{driverOnline?'Завершить смену':'Выйти на линию'}</Text>}
           </TouchableOpacity>
         </View>
         <View style={st.adminStats}>
@@ -1694,7 +1731,7 @@ export default function LadyGoApp() {
             <Text style={st.muted}>{order.offer_expires_at?'Предложение до '+new Date(order.offer_expires_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'ID '+String(order.id).slice(0,8)}</Text>
           </View>
           {order.offer_id && <View style={{flexDirection:'row',gap:8,marginTop:10}}>
-            <TouchableOpacity onPress={()=>acceptDriverOrder(order)} disabled={busy} style={{flex:1,backgroundColor:P.pink,borderRadius:12,padding:13,alignItems:'center'}}>
+            <TouchableOpacity onPress={()=>acceptDriverOrder(order)} disabled={busy} style={{flex:1,backgroundColor:P.green,borderRadius:12,padding:13,alignItems:'center'}}>
               <Text style={{color:P.white,fontWeight:'900'}}>Принять заказ</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={()=>declineDriverOrder(order)} style={{borderWidth:1,borderColor:P.line,borderRadius:12,padding:13,alignItems:'center'}}>
@@ -1708,20 +1745,20 @@ export default function LadyGoApp() {
         <View style={st.vehicleEditorCard}>
           <View style={st.rowBetween}><Text style={st.heading}>Фото водителя</Text><Text style={st.vehicleEditorHint}>Для карточки поездки</Text></View>
           <View style={st.driverPhotoEditorRow}>
-            {driverPhotoPreview ? <Image source={{ uri: driverPhotoPreview }} style={st.driverPhotoPreview} /> : <View style={st.driverPhotoPlaceholder}><Text style={st.driverPhotoPlaceholderText}>👤</Text></View>}
+            {driverPhotoPreview ? <Image source={{ uri: driverPhotoPreview }} style={st.driverPhotoPreview} /> : <View style={st.driverPhotoPlaceholder}><LineIcon name="user" size={30}/></View>}
             <View style={{ flex: 1, gap: 8 }}>
               <Text style={st.vehicleEditorHint}>Пассажир увидит это фото вместе с именем и рейтингом водителя</Text>
               <TouchableOpacity style={st.vehiclePhotoButton} onPress={chooseDriverPhoto} disabled={driverPhotoUploading}>
-                {driverPhotoUploading ? <ActivityIndicator color={P.pinkDark}/> : <Text style={st.vehiclePhotoButtonText}>{driverPhotoPreview ? 'Изменить фото водителя' : 'Добавить фото водителя'}</Text>}
+                {driverPhotoUploading ? <ActivityIndicator color={P.green}/> : <Text style={st.vehiclePhotoButtonText}>{driverPhotoPreview ? 'Изменить фото водителя' : 'Добавить фото водителя'}</Text>}
               </TouchableOpacity>
             </View>
           </View>
         </View>
         <View style={st.vehicleEditorCard}>
           <View style={st.rowBetween}><Text style={st.heading}>Мой автомобиль</Text><Text style={st.vehicleEditorHint}>Данные для пассажира</Text></View>
-          {vehiclePhotoPreview ? <Image source={{ uri: vehiclePhotoPreview }} style={st.vehiclePhotoPreview} resizeMode="cover" /> : <View style={st.vehiclePhotoPlaceholder}><Text style={st.vehiclePhotoIcon}>🚘</Text><Text style={st.vehiclePhotoPlaceholderText}>Добавь фото своего автомобиля</Text></View>}
+          {vehiclePhotoPreview ? <Image source={{ uri: vehiclePhotoPreview }} style={st.vehiclePhotoPreview} resizeMode="cover" /> : <View style={st.vehiclePhotoPlaceholder}><LineIcon name="car" size={30}/><Text style={st.vehiclePhotoPlaceholderText}>Добавь фото своего автомобиля</Text></View>}
           <TouchableOpacity style={st.vehiclePhotoButton} onPress={chooseVehiclePhoto} disabled={vehicleUploading}>
-            {vehicleUploading ? <ActivityIndicator color={P.pinkDark}/> : <Text style={st.vehiclePhotoButtonText}>{vehiclePhotoPreview ? 'Изменить фото машины' : 'Добавить фото машины'}</Text>}
+            {vehicleUploading ? <ActivityIndicator color={P.green}/> : <Text style={st.vehiclePhotoButtonText}>{vehiclePhotoPreview ? 'Изменить фото машины' : 'Добавить фото машины'}</Text>}
           </TouchableOpacity>
           <TextInput style={st.phoneInput} value={vehicleForm.display_name} onChangeText={v=>setVehicleForm(p=>({...p,display_name:v}))} placeholder="Имя водителя (как увидит пассажир)" maxLength={120}/>
           <View style={st.vehicleInputRow}>
@@ -1781,15 +1818,15 @@ export default function LadyGoApp() {
     {tab === 'profile' && <ScrollView contentContainerStyle={st.pageContent}><Text style={st.pageTitle}>Профиль</Text>
       <View style={st.profileCard}><View style={st.profileAvatar}><Text style={st.profileAvatarText}>{(profile?.phone || profile?.email || 'L').slice(0,1).toUpperCase()}</Text></View><Text style={st.heading}>{profile?.phone || profile?.email || 'Аккаунт LadyGo'}</Text><Text style={st.muted}>{profile?.role === 'driver' ? 'Водитель' : profile?.role === 'admin' ? 'Администратор' : 'Пассажир'}</Text></View>
       <TouchableOpacity style={st.profileRow} onPress={() => setTab('orders')}><Text style={st.profileRowIcon}>◷</Text><Text style={st.profileRowText}>История поездок</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
-      {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}><Text style={st.profileRowIcon}>⚙</Text><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
-      {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><Text style={st.profileRowIcon}>🚘</Text><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}
+      {profile?.role === 'admin' && <TouchableOpacity style={st.profileRow} onPress={() => { setTab('admin'); loadAdminOrders(); loadAdminApplications(); loadAdminDrivers(); loadAdminTickets(); loadAdminAccounts(); }}><View style={st.profileRowIcon}><LineIcon name="gear" size={22}/></View><Text style={st.profileRowText}>Панель администратора</Text><Text style={st.chevron}>›</Text></TouchableOpacity>}
+      {profile?.role === 'passenger' && (myApplication?.status === 'pending' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка водителя на проверке</Text><Text style={st.muted}>Мы сообщим результат после рассмотрения администратором.</Text></View> : myApplication?.status === 'rejected' ? <View style={st.applicationStatusCard}><Text style={st.applicationStatusTitle}>Заявка отклонена</Text><Text style={st.muted}>{myApplication.review_note || myApplication.admin_note || 'Можно обратиться в поддержку.'}</Text></View> : <TouchableOpacity style={st.profileRow} onPress={() => setTab('apply')}><View style={st.profileRowIcon}><LineIcon name="car" size={22}/></View><Text style={st.profileRowText}>Стать водителем LadyGo</Text><Text style={st.chevron}>›</Text></TouchableOpacity>)}
 
-      <TouchableOpacity style={st.profileRow} onPress={() => { setTab('support'); loadMyTickets(); }}><Text style={st.profileRowIcon}>?</Text><Text style={st.profileRowText}>Поддержка и обращения</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
+      <TouchableOpacity style={st.profileRow} onPress={() => { setTab('support'); loadMyTickets(); }}><View style={st.profileRowIcon}><LineIcon name="support" size={22}/></View><Text style={st.profileRowText}>Поддержка и обращения</Text><Text style={st.chevron}>›</Text></TouchableOpacity>
       <TouchableOpacity style={st.logout} onPress={signOut}><Text style={st.logoutText}>Выйти из аккаунта</Text></TouchableOpacity>
-      <Text style={st.footnote}>LadyGo · 6.9.0 · Создано независимым автором @acyma</Text>
+      <Text style={st.footnote}>LadyGo · 6.9.2 · Создано независимым автором @acyma</Text>
     </ScrollView>}
     <View style={st.bottomNav}>
-      {([['ride','⌖','Заказать'],['orders','◷','Поездки'],['profile','○','Профиль']]).map(([id,icon,label]) => <TouchableOpacity key={id} style={st.navItem} onPress={() => setTab(id)}><Text style={[st.navIcon, tab === id && st.navActive]}>{icon}</Text><Text style={[st.navLabel, tab === id && st.navActive]}>{label}</Text></TouchableOpacity>)}
+      {([['ride','pin','Поездки',() => setTab('ride')],['driver','car','Водитель',() => { if (profile?.role === 'driver') { setTab('driver'); loadDriverOrders(); } else setTab('apply'); }],['support','chat','Чат',() => { setTab('support'); loadMyTickets(); }],['profile','user','Профиль',() => setTab('profile')]]).map(([id,icon,label,action]) => <TouchableOpacity key={id} style={st.navItem} onPress={action}><View style={st.navIcon}><LineIcon name={icon} size={23} color={(tab === id || (id === 'driver' && tab === 'apply')) ? P.green : '#87938A'}/></View><Text style={[st.navLabel, (tab === id || (id === 'driver' && tab === 'apply')) && st.navActive]}>{label}</Text></TouchableOpacity>)}
     </View>
   </SafeAreaView>;
 }
@@ -1799,41 +1836,48 @@ const st = StyleSheet.create({
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, backgroundColor: P.white },
   auth: { flex: 1, backgroundColor: P.white, padding: 24, justifyContent: 'center' },
   authLogo: { alignItems: 'center', marginBottom: 38 },
-  logo: { color: P.pink, fontSize: 42, fontWeight: '900', letterSpacing: -2 },
+  logo: { color: P.green, fontSize: 42, fontWeight: '900', letterSpacing: -2 },
   tagline: { color: P.muted, fontSize: 15, marginTop: 4 },
   authCard: { gap: 14 },
   heading: { color: P.ink, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 },
-  authInput: { borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 17, fontSize: 16, color: P.ink, backgroundColor: '#FBFAFB' },
-  primaryBtn: { backgroundColor: P.pink, minHeight: 56, borderRadius: 17, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, marginTop: 8 },
+  authInput: { borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 17, fontSize: 16, color: P.ink, backgroundColor: '#FFFCF6' },
+  primaryBtn: { backgroundColor: P.green, minHeight: 60, borderRadius: 23, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, marginTop: 1, elevation: 2 },
   primaryText: { color: P.white, fontSize: 16, fontWeight: '800' },
-  phoneOrderBtn: { minHeight: 52, borderRadius: 16, borderWidth: 1.5, borderColor: P.pink, backgroundColor: P.white, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
-  phoneOrderText: { color: P.pinkDark, fontSize: 15, fontWeight: '800' },
-  switchText: { color: P.pinkDark, textAlign: 'center', fontWeight: '700', padding: 12 },
-  footnote: { color: '#A69DA3', fontSize: 11, textAlign: 'center', marginTop: 20 },
-  topbar: { height: 62, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: P.white, borderBottomWidth: 1, borderColor: '#F2EEF0' },
-  logoSmall: { color: P.pink, fontSize: 25, fontWeight: '900', letterSpacing: -1 },
+  phoneOrderBtn: { minHeight: 52, borderRadius: 16, borderWidth: 1.5, borderColor: P.green, backgroundColor: P.white, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
+  phoneOrderText: { color: P.green, fontSize: 15, fontWeight: '800' },
+  switchText: { color: P.green, textAlign: 'center', fontWeight: '700', padding: 12 },
+  footnote: { color: P.muted, fontSize: 11, textAlign: 'center', marginTop: 20 },
+  topbar: { height: 76, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: P.white, borderBottomWidth: 1, borderColor: P.line, zIndex: 12, elevation: 3 },
+  topbarOverlay: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: 'transparent', borderBottomWidth: 0, elevation: 0, zIndex: 40 },
+  brandBlock: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  topLogo: { width: 54, height: 54, borderRadius: 27, borderWidth: 1, borderColor: P.gold, backgroundColor: P.pale },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerAction: { width: 44, height: 44, borderRadius: 22, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: P.line },
+  headerActionIcon: { color: P.green, fontSize: 23, fontWeight: '700' },
+  notificationDot: { position: 'absolute', top: 7, right: 7, width: 8, height: 8, borderRadius: 4, backgroundColor: P.gold, borderWidth: 1, borderColor: P.white },
+  logoSmall: { color: P.green, fontSize: 25, fontWeight: '900', letterSpacing: -1 },
   topSub: { color: P.muted, fontSize: 10, marginTop: -2 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
-  modeSwitch: { flexDirection: 'row', backgroundColor: '#F3EEF1', borderRadius: 16, padding: 4, gap: 3, borderWidth: 1, borderColor: '#EDE5E9', flexShrink: 1 },
+  modeSwitch: { flexDirection: 'row', backgroundColor: P.pale, borderRadius: 16, padding: 4, gap: 3, borderWidth: 1, borderColor: P.line, flexShrink: 1 },
   modeOption: { paddingHorizontal: 9, paddingVertical: 9, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  modeOptionActive: { backgroundColor: P.pink, elevation: 2, shadowColor: P.pinkDark, shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
+  modeOptionActive: { backgroundColor: P.green, elevation: 2, shadowColor: P.green, shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
   modeText: { color: P.muted, fontSize: 10, fontWeight: '900' },
   modeTextActive: { color: P.white },
-  adminTopButton: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, backgroundColor: P.pale, borderWidth: 1, borderColor: '#F5C7D8' },
-  adminTopButtonActive: { backgroundColor: P.pink, borderColor: P.pink },
-  adminTopButtonText: { color: P.pinkDark, fontSize: 12, fontWeight: '900' },
+  adminTopButton: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, backgroundColor: P.pale, borderWidth: 1, borderColor: '#E8DEC9' },
+  adminTopButtonActive: { backgroundColor: P.green, borderColor: P.green },
+  adminTopButtonText: { color: P.green, fontSize: 12, fontWeight: '900' },
   adminTopButtonTextActive: { color: P.white },
   adminRefresh: { width: 42, height: 42, borderRadius: 14, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
-  adminRefreshText: { color: P.pinkDark, fontSize: 25, fontWeight: '900' },
+  adminRefreshText: { color: P.green, fontSize: 25, fontWeight: '900' },
   adminStats: { flexDirection: 'row', gap: 9 },
-  adminStat: { flex: 1, backgroundColor: '#FAF6F8', borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 13, gap: 5 },
-  adminStatValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
+  adminStat: { flex: 1, backgroundColor: '#F6F0E4', borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 13, gap: 5 },
+  adminStatValue: { color: P.green, fontSize: 24, fontWeight: '900' },
   adminStatLabel: { color: P.muted, fontSize: 10, fontWeight: '800' },
-  adminHero: { flexDirection:'row', alignItems:'center', gap:12, backgroundColor:'#FFF5F8', borderWidth:1, borderColor:'#F5D8E3', borderRadius:20, padding:16 },
-  adminEyebrow: { color:P.pinkDark, fontSize:9, fontWeight:'900', letterSpacing:1.2, marginBottom:5 },
+  adminHero: { flexDirection:'row', alignItems:'center', gap:12, backgroundColor:'#F6F0E4', borderWidth:1, borderColor:'#E8DEC9', borderRadius:20, padding:16 },
+  adminEyebrow: { color:P.green, fontSize:9, fontWeight:'900', letterSpacing:1.2, marginBottom:5 },
   adminTabs: { flexDirection:'row', gap:7, flexWrap:'wrap' },
-  adminTab: { paddingHorizontal:12, paddingVertical:11, borderRadius:13, backgroundColor:'#F5F1F3', borderWidth:1, borderColor:P.line },
-  adminTabActive: { backgroundColor:P.pink, borderColor:P.pink },
+  adminTab: { paddingHorizontal:12, paddingVertical:11, borderRadius:13, backgroundColor:'#F6F0E4', borderWidth:1, borderColor:P.line },
+  adminTabActive: { backgroundColor:P.green, borderColor:P.green },
   adminTabText: { color:P.muted, fontSize:11, fontWeight:'800' },
   adminTabTextActive: { color:P.white },
   adminApplicationCard: { backgroundColor:P.white, borderWidth:1, borderColor:P.line, borderRadius:18, padding:15, gap:8 },
@@ -1843,177 +1887,185 @@ const st = StyleSheet.create({
   adminStatus: { overflow:'hidden', borderRadius:20, paddingHorizontal:9, paddingVertical:6, fontSize:10, fontWeight:'900' },
   adminStatusPending: { backgroundColor:'#FFF0D7', color:'#8A5A00' },
   adminStatusApproved: { backgroundColor:'#E5F6EC', color:'#247448' },
-  adminStatusRejected: { backgroundColor:'#FCE8EC', color:'#A8324C' },
+  adminStatusRejected: { backgroundColor:'#F6F0E4', color:'#176344' },
   adminPhotoRow: { flexDirection:'row', gap:10, flexWrap:'wrap', alignItems:'center' },
   adminPhoto: { width:64, height:64, borderRadius:15, backgroundColor:P.pale },
   adminCarPhoto: { width:132, height:82, borderRadius:13, backgroundColor:P.pale },
   adminActionRow: { flexDirection:'row', gap:9, marginTop:4 },
   adminApprove: { flex:1, minHeight:44, borderRadius:13, backgroundColor:'#218653', alignItems:'center', justifyContent:'center' },
-  adminReject: { flex:1, minHeight:44, borderRadius:13, backgroundColor:'#FFF0F3', borderWidth:1, borderColor:'#F2C6D2', alignItems:'center', justifyContent:'center' },
+  adminReject: { flex:1, minHeight:44, borderRadius:13, backgroundColor:'#F6F0E4', borderWidth:1, borderColor:'#E8DEC9', alignItems:'center', justifyContent:'center' },
   adminActionText: { color:'#FFFFFF', fontWeight:'900', fontSize:12 },
-  adminRejectText: { color:'#B63254', fontWeight:'900', fontSize:12 },
-  applicationStatusCard: { backgroundColor:'#FFF5F8', borderRadius:16, padding:15, gap:6, borderWidth:1, borderColor:'#F5D8E3' },
-  applicationStatusTitle: { color:P.pinkDark, fontWeight:'900', fontSize:14 },
+  adminRejectText: { color:'#10432F', fontWeight:'900', fontSize:12 },
+  applicationStatusCard: { backgroundColor:'#F6F0E4', borderRadius:16, padding:15, gap:6, borderWidth:1, borderColor:'#E8DEC9' },
+  applicationStatusTitle: { color:P.green, fontWeight:'900', fontSize:14 },
   applicationPhotoButton: { flex:1, minHeight:52, padding:10, borderRadius:13, backgroundColor:P.pale, alignItems:'center', justifyContent:'center' },
-  applicationPhotoText: { color:P.pinkDark, fontSize:11, fontWeight:'900', textAlign:'center' },
-  adultConfirm: { padding:14, borderRadius:14, backgroundColor:'#F7F4F6', borderWidth:1, borderColor:P.line },
+  applicationPhotoText: { color:P.green, fontSize:11, fontWeight:'900', textAlign:'center' },
+  adultConfirm: { padding:14, borderRadius:14, backgroundColor:'#F6F0E4', borderWidth:1, borderColor:P.line },
   adultConfirmText: { color:P.ink, fontSize:13, fontWeight:'800' },
   driverHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  driverEyebrow: { color: P.pinkDark, fontSize: 9, fontWeight: '900', letterSpacing: 1.3, marginBottom: 5 },
+  driverEyebrow: { color: P.green, fontSize: 9, fontWeight: '900', letterSpacing: 1.3, marginBottom: 5 },
   driverSubtitle: { color: P.muted, fontSize: 12, lineHeight: 17, marginTop: -2 },
   driverRefresh: { width: 44, height: 44, borderRadius: 15, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
-  driverRefreshText: { color: P.pinkDark, fontSize: 26, fontWeight: '900' },
-  driverModeHint: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, borderRadius: 17, backgroundColor: '#FFF5F8', borderWidth: 1, borderColor: '#F6D8E3' },
+  driverRefreshText: { color: P.green, fontSize: 26, fontWeight: '900' },
+  driverModeHint: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, borderRadius: 17, backgroundColor: '#F6F0E4', borderWidth: 1, borderColor: '#E8DEC9' },
   driverModeIcon: { fontSize: 24 },
   driverModeTitle: { color: P.ink, fontSize: 13, fontWeight: '900' },
   driverModeSub: { color: P.muted, fontSize: 10, marginTop: 3 },
   driverOnlineDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: P.green },
   shiftButton: { minHeight: 52, borderRadius: 16, backgroundColor: P.green, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
-  shiftButtonOff: { backgroundColor: P.pink },
+  shiftButtonOff: { backgroundColor: P.green },
   shiftButtonText: { color: P.white, fontSize: 15, fontWeight: '900' },
   driverStatsGrid: { flexDirection: 'row', gap: 8 },
-  driverStatCard: { flex: 1, backgroundColor: '#FAF7F9', borderWidth: 1, borderColor: P.line, borderRadius: 15, padding: 12, gap: 7 },
-  driverStatValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
+  driverStatCard: { flex: 1, backgroundColor: '#FFFCF6', borderWidth: 1, borderColor: P.line, borderRadius: 15, padding: 12, gap: 7 },
+  driverStatValue: { color: P.green, fontSize: 24, fontWeight: '900' },
   driverStatLabel: { color: P.muted, fontSize: 9, fontWeight: '800', lineHeight: 13 },
-  driverEarningsCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#211B20', borderRadius: 18, padding: 16 },
-  driverEarningsLabel: { color: '#E9DDE3', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  driverEarningsCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1F2923', borderRadius: 18, padding: 16 },
+  driverEarningsLabel: { color: '#E8DEC9', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
   driverEarningsValue: { color: P.white, fontSize: 25, fontWeight: '900', marginTop: 5 },
-  driverEarningsNote: { color: '#C5B8C0', fontSize: 10, marginTop: 2 },
-  driverEarningsIcon: { color: '#F6A9C5', fontSize: 36, fontWeight: '900', paddingHorizontal: 8 },
+  driverEarningsNote: { color: '#756F63', fontSize: 10, marginTop: 2 },
+  driverEarningsIcon: { color: '#C79A38', fontSize: 36, fontWeight: '900', paddingHorizontal: 8 },
   driverTabs: { gap: 7, paddingVertical: 2 },
-  driverTab: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 13, backgroundColor: '#F6F3F5', borderWidth: 1, borderColor: '#EEE8EC' },
-  driverTabActive: { backgroundColor: P.pink, borderColor: P.pink },
+  driverTab: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 13, backgroundColor: '#F6F0E4', borderWidth: 1, borderColor: '#F6F0E4' },
+  driverTabActive: { backgroundColor: P.green, borderColor: P.green },
   driverTabText: { color: P.muted, fontSize: 11, fontWeight: '800' },
   driverTabTextActive: { color: P.white },
   driverSecondaryBtn: { paddingHorizontal: 17, paddingVertical: 11, borderRadius: 13, backgroundColor: P.pale, marginTop: 5 },
-  driverSecondaryText: { color: P.pinkDark, fontSize: 12, fontWeight: '900' },
+  driverSecondaryText: { color: P.green, fontSize: 12, fontWeight: '900' },
   driverOrderCard: { borderWidth: 1, borderColor: P.line, borderRadius: 19, padding: 15, gap: 13, backgroundColor: P.white },
   driverStatusPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
-  driverStatusNew: { backgroundColor: '#FFF1D9' },
-  driverStatusActive: { backgroundColor: '#FCE5EE' },
+  driverStatusNew: { backgroundColor: '#F6F0E4' },
+  driverStatusActive: { backgroundColor: '#F0E8D8' },
   driverStatusDone: { backgroundColor: '#E6F5EE' },
   driverStatusText: { color: P.ink, fontSize: 10, fontWeight: '900' },
   driverRouteBlock: { flexDirection: 'row', gap: 12, paddingVertical: 3 },
   driverRouteRail: { width: 12, alignItems: 'center', paddingVertical: 3 },
   driverRouteDotStart: { width: 9, height: 9, borderRadius: 5, backgroundColor: P.green },
-  driverRouteLine: { width: 1, height: 24, backgroundColor: '#D8CFD5' },
-  driverRouteDotEnd: { width: 9, height: 9, borderRadius: 5, backgroundColor: P.pink },
+  driverRouteLine: { width: 1, height: 24, backgroundColor: '#D8E6D6' },
+  driverRouteDotEnd: { width: 9, height: 9, borderRadius: 5, backgroundColor: P.green },
   driverRouteCaption: { color: P.muted, fontSize: 9, fontWeight: '900', letterSpacing: 0.8, marginBottom: 3 },
   driverRouteAddress: { color: P.ink, fontSize: 13, lineHeight: 19, fontWeight: '600' },
-  driverOrderMeta: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderColor: '#F1EDF0', paddingTop: 11 },
-  driverOrderPrice: { color: P.pinkDark, fontSize: 17, fontWeight: '900' },
+  driverOrderMeta: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderColor: '#F6F0E4', paddingTop: 11 },
+  driverOrderPrice: { color: P.green, fontSize: 17, fontWeight: '900' },
   driverOrderPayment: { color: P.ink, fontSize: 12, fontWeight: '800' },
   driverActions: { gap: 8 },
-  chatCard: { backgroundColor: '#FFFAFC', borderWidth: 1, borderColor: '#F4DCE6', borderRadius: 18, padding: 13, gap: 10 },
+  chatCard: { backgroundColor: '#FFFCF6', borderWidth: 1, borderColor: '#E8DEC9', borderRadius: 18, padding: 13, gap: 10 },
   chatHint: { color: P.muted, fontSize: 10, fontWeight: '700' },
   chatMessages: { maxHeight: 230, minHeight: 90 },
   chatEmpty: { color: P.muted, fontSize: 13, textAlign: 'center', padding: 18, lineHeight: 19 },
   chatBubble: { maxWidth: '86%', borderRadius: 15, padding: 10, marginVertical: 4, gap: 3 },
-  chatMine: { alignSelf: 'flex-end', backgroundColor: '#FCE5EE', borderBottomRightRadius: 5 },
-  chatOther: { alignSelf: 'flex-start', backgroundColor: '#F1EEF0', borderBottomLeftRadius: 5 },
-  chatSender: { color: P.pinkDark, fontSize: 10, fontWeight: '900' },
+  chatMine: { alignSelf: 'flex-end', backgroundColor: '#F0E8D8', borderBottomRightRadius: 5 },
+  chatOther: { alignSelf: 'flex-start', backgroundColor: '#F6F0E4', borderBottomLeftRadius: 5 },
+  chatSender: { color: P.green, fontSize: 10, fontWeight: '900' },
   chatMessage: { color: P.ink, fontSize: 14, lineHeight: 19 },
   chatTime: { color: P.muted, fontSize: 9, textAlign: 'right' },
   chatComposer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   chatInput: { flex: 1, minHeight: 44, maxHeight: 100, borderWidth: 1, borderColor: P.line, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, color: P.ink, backgroundColor: P.white, fontSize: 14 },
-  chatSend: { width: 44, height: 44, borderRadius: 14, backgroundColor: P.pink, alignItems: 'center', justifyContent: 'center' },
+  chatSend: { width: 44, height: 44, borderRadius: 14, backgroundColor: P.green, alignItems: 'center', justifyContent: 'center' },
   chatSendText: { color: P.white, fontSize: 19, fontWeight: '900' },
-  avatarText: { color: P.pinkDark, fontWeight: '900', fontSize: 16 },
-  map: { height: 280, backgroundColor: '#E9E7E3' },
-  mapControls: { position: 'absolute', left: 9, bottom: 12, gap: 6, alignItems: 'flex-start' },
-  locateButton: { height: 34, paddingHorizontal: 10, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.97)', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
-  locateButtonText: { color: P.pinkDark, fontSize: 11, fontWeight: '800' },
-  mapControlRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  avatarText: { color: P.green, fontWeight: '900', fontSize: 16 },
+  map: { flexShrink: 0, backgroundColor: '#E7EDE5', zIndex: 0, elevation: 0, overflow: 'hidden' },
+  mapControls: { position: 'absolute', right: 12, bottom: 14, gap: 7, alignItems: 'flex-end' },
+  locateButton: { width: 46, height: 46, borderRadius: 16, backgroundColor: P.white, justifyContent: 'center', alignItems: 'center', elevation: 4, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
+  locateButtonText: { color: P.green, fontSize: 22, fontWeight: '900' },
+  mapControlRow: { flexDirection: 'column', gap: 6, alignItems: 'center' },
   mapControl: { width: 34, height: 34, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.96)', alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
-  mapControlActive: { backgroundColor: P.pink },
+  mapControlActive: { backgroundColor: P.green },
   mapControlText: { color: P.ink, fontSize: 19, fontWeight: '800', lineHeight: 23 },
   mapControlTextActive: { color: P.white },
-  locateText: { color: P.pink, fontSize: 22, fontWeight: '800' },
+  locateText: { color: P.green, fontSize: 22, fontWeight: '800' },
   mapLabel: { position: 'absolute', top: 12, left: 12, flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: P.white, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, elevation: 2 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: P.green },
   mapLabelText: { color: P.ink, fontSize: 12, fontWeight: '700' },
-  sheet: { flex: 1, backgroundColor: P.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, marginTop: -18 },
-  sheetContent: { padding: 18, paddingBottom: 26, gap: 12 },
-  sheetHandle: { width: 38, height: 4, borderRadius: 3, backgroundColor: '#DDD7DC', alignSelf: 'center', marginBottom: 3 },
+  sheet: { flex: 1, minHeight: 180, backgroundColor: P.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -22, zIndex: 20, elevation: 18, overflow: 'hidden' },
+  sheetContent: { paddingHorizontal: 16, paddingTop: 9, paddingBottom: 22, gap: 10 },
+  sheetHandleWrap: { minHeight: 25, alignItems: 'center', justifyContent: 'center', paddingBottom: 2, zIndex: 21, elevation: 2 },
+  sheetHandleHint: { display: 'none' },
+  sheetHandle: { width: 42, height: 5, borderRadius: 4, backgroundColor: '#D8D6D1', alignSelf: 'center', marginBottom: 2 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cityPill: { backgroundColor: P.pale, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20 },
-  cityPillText: { color: P.pinkDark, fontSize: 11, fontWeight: '800' },
-  field: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#FAF9FA', borderWidth: 1, borderColor: P.line, borderRadius: 16 },
-  fieldIcon: { color: P.pink, fontSize: 16, fontWeight: '900' },
-  fieldLabel: { color: P.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  fieldInput: { color: P.ink, fontSize: 16, padding: 0, marginTop: 3, minHeight: 25 },
-  connector: { height: 7, width: 1, backgroundColor: '#D7CDD3', marginLeft: 23, marginTop: -12, marginBottom: -12, zIndex: 2 },
+  cityPillText: { color: P.green, fontSize: 11, fontWeight: '800' },
+  field: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 15, paddingVertical: 8, backgroundColor: '#F7F1E8', borderWidth: 0, borderRadius: 24 },
+  fieldIconWrap: { width: 30, alignItems: 'center', justifyContent: 'center' },
+  fieldChevron: { color: P.ink, fontSize: 27, fontWeight: '300', paddingLeft: 5 },
+  fieldIcon: { color: P.green, fontSize: 16, fontWeight: '900' },
+  fieldLabel: { color: P.ink, fontSize: 15, fontWeight: '800', letterSpacing: 0 },
+  fieldInput: { color: P.muted, fontSize: 13, padding: 0, marginTop: 2, minHeight: 21 },
+  connector: { height: 7, width: 1, backgroundColor: '#D8E6D6', marginLeft: 23, marginTop: -12, marginBottom: -12, zIndex: 2 },
   locateRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 5 },
-  locateRowIcon: { color: P.pink, fontSize: 18 },
-  locateRowText: { color: P.pinkDark, fontSize: 13, fontWeight: '700' },
-  routeMeta: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#F8F6F7', padding: 11, borderRadius: 12 },
+  locateRowIcon: { color: P.green, fontSize: 18 },
+  locateRowText: { color: P.green, fontSize: 13, fontWeight: '700' },
+  routeMeta: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#F6F0E4', padding: 11, borderRadius: 12 },
   routeMetaText: { color: P.muted, fontSize: 12, fontWeight: '700' },
   sectionTitle: { color: P.ink, fontSize: 15, fontWeight: '800', marginTop: 6 },
-  tariffs: { flexDirection: 'row', gap: 8 },
-  tariff: { flex: 1, minHeight: 80, borderWidth: 1, borderColor: P.line, borderRadius: 14, alignItems: 'center', justifyContent: 'center', padding: 7, gap: 5, backgroundColor: P.white },
-  tariffSelected: { borderColor: P.pink, backgroundColor: P.pale },
-  tariffIcon: { color: P.pink, fontSize: 20, fontWeight: '900' },
-  tariffName: { color: P.ink, fontSize: 12, fontWeight: '800' },
-  tariffPrice: { color: P.pinkDark, fontSize: 11, fontWeight: '800' },
-  priceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FAF7F8', borderRadius: 15, padding: 14, gap: 10 },
+  tariffs: { flexDirection: 'row', gap: 7, marginTop: 1 },
+  tariff: { flex: 1, minHeight: 88, borderWidth: 1, borderColor: P.line, borderRadius: 23, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 7, gap: 5, backgroundColor: '#FBF8F1' },
+  tariffSelected: { borderColor: P.gold, backgroundColor: '#F4EBD5', borderWidth: 2, shadowColor: P.gold, shadowOpacity: 0.16, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  tariffIcon: { color: P.green, fontSize: 22, fontWeight: '900' },
+  tariffName: { color: P.ink, fontSize: 12, fontWeight: '800', textAlign: 'center' },
+  tariffSub: { color: P.muted, fontSize: 9, lineHeight: 12, textAlign: 'center' },
+  tariffPrice: { color: P.green, fontSize: 11, fontWeight: '800' },
+  networkHint: { flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: '#EDF4EA', borderWidth: 0, borderRadius: 23, paddingHorizontal: 15, paddingVertical: 13 },
+  networkHintIcon: { color: P.green, fontSize: 22, fontWeight: '900' },
+  networkHintText: { flex: 1, color: P.ink, fontSize: 12, lineHeight: 17 },
+  priceCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F6F0E4', borderRadius: 17, padding: 14, gap: 10 },
   priceTitle: { color: P.ink, fontWeight: '800', fontSize: 13 },
   priceHint: { color: P.muted, fontSize: 11, marginTop: 3 },
-  priceValue: { color: P.pinkDark, fontWeight: '900', fontSize: 19 },
+  priceValue: { color: P.green, fontWeight: '900', fontSize: 19 },
   payRow: { flexDirection: 'row', gap: 9 },
   payOption: { flex: 1, borderWidth: 1, borderColor: P.line, borderRadius: 13, padding: 12, alignItems: 'center', gap: 4 },
-  paySelected: { borderColor: P.pink, backgroundColor: P.pale },
-  payIcon: { color: P.pink, fontSize: 18, fontWeight: '900' },
+  paySelected: { borderColor: P.green, backgroundColor: P.pale },
+  payIcon: { color: P.green, fontSize: 18, fontWeight: '900' },
   payText: { color: P.ink, fontSize: 12, fontWeight: '700' },
   phoneInput: { borderWidth: 1, borderColor: P.line, borderRadius: 13, padding: 14, fontSize: 14, color: P.ink },
   disabled: { opacity: 0.45 },
-  bottomNav: { height: 62, flexDirection: 'row', borderTopWidth: 1, borderColor: P.line, backgroundColor: P.white, paddingBottom: Platform.OS === 'android' ? 4 : 0 },
+  bottomNav: { height: 68, flexDirection: 'row', borderTopWidth: 1, borderColor: P.line, backgroundColor: P.white, paddingBottom: Platform.OS === 'android' ? 4 : 0, zIndex: 30, elevation: 12 },
   navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
-  navIcon: { color: '#A69EA4', fontSize: 21, fontWeight: '800' },
-  navLabel: { color: '#9C949A', fontSize: 10, fontWeight: '700' },
-  navActive: { color: P.pinkDark },
+  navIcon: { color: '#87938A', fontSize: 21, fontWeight: '800' },
+  navLabel: { color: '#87938A', fontSize: 10, fontWeight: '700' },
+  navActive: { color: P.green },
   searchScreen: { flex: 1, backgroundColor: P.white },
   searchTop: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 10, minHeight: 60, borderBottomWidth: 1, borderColor: P.line },
-  back: { color: P.pink, fontSize: 34, lineHeight: 38 },
+  back: { color: P.green, fontSize: 34, lineHeight: 38 },
   searchInput: { flex: 1, fontSize: 17, color: P.ink, paddingVertical: 12 },
   clear: { color: P.muted, fontSize: 26, paddingHorizontal: 5 },
-  suggestion: { flexDirection: 'row', gap: 12, alignItems: 'center', paddingHorizontal: 17, paddingVertical: 15, borderBottomWidth: 1, borderColor: '#F3EFF1' },
+  suggestion: { flexDirection: 'row', gap: 12, alignItems: 'center', paddingHorizontal: 17, paddingVertical: 15, borderBottomWidth: 1, borderColor: '#F6F0E4' },
   suggestionIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
   suggestionTitle: { color: P.ink, fontSize: 15, fontWeight: '700' },
   suggestionSub: { color: P.muted, fontSize: 12, marginTop: 3 },
   empty: { color: P.muted, textAlign: 'center', padding: 25, lineHeight: 21 },
   pageContent: { padding: 18, gap: 13, paddingBottom: 28 },
   pageTitle: { color: P.ink, fontSize: 27, fontWeight: '900', marginBottom: 5 },
-  emptyCard: { alignItems: 'center', padding: 28, backgroundColor: '#FAF8F9', borderRadius: 20, gap: 10 },
-  emptyIcon: { color: P.pink, fontSize: 38 },
+  emptyCard: { alignItems: 'center', padding: 28, backgroundColor: '#FFFCF6', borderRadius: 20, gap: 10 },
+  emptyIcon: { color: P.green, fontSize: 38 },
   muted: { color: P.muted, fontSize: 13, lineHeight: 19, textAlign: 'center' },
   orderCard: { borderWidth: 1, borderColor: P.line, borderRadius: 17, padding: 15, gap: 10, backgroundColor: P.white },
-  orderStatus: { color: P.pinkDark, fontSize: 13, fontWeight: '900' },
+  orderStatus: { color: P.green, fontSize: 13, fontWeight: '900' },
   orderDate: { color: P.muted, fontSize: 11 },
   orderAddress: { color: P.ink, fontSize: 13, lineHeight: 19 },
   orderPrice: { color: P.ink, fontSize: 16, fontWeight: '900' },
-  cancelText: { color: '#C23F5B', fontSize: 12, fontWeight: '800' },
+  cancelText: { color: P.green, fontSize: 12, fontWeight: '800' },
   profileCard: { alignItems: 'center', backgroundColor: P.pale, borderRadius: 20, padding: 24, gap: 7 },
   profileAvatar: { width: 68, height: 68, borderRadius: 34, backgroundColor: P.white, alignItems: 'center', justifyContent: 'center', marginBottom: 5 },
-  profileAvatarText: { color: P.pink, fontSize: 28, fontWeight: '900' },
+  profileAvatarText: { color: P.green, fontSize: 28, fontWeight: '900' },
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: 13, padding: 16, borderBottomWidth: 1, borderColor: P.line },
-  profileRowIcon: { color: P.pink, fontSize: 19, width: 24 },
+  profileRowIcon: { color: P.green, fontSize: 19, width: 24 },
   profileRowText: { flex: 1, color: P.ink, fontSize: 14, fontWeight: '700' },
   chevron: { color: P.muted, fontSize: 22 },
   logout: { alignItems: 'center', padding: 16, marginTop: 8 },
-  logoutText: { color: '#C23F5B', fontSize: 14, fontWeight: '800' },
-  refreshText: { color: P.pinkDark, fontSize: 13, fontWeight: '800', marginBottom: 10 },
-  ratingSummary: { color: P.pinkDark, fontSize: 12, fontWeight: '800' },
-  rateBox: { backgroundColor: '#FFF5F8', borderWidth: 1, borderColor: '#F5D6E2', borderRadius: 14, padding: 12, gap: 8 },
+  logoutText: { color: P.green, fontSize: 14, fontWeight: '800' },
+  refreshText: { color: P.green, fontSize: 13, fontWeight: '800', marginBottom: 10 },
+  ratingSummary: { color: P.green, fontSize: 12, fontWeight: '800' },
+  rateBox: { backgroundColor: '#F6F0E4', borderWidth: 1, borderColor: '#E8DEC9', borderRadius: 14, padding: 12, gap: 8 },
   rateTitle: { color: P.ink, fontSize: 13, fontWeight: '800' },
   rateStars: { flexDirection: 'row', gap: 10 },
-  rateStar: { color: '#D8CFD4', fontSize: 30 },
-  rateStarActive: { color: '#F3A72F' },
-  rateSubmit: { backgroundColor: P.pink, paddingVertical: 11, borderRadius: 12, alignItems: 'center' },
+  rateStar: { color: '#D8E6D6', fontSize: 30 },
+  rateStarActive: { color: P.gold },
+  rateSubmit: { backgroundColor: P.green, paddingVertical: 11, borderRadius: 12, alignItems: 'center' },
   rateSubmitText: { color: P.white, fontSize: 13, fontWeight: '900' },
   ratingThanks: { color: P.green, fontSize: 12, fontWeight: '800' },
-  ratingDriverCard: { backgroundColor: '#FFF5F8', borderColor: '#F5D6E2', borderWidth: 1, borderRadius: 16, padding: 14, gap: 5 },
+  ratingDriverCard: { backgroundColor: '#F6F0E4', borderColor: '#E8DEC9', borderWidth: 1, borderRadius: 16, padding: 14, gap: 5 },
   ratingDriverLabel: { color: P.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  ratingDriverValue: { color: P.pinkDark, fontSize: 24, fontWeight: '900' },
+  ratingDriverValue: { color: P.green, fontSize: 24, fontWeight: '900' },
   ratingDriverCount: { color: P.muted, fontSize: 12, fontWeight: '700' },
   vehicleEditorCard: { backgroundColor: P.white, borderColor: P.line, borderWidth: 1, borderRadius: 18, padding: 14, gap: 10 },
   vehicleEditorHint: { color: P.muted, fontSize: 10, fontWeight: '700' },
@@ -2021,16 +2073,16 @@ const st = StyleSheet.create({
   vehiclePhotoPlaceholder: { width: '100%', height: 130, borderRadius: 14, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center', gap: 8 },
   vehiclePhotoIcon: { fontSize: 36 },
   vehiclePhotoPlaceholderText: { color: P.muted, fontSize: 12, fontWeight: '700' },
-  vehiclePhotoButton: { borderWidth: 1, borderColor: P.pink, borderRadius: 12, padding: 12, alignItems: 'center' },
-  vehiclePhotoButtonText: { color: P.pinkDark, fontSize: 13, fontWeight: '800' },
+  vehiclePhotoButton: { borderWidth: 1, borderColor: P.green, borderRadius: 12, padding: 12, alignItems: 'center' },
+  vehiclePhotoButtonText: { color: P.green, fontSize: 13, fontWeight: '800' },
   vehicleInputRow: { flexDirection: 'row', gap: 8 },
-  vehicleSaveButton: { backgroundColor: P.pink, borderRadius: 13, padding: 14, alignItems: 'center' },
+  vehicleSaveButton: { backgroundColor: P.green, borderRadius: 13, padding: 14, alignItems: 'center' },
   vehicleSaveText: { color: P.white, fontSize: 13, fontWeight: '900' },
   passengerDriverRow: { flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 12 },
   passengerDriverPhoto: { width: 62, height: 62, borderRadius: 31, backgroundColor: P.pale },
   passengerDriverPlaceholder: { width: 62, height: 62, borderRadius: 31, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
-  passengerDriverInitial: { color: P.pinkDark, fontSize: 25, fontWeight: '900' },
-  passengerDriverRating: { color: '#C17A18', fontSize: 13, fontWeight: '900' },
+  passengerDriverInitial: { color: P.green, fontSize: 25, fontWeight: '900' },
+  passengerDriverRating: { color: P.gold, fontSize: 13, fontWeight: '900' },
   driverPhotoEditorRow: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   driverPhotoPreview: { width: 92, height: 92, borderRadius: 46, backgroundColor: P.pale },
   driverPhotoPlaceholder: { width: 92, height: 92, borderRadius: 46, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
