@@ -55,21 +55,18 @@
           "flavor": "full",
           "version": "4.42.0"
         }
-      ],
-      [
-        "expo-splash-screen",
-        {
-          "image": "./icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#F6F0E4"
-        }
       ]
     ],
     "extra": {
       "eas": {
         "projectId": "95ac82ec-010d-4770-9aba-9f52878e1b3b"
       }
+    },
+    "splash": {
+      "image": "./icon.png",
+      "imageWidth": 200,
+      "resizeMode": "contain",
+      "backgroundColor": "#F6F0E4"
     }
   }
 }
