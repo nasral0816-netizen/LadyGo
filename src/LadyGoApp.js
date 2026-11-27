@@ -99,8 +99,8 @@ const P = {
 const TARIFFS = [
   // Сохраняем тарифные ID для совместимости с действующим сервисом расчёта цены.
   { id: 'economy', name: 'Женский', sub: 'Поездки для женщин', icon: '♀' },
-  { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '♡' },
-  { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '⌂' }
+  { id: 'comfort', name: 'Детский', sub: 'Поездки с детьми', icon: '🧒' },
+  { id: 'comfort_plus', name: 'Доставка', sub: 'Доставка вещей и заказов', icon: '📦' }
 ];
 const STATUS = { draft: 'Маршрут сохранён', saved: 'Тестовая заявка сохранена', new: 'Ищем водителя', accepted: 'Назначен', arrived: 'На месте', in_progress: 'В пути', completed: 'Завершена', cancelled: 'Отменена', declined: 'Отклонена' };
 const fmt = n => Number(n || 0).toLocaleString('ru-RU') + ' руб.';
@@ -1804,7 +1804,7 @@ export default function LadyGoApp() {
       <Text style={st.footnote}>LadyGo · 6.9.2 · Создано независимым автором @acyma</Text>
     </ScrollView>}
     <View style={st.bottomNav}>
-      {([['ride','⌖','Поездки',() => setTab('ride')],['driver','♧','Водитель',() => { if (profile?.role === 'driver') { setTab('driver'); loadDriverOrders(); } else setTab('apply'); }],['support','☏','Поддержка',() => { setTab('support'); loadMyTickets(); }],['profile','♙','Профиль',() => setTab('profile')]]).map(([id,icon,label,action]) => <TouchableOpacity key={id} style={st.navItem} onPress={action}><Text style={[st.navIcon, (tab === id || (id === 'driver' && tab === 'apply')) && st.navActive]}>{icon}</Text><Text style={[st.navLabel, (tab === id || (id === 'driver' && tab === 'apply')) && st.navActive]}>{label}</Text></TouchableOpacity>)}
+      {([['ride','⌖','Поездки',() => setTab('ride')],['driver','🚘','Водитель',() => { if (profile?.role === 'driver') { setTab('driver'); loadDriverOrders(); } else setTab('apply'); }],['support','☏','Поддержка',() => { setTab('support'); loadMyTickets(); }],['profile','♙','Профиль',() => setTab('profile')]]).map(([id,icon,label,action]) => <TouchableOpacity key={id} style={st.navItem} onPress={action}><Text style={[st.navIcon, (tab === id || (id === 'driver' && tab === 'apply')) && st.navActive]}>{icon}</Text><Text style={[st.navLabel, (tab === id || (id === 'driver' && tab === 'apply')) && st.navActive]}>{label}</Text></TouchableOpacity>)}
     </View>
   </SafeAreaView>;
 }
