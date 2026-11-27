@@ -2,7 +2,7 @@
   "expo": {
     "name": "LadyGo",
     "slug": "guga",
-    "version": "6.9.1",
+    "version": "6.9.2",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "ladygo",
@@ -12,7 +12,7 @@
     "icon": "./icon.png",
     "android": {
       "package": "com.ladygo.app",
-      "versionCode": 52,
+      "versionCode": 53,
       "adaptiveIcon": {
         "foregroundImage": "./adaptive-icon.png",
         "backgroundColor": "#FFF8F2"
@@ -54,6 +54,15 @@
           "locale": "ru_RU",
           "flavor": "full",
           "version": "4.42.0"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFF8F2"
         }
       ]
     ],
