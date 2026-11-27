@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, BackHandler, Keyboard, Linking, Platform, SafeAreaView, ScrollView, PanResponder,
+  ActivityIndicator, Alert, Animated, BackHandler, Keyboard, Linking, Platform, SafeAreaView, ScrollView, PanResponder,
   StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, Image
 } from 'react-native';
 import { YandexMapView, Marker, Polyline, geocodeAddress, findDrivingRoutes } from 'expo-yandex-mapkit';
@@ -229,7 +229,7 @@ async function findAddresses(q) {
   }));
 }
 
-function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, mapCollapsed = false, allowPickDestination = true }) {
+function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pickingDestination, driverLocation, mapHeight, allowPickDestination = true }) {
   const cameraRef = useRef(null);
   const [zoom, setZoom] = useState(17);
   const [is3D, setIs3D] = useState(true);
@@ -261,7 +261,7 @@ function MapPanel({ pickup, destination, route, onLocate, onPickDestination, pic
     }
   };
 
-  return <View collapsable={false} style={[st.map, mapCollapsed && st.mapCollapsed]}>
+  return <Animated.View collapsable={false} style={[st.map, { height: mapHeight }]}>
     <YandexMapView
       ref={cameraRef}
       style={{ flex: 1 }}
@@ -362,13 +362,18 @@ export default function LadyGoApp() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [tab, setTab] = useState('ride');
   const [mapCollapsed, setMapCollapsed] = useState(false);
+  const mapHeight = useRef(new Animated.Value(270)).current;
+  const animateMapHeight = useCallback((collapsed) => {
+    setMapCollapsed(collapsed);
+    Animated.spring(mapHeight, { toValue: collapsed ? 148 : 270, useNativeDriver: false, speed: 18, bounciness: 3 }).start();
+  }, [mapHeight]);
   const mapPanResponder = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
     onPanResponderRelease: (_, gesture) => {
-      if (gesture.dy < -24) setMapCollapsed(true);
-      else if (gesture.dy > 24) setMapCollapsed(false);
+      if (gesture.dy < -24) animateMapHeight(true);
+      else if (gesture.dy > 24) animateMapHeight(false);
     }
-  }), []);
+  }), [animateMapHeight]);
   const [pickupText, setPickupText] = useState('Моё местоположение');
   const [destinationText, setDestinationText] = useState('');
   const [pickup, setPickup] = useState(null);
@@ -1892,7 +1897,7 @@ export default function LadyGoApp() {
     </View>
     <NetworkHint />
     {tab === 'ride' && <View style={{ flex: 1 }}>
-      <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination} mapCollapsed={mapCollapsed}/>
+      <MapPanel pickup={pickup} destination={destination} route={route} onLocate={locate} onPickDestination={pickDestinationOnMap} pickingDestination={pickingDestination} mapHeight={mapHeight}/>
       <ScrollView style={st.sheet} contentContainerStyle={st.sheetContent} keyboardShouldPersistTaps="handled">
         <View {...mapPanResponder.panHandlers} accessibilityRole="button" accessibilityLabel="Потяните вверх, чтобы уменьшить карту, вниз — чтобы увеличить" style={st.sheetHandleWrap}><View style={st.sheetHandle}/><Text style={st.sheetHandleHint}>{mapCollapsed ? 'Потяните вниз, чтобы развернуть карту' : 'Потяните вверх, чтобы освободить место'}</Text></View>
         <View style={st.rowBetween}><Text style={st.heading}>Куда едем?</Text><View style={st.cityPill}><Text style={st.cityPillText}>Поиск по России</Text></View></View>
@@ -2474,8 +2479,7 @@ const st = StyleSheet.create({
   chatSend: { width: 44, height: 44, borderRadius: 14, backgroundColor: P.pink, alignItems: 'center', justifyContent: 'center' },
   chatSendText: { color: P.white, fontSize: 19, fontWeight: '900' },
   avatarText: { color: P.pinkDark, fontWeight: '900', fontSize: 16 },
-  map: { height: 270, flexShrink: 0, backgroundColor: '#E9E7E3', zIndex: 0, elevation: 0, overflow: 'hidden' },
-  mapCollapsed: { height: 148 },
+  map: { flexShrink: 0, backgroundColor: '#E9E7E3', zIndex: 0, elevation: 0, overflow: 'hidden' },
   mapControls: { position: 'absolute', left: 9, bottom: 12, gap: 6, alignItems: 'flex-start' },
   locateButton: { height: 34, paddingHorizontal: 10, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.97)', justifyContent: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
   locateButtonText: { color: P.pinkDark, fontSize: 11, fontWeight: '800' },
