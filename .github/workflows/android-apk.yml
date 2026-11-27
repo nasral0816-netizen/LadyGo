@@ -57,13 +57,20 @@ jobs:
 
       - name: Render LadyGo launcher icons
         run: |
-          python3 -m pip install --quiet cairosvg
+          python3 -m pip install --quiet cairosvg pillow
           python3 - <<'PY'
           import cairosvg
+          from PIL import Image
           source = 'assets/ladygo-emblem.svg'
           cairosvg.svg2png(url=source, write_to='icon.png', output_width=1024, output_height=1024)
-          cairosvg.svg2png(url=source, write_to='adaptive-icon.png', output_width=1024, output_height=1024)
-          print('Rendered premium LadyGo launcher and adaptive icons')
+          # Android adaptive foreground needs a safe inset so the circular emblem
+          # remains intact under different launcher masks.
+          cairosvg.svg2png(url=source, write_to='/tmp/ladygo-adaptive-source.png', output_width=720, output_height=720)
+          foreground = Image.new('RGBA', (1024, 1024), (0, 0, 0, 0))
+          emblem = Image.open('/tmp/ladygo-adaptive-source.png').convert('RGBA')
+          foreground.alpha_composite(emblem, ((1024 - emblem.width) // 2, (1024 - emblem.height) // 2))
+          foreground.save('adaptive-icon.png')
+          print('Rendered premium LadyGo launcher and safe-zone adaptive icons')
           PY
 
       - name: Expo configuration diagnostics
