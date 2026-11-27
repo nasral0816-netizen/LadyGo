@@ -296,7 +296,8 @@ export default function LadyGoApp() {
   const [route, setRoute] = useState([]);
   const [routeInfo, setRouteInfo] = useState(null);
   const [tariff, setTariff] = useState('economy');
-  const expandedMapHeight = Math.round(Math.min(440, Math.max(300, Dimensions.get('window').height * 0.47)));
+  const [quoteExpanded, setQuoteExpanded] = useState(false);
+  const expandedMapHeight = Math.round(Math.min(440, Math.max(300, Dimensions.get('window').height * 0.44)));
   const mapHeight = useRef(new Animated.Value(expandedMapHeight)).current;
   const animateMapHeight = useCallback((collapsed) => {
     Animated.spring(mapHeight, { toValue: collapsed ? 176 : expandedMapHeight, useNativeDriver: false, speed: 16, bounciness: 2 }).start();
@@ -1404,13 +1405,15 @@ export default function LadyGoApp() {
           <View style={st.tariffIcon}><LineIcon name={t.icon} size={27} color={P.green}/></View><Text style={st.tariffName}>{t.name}</Text>{previewFare && tariff === t.id ? <Text style={st.tariffPrice}>{fmt(previewFare)}</Text> : null}
         </TouchableOpacity>)}</View>
         <View style={st.networkHint}><LineIcon name="support" size={22}/><Text style={st.networkHintText}>Если карта или другие сервисы не загружаются, проверьте интернет. Если вы находитесь в сети с ограничениями, попробуйте включить VPN.</Text></View>
-        <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>{(previewFare) ? 'Предварительная стоимость' : 'Стоимость поездки'}</Text><Text style={st.priceHint}>{(previewFare) ? 'Расчёт по длине и времени маршрута' : 'Укажи оба адреса для расчёта'}</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
-        <Text style={st.sectionTitle}>Способ оплаты</Text>
-        <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><View style={st.payIcon}><LineIcon name="cash" size={22}/></View><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
-        <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
-        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={createOrder} disabled={!pickup || !destination || !routeInfo || busy}>
-          {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>Рассчитать стоимость</Text>}
+        <TouchableOpacity style={[st.primaryBtn, (!pickup || !destination || !routeInfo || busy) && st.disabled]} onPress={() => quoteExpanded ? createOrder() : setQuoteExpanded(true)} disabled={!pickup || !destination || !routeInfo || busy}>
+          {busy ? <ActivityIndicator color="#fff"/> : <Text style={st.primaryText}>{quoteExpanded ? 'Заказать поездку' : 'Рассчитать стоимость'}</Text>}
         </TouchableOpacity>
+        {quoteExpanded && <>
+          <View style={st.priceCard}><View style={{ flex: 1 }}><Text style={st.priceTitle}>Предварительная стоимость</Text><Text style={st.priceHint}>Расчёт по длине и времени маршрута</Text></View><Text style={st.priceValue}>{previewFare ? fmt(previewFare) : '—'}</Text></View>
+          <Text style={st.sectionTitle}>Способ оплаты</Text>
+          <View style={st.payRow}><TouchableOpacity onPress={() => setPayment('cash')} style={[st.payOption, payment === 'cash' && st.paySelected]}><View style={st.payIcon}><LineIcon name="cash" size={22}/></View><Text style={st.payText}>Наличные</Text></TouchableOpacity><TouchableOpacity onPress={() => setPayment('transfer_to_driver')} style={[st.payOption, payment === 'transfer_to_driver' && st.paySelected]}><Text style={st.payIcon}>↗</Text><Text style={st.payText}>Перевод водителю</Text></TouchableOpacity></View>
+          <TextInput style={st.phoneInput} value={phone} onChangeText={setPhone} placeholder="Телефон для связи (необязательно)" keyboardType="phone-pad"/>
+        </>}
         <TouchableOpacity style={st.phoneOrderBtn} onPress={() => Linking.openURL('mailto:ladygosupport@gmail.com?subject=Поддержка%20LadyGo')}>
           <Text style={st.phoneOrderText}>✉  Написать в поддержку</Text>
         </TouchableOpacity>
