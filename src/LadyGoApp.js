@@ -125,8 +125,8 @@ TaskManager.defineTask(LADYGO_DRIVER_LOCATION_TASK, async ({ data, error }) => {
 });
 
 const P = {
-  pink: '#D94F83', pinkDark: '#B93669', pale: '#FFF1F5', ink: '#211B1F',
-  muted: '#776D73', line: '#EDE4E8', white: '#FFFFFF', green: '#176344', gold: '#C79A38',
+  pink: '#176344', pinkDark: '#10432F', pale: '#F6F0E4', ink: '#1F2923',
+  muted: '#756F63', line: '#E8DEC9', white: '#FFFCF6', green: '#176344', gold: '#C79A38',
   map: 'https://tiles.openfreemap.org/styles/liberty'
 };
 const TARIFFS = [
@@ -2019,7 +2019,7 @@ export default function LadyGoApp() {
                 </TouchableOpacity>}
                 <View style={{ backgroundColor: '#FFFFFF', borderRadius: 10, padding: 10, gap: 4 }}>
                   <Text style={{ color: P.ink, fontWeight: '800', fontSize: 12 }}>Данные тестовой поездки</Text>
-                  <Text style={{ color: P.muted, fontSize: 11 }}>Тариф: {o.tariff_id === 'comfort' ? 'Комфорт' : o.tariff_id === 'comfort_plus' ? 'Комфорт +' : 'Эконом'}</Text>
+                  <Text style={{ color: P.muted, fontSize: 11 }}>Тариф: {o.tariff_id === 'comfort' ? 'Детский' : o.tariff_id === 'comfort_plus' ? 'Доставка' : 'Женский'}</Text>
                   <Text style={{ color: P.muted, fontSize: 11 }}>Оплата: {o.payment_method === 'cash' ? 'Наличные' : o.payment_method === 'card' ? 'Карта — не подключена' : (o.payment_method || 'Не выбрана')}</Text>
                   <Text style={{ color: P.muted, fontSize: 11 }}>Расчётная стоимость: {fmt(o.estimated_price_rub || o.price_rub || 0)}</Text>
                 </View>
@@ -2350,28 +2350,28 @@ export default function LadyGoApp() {
 }
 
 const st = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: P.white },
+  screen: { flex: 1, backgroundColor: '#F8F3E9' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, backgroundColor: P.white },
-  auth: { flex: 1, backgroundColor: P.white, padding: 24, justifyContent: 'center' },
+  auth: { flex: 1, backgroundColor: '#F8F3E9', padding: 24, justifyContent: 'center' },
   authLogo: { alignItems: 'center', marginBottom: 38 },
-  logo: { color: P.pink, fontSize: 42, fontWeight: '900', letterSpacing: -2 },
+  logo: { color: P.green, fontSize: 42, fontWeight: '900', letterSpacing: -2 },
   tagline: { color: P.muted, fontSize: 15, marginTop: 4 },
   authCard: { gap: 14 },
   heading: { color: P.ink, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 },
   authInput: { borderWidth: 1, borderColor: P.line, borderRadius: 16, padding: 17, fontSize: 16, color: P.ink, backgroundColor: '#FBFAFB' },
-  primaryBtn: { backgroundColor: P.pink, minHeight: 56, borderRadius: 17, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, marginTop: 8 },
+  primaryBtn: { backgroundColor: P.green, minHeight: 56, borderRadius: 17, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, marginTop: 8, elevation: 3 },
   primaryText: { color: P.white, fontSize: 16, fontWeight: '800' },
   phoneOrderBtn: { minHeight: 52, borderRadius: 16, borderWidth: 1.5, borderColor: P.pink, backgroundColor: P.white, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
   phoneOrderText: { color: P.pinkDark, fontSize: 15, fontWeight: '800' },
   switchText: { color: P.pinkDark, textAlign: 'center', fontWeight: '700', padding: 12 },
   footnote: { color: '#A69DA3', fontSize: 11, textAlign: 'center', marginTop: 20 },
-  topbar: { height: 62, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: P.white, borderBottomWidth: 1, borderColor: '#F2EEF0' },
-  logoSmall: { color: P.pink, fontSize: 25, fontWeight: '900', letterSpacing: -1 },
+  topbar: { height: 66, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFCF6', borderBottomWidth: 1, borderColor: P.line, elevation: 2 },
+  logoSmall: { color: P.green, fontSize: 25, fontWeight: '900', letterSpacing: -1 },
   topSub: { color: P.muted, fontSize: 10, marginTop: -2 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: P.pale, alignItems: 'center', justifyContent: 'center' },
   modeSwitch: { flexDirection: 'row', backgroundColor: '#F3EEF1', borderRadius: 16, padding: 4, gap: 3, borderWidth: 1, borderColor: '#EDE5E9', flexShrink: 1 },
   modeOption: { paddingHorizontal: 9, paddingVertical: 9, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  modeOptionActive: { backgroundColor: P.pink, elevation: 2, shadowColor: P.pinkDark, shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
+  modeOptionActive: { backgroundColor: P.green, elevation: 2, shadowColor: P.green, shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
   modeText: { color: P.muted, fontSize: 10, fontWeight: '900' },
   modeTextActive: { color: P.white },
   adminTopButton: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, backgroundColor: P.pale, borderWidth: 1, borderColor: '#F5C7D8' },
@@ -2388,7 +2388,7 @@ const st = StyleSheet.create({
   adminEyebrow: { color:P.pinkDark, fontSize:9, fontWeight:'900', letterSpacing:1.2, marginBottom:5 },
   adminTabs: { flexDirection:'row', gap:7, flexWrap:'wrap' },
   adminTab: { paddingHorizontal:12, paddingVertical:11, borderRadius:13, backgroundColor:'#F5F1F3', borderWidth:1, borderColor:P.line },
-  adminTabActive: { backgroundColor:P.pink, borderColor:P.pink },
+  adminTabActive: { backgroundColor:P.green, borderColor:P.green },
   adminTabText: { color:P.muted, fontSize:11, fontWeight:'800' },
   adminTabTextActive: { color:P.white },
   adminApplicationCard: { backgroundColor:P.white, borderWidth:1, borderColor:P.line, borderRadius:18, padding:15, gap:8 },
